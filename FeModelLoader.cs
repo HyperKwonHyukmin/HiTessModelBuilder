@@ -9,7 +9,7 @@ namespace HiTessModelBuilder.Services.Initialzation
 {
   public static class FeModelLoader
   {
-    public static void LoadAndBuild(string StrucCsv, string PipeCsv, string EquipCsv, bool debugMode = false)
+    public static void LoadAndBuild(string StrucCsv, string PipeCsv, string EquipCsv, bool debugMode = true)
     {
       // Struc.csv는 필수 
       if (!File.Exists(StrucCsv))
