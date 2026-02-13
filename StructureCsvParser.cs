@@ -78,12 +78,72 @@ namespace HiTessModelBuilder.Parsers
     {
       string upperSize = sizeRaw.ToUpper();
 
-      if (upperSize.StartsWith("ANG")) return new AngStructure();
-      if (upperSize.StartsWith("BEAM")) return new BeamStructure();
-      if (upperSize.StartsWith("BSC")) return new BscStructure();
-      if (upperSize.StartsWith("BULB")) return new BulbStructure();
-      if (upperSize.StartsWith("RBAR")) return new RbarStructure();
+      // 1. 정규식을 사용하여 문자열 내의 모든 숫자(소수점 포함) 추출
+      // 예: "BEAM_176.0x24.0x200.0x8.0" -> [176.0, 24.0, 200.0, 8.0]
+      var matches = Regex.Matches(upperSize, @"\d+(\.\d+)?");
+      var dims = matches.Cast<Match>()
+                        .Select(m => double.Parse(m.Value))
+                        .ToArray();
 
+      // 2. 프리픽스에 따른 다형성 객체 생성 및 데이터 주입
+      if (upperSize.StartsWith("ANG"))
+      {
+        var ang = new AngStructure();
+        if (dims.Length >= 3)
+        {
+          ang.Width = dims[0];
+          ang.Height = dims[1];
+          ang.Thickness = dims[2];
+        }
+        return ang;
+      }
+      else if (upperSize.StartsWith("BEAM"))
+      {
+        var beam = new BeamStructure();
+        if (dims.Length >= 4)
+        {
+          // 주의: 아래 인덱스는 CSV 데이터의 숫자 순서에 맞게 맵핑되었습니다.
+          // 실제 데이터의 순서(높이, 폭 등)가 다르다면 인덱스를 수정하십시오.
+          beam.Width = dims[0];
+          beam.Height = dims[1];
+          beam.InnerThickness = dims[2];
+          beam.OuterThickness = dims[3];
+        }
+        return beam;
+      }
+      else if (upperSize.StartsWith("BSC"))
+      {
+        var bsc = new BscStructure();
+        if (dims.Length >= 4)
+        {
+          bsc.Height = dims[0];
+          bsc.Width = dims[1];
+          bsc.InnerThickness = dims[2];
+          bsc.OuterThickness = dims[3];
+        }
+        return bsc;
+      }
+      else if (upperSize.StartsWith("BULB"))
+      {
+        var bulb = new BulbStructure();
+        if (dims.Length >= 2)
+        {
+          bulb.Width = dims[0];
+          bulb.Thickness = dims[1];
+        }
+        return bulb;
+      }
+      else if (upperSize.StartsWith("RBAR"))
+      {
+        var rbar = new RbarStructure();
+        if (dims.Length >= 1)
+        {
+          rbar.Diameter = dims[0];
+        }
+        return rbar;
+      }
+
+      // 매칭되는 타입이 없을 경우
       return new UnknownStructure();
     }
 
@@ -118,6 +178,19 @@ namespace HiTessModelBuilder.Parsers
       }
 
       return new Vector3D(0, 0, 0);
+    }
+
+    public RawStructureData GetGroupedData()
+    {
+      // LINQ의 OfType<T>()를 사용하여 특정 타입의 객체만 필터링하고 리스트로 변환합니다.
+      return new RawStructureData(
+          angList: ParsedEntities.OfType<AngStructure>().ToList(),
+          beamList: ParsedEntities.OfType<BeamStructure>().ToList(),
+          bscList: ParsedEntities.OfType<BscStructure>().ToList(),
+          bulbList: ParsedEntities.OfType<BulbStructure>().ToList(),
+          rbarList: ParsedEntities.OfType<RbarStructure>().ToList(),
+          unknownList: ParsedEntities.OfType<UnknownStructure>().ToList()
+      );
     }
   }
 }
