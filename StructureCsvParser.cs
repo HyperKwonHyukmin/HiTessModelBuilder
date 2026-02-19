@@ -1,188 +1,88 @@
-using HiTessModelBuilder.Model.Entities;
-using System.Globalization;
-using System.Text.RegularExpressions;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using HiTessModelBuilder.Model.Entities; // StructureEntity 접근을 위해 추가
 
 namespace HiTessModelBuilder.Parsers
 {
-  public sealed class StructureCsvParser
+  public class CsvRawDataParser
   {
-    private static readonly Regex _numRegex =
-      new(@"[-+]?\d+(?:\.\d+)?", RegexOptions.Compiled);
+    private readonly string _strucCsv;
+    private readonly string _pipeCsv_;
+    private readonly string _equipCsv;
+    private readonly bool _debugPrint; // 읽기 전용으로 변경 권장
 
-    private static readonly Regex _sizeTypeRegex =
-      new(@"^(?<type>[A-Z]+)_", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-    // Parse 결과를 밖에서 쓰고 싶으면 프로퍼티로 보관 (선택)
-    public RawDesignData? LastResult { get; private set; }
-
-    public RawDesignData Parse(string filePath)
+    public CsvRawDataParser(string StrucCsv, string PipeCsv, string EquipCsv, bool debugPrint = false)
     {
-      if (!File.Exists(filePath))
-        throw new FileNotFoundException($"CSV File not found: {filePath}");
-
-      // ✅ 여기서 타입별 컨테이너 생성
-      var result = new RawDesignData(
-        angDesignList: new List<AngDesignData>(),
-        beamDesignList: new List<BeamDesignData>(),
-        bscDesignList: new List<BscDesignData>(),
-        bulbDesignList: new List<BulbDesignData>(),
-        rbarDesignList: new List<RbarDesignData>(),
-        unknownDesignList: new List<UnknownDesignData>()
-      );
-
-      foreach (var line in File.ReadLines(filePath).Skip(1))
-      {
-        if (string.IsNullOrWhiteSpace(line)) continue;
-
-        if (!TryParseLine(line, out var row))
-          continue;
-
-        var type = row.Type.Trim().ToUpperInvariant();
-
-        // ✅ CreateEntity로 생성
-        var entity = CreateEntity(type);
-
-        // ✅ 공통 필드 매핑
-        entity.Name = row.Name;
-        entity.Poss = row.StartPos;
-        entity.Pose = row.EndPos;
-        entity.Ori = row.Ori;
-
-        // 네 현재 엔티티 구조에서 SizeRaw는 double[]니까 dims 저장
-        entity.SizeDims = row.Dims;
-
-        // ✅ 타입별 치수 속성 반영 (각 클래스에서 구현해두면 좋음)
-        entity.ApplyDims(row.Dims);
-
-        // ✅ 컨테이너에 분류 저장
-        AddToContainer(result, entity, line, type);
-      }
-
-      LastResult = result;
-      return result;
+      _strucCsv = StrucCsv;
+      _pipeCsv_ = PipeCsv;
+      _equipCsv = EquipCsv;
+      _debugPrint = debugPrint;
     }
 
-    private static StructureEntity CreateEntity(string typeUpper) => typeUpper switch
+    public void Run()
     {
-      "ANG" => new AngDesignData(),
-      "BEAM" => new BeamDesignData(),
-      "BSC" => new BscDesignData(),
-      "BULB" => new BulbDesignData(),
-      "RBAR" => new RbarDesignData(),
-      _ => new UnknownDesignData(),
-    };
+      // 1. Structure 파싱
+      if (_debugPrint) Console.WriteLine($"[Parser] Reading Structure CSV: {_strucCsv}");
 
-    private static void AddToContainer(RawDesignData data, StructureEntity e, string rawLine, string typeUpper)
-    {
-      switch (e)
-      {
-        case AngDesignData ang:
-          data.AngDesignList.Add(ang);
-          break;
-
-        case BeamDesignData beam:
-          data.BeamDesignList.Add(beam);
-          break;
-
-        case BscDesignData bsc:
-          data.BscDesignList.Add(bsc);
-          break;
-
-        case BulbDesignData bulb:
-          data.BulbDesignList.Add(bulb);
-          break;
-
-        case RbarDesignData rbar:
-          data.RbarDesignList.Add(rbar);
-          break;
-
-        case UnknownDesignData unk:
-          // Unknown에 타입/라인 보관하고 싶으면 UnknownDesignData에 필드 추가 추천
-          // 예: unk.Type = typeUpper; unk.RawLine = rawLine;
-          data.UnknownDesignList.Add(unk);
-          break;
-
-        default:
-          // 혹시 모를 방어 코드
-          data.UnknownDesignList.Add(new UnknownDesignData
-          {
-            Name = e.Name,
-            Poss = e.Poss,
-            Pose = e.Pose,
-            Ori = e.Ori,
-            SizeDims = e.SizeDims
-          });
-          break;
-      }
-    }
-
-    // -----------------------
-    // Parsing helpers
-    // -----------------------
-
-    private readonly record struct ParsedRow(
-      string Name,
-      string Type,
-      double[] Dims,
-      double[] StartPos,
-      double[] EndPos,
-      double[] Ori
-    );
-
-    private bool TryParseLine(string line, out ParsedRow row)
-    {
-      row = default;
-
+      var structureParser = new StructureCsvParser();
       try
       {
-        var cols = line.Split(',');
-        if (cols.Length <= 7) return false;
-
-        string name = cols[0].Trim();
-        string possStr = cols[3].Trim();
-        string poseStr = cols[4].Trim();
-        string sizeText = cols[5].Trim();
-        string oriStr = cols[7].Trim();
-
-        var (type, dims) = ExtractTypeAndDims(sizeText);
-
-        var startPos = ExtractDoubles(possStr);
-        var endPos = ExtractDoubles(poseStr);
-        var ori = ExtractDoubles(oriStr);
-
-        if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3)
-          return false;
-
-        row = new ParsedRow(name, type, dims, startPos, endPos, ori);
-        return true;
+        structureParser.Parse(_strucCsv);
       }
-      catch
+      catch (Exception ex)
       {
-        return false;
+        Console.WriteLine($"[Error] Structure Parsing Failed: {ex.Message}");
+        // 필요 시 throw;
       }
+
+      // 추후 Pipe, Equip 파서 실행 로직 추가...
     }
 
-    private static (string typeUpper, double[] dims) ExtractTypeAndDims(string sizeText)
+    /// <summary>
+    /// 파싱된 구조물 데이터를 테이블 형태로 콘솔에 출력합니다.
+    /// </summary>
+    private void PrintStructureVerification(List<StructureEntity> entities)
     {
-      var upper = (sizeText ?? "").Trim().ToUpperInvariant();
+      Console.WriteLine($"\n>> Structure Parsing Complete. Total Items: {entities.Count}");
 
-      var m = _sizeTypeRegex.Match(upper);
-      if (!m.Success) return ("UNKNOWN", Array.Empty<double>());
+      if (entities.Count == 0)
+      {
+        Console.WriteLine("Warning: No entities parsed.");
+        return;
+      }
 
-      var type = m.Groups["type"].Value.ToUpperInvariant();
+      // 헤더 출력
+      Console.WriteLine(new string('-', 130));
+      Console.WriteLine(
+          $"| {"Name",-15} " +
+          $"| {"Size (Raw)",-15} " +
+          $"| {"Pos (X, Y, Z)",-25} " +
+          $"| {"Ori (Vector)",-20} " +
+          $"| {"Poss (Start)",-20} " +
+          $"| {"Pose (End)",-20} |");
+      Console.WriteLine(new string('-', 130));
 
-      var dims = _numRegex.Matches(upper)
-                         .Select(x => double.Parse(x.Value, CultureInfo.InvariantCulture))
-                         .ToArray();
+      // 데이터 출력 (최대 20개만 샘플링)
+      int count = 0;
+      foreach (var e in entities)
+      {
+        string posFmt = $"{e.Pos.X:0}, {e.Pos.Y:0}, {e.Pos.Z:0}";
+        string possFmt = $"{e.Poss.X:0}, {e.Poss.Y:0}, {e.Poss.Z:0}";
+        string poseFmt = $"{e.Pose.X:0}, {e.Pose.Y:0}, {e.Pose.Z:0}";
+        string oriFmt = $"{e.Ori.X:0.###}, {e.Ori.Y:0.###}, {e.Ori.Z:0.###}";
 
-      return (type, dims);
-    }
+        Console.WriteLine(
+            $"| {e.Name,-15} " +
+            $"| {e.SizeDims,-15} " +
+            $"| {posFmt,-25} " +
+            $"| {oriFmt,-20} " +
+            $"| {possFmt,-20} " +
+            $"| {poseFmt,-20} |");
+        count++;
+      }
 
-    private static double[] ExtractDoubles(string s)
-    {
-      return _numRegex.Matches(s ?? "")
-                      .Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture))
-                      .ToArray();
+      Console.WriteLine(new string('-', 130));
     }
   }
 }
