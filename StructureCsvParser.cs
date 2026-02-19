@@ -1,196 +1,188 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.RegularExpressions;
 using HiTessModelBuilder.Model.Entities;
-using HiTessModelBuilder.Model.Geometry;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace HiTessModelBuilder.Parsers
 {
-  public class StructureCsvParser
+  public sealed class StructureCsvParser
   {
-    public List<StructureEntity> ParsedEntities { get; private set; } = new List<StructureEntity>();
+    private static readonly Regex _numRegex =
+      new(@"[-+]?\d+(?:\.\d+)?", RegexOptions.Compiled);
 
-    // 좌표 파싱 정규식: "X 61376mm Y -12003mm Z 27477mm" 형태 처리
-    private static readonly Regex _coordRegex = new Regex(
-        @"X\s*([-\d.]+)\s*mm\s*Y\s*([-\d.]+)\s*mm\s*Z\s*([-\d.]+)\s*mm",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex _sizeTypeRegex =
+      new(@"^(?<type>[A-Z]+)_", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public void Parse(string filePath)
+    // Parse 결과를 밖에서 쓰고 싶으면 프로퍼티로 보관 (선택)
+    public RawDesignData? LastResult { get; private set; }
+
+    public RawDesignData Parse(string filePath)
     {
       if (!File.Exists(filePath))
         throw new FileNotFoundException($"CSV File not found: {filePath}");
 
-      var lines = File.ReadLines(filePath);
+      // ✅ 여기서 타입별 컨테이너 생성
+      var result = new RawDesignData(
+        angDesignList: new List<AngDesignData>(),
+        beamDesignList: new List<BeamDesignData>(),
+        bscDesignList: new List<BscDesignData>(),
+        bulbDesignList: new List<BulbDesignData>(),
+        rbarDesignList: new List<RbarDesignData>(),
+        unknownDesignList: new List<UnknownDesignData>()
+      );
 
-      // 헤더(첫 줄) 건너뛰기
-      foreach (var line in lines.Skip(1))
+      foreach (var line in File.ReadLines(filePath).Skip(1))
       {
         if (string.IsNullOrWhiteSpace(line)) continue;
 
-        try
-        {
-          var entity = ParseLine(line);
-          if (entity != null)
-            ParsedEntities.Add(entity);
-        }
-        catch (Exception ex)
-        {
-          Console.WriteLine($"[Parsing Error] {ex.Message} in line: {line}");
-        }
+        if (!TryParseLine(line, out var row))
+          continue;
+
+        var type = row.Type.Trim().ToUpperInvariant();
+
+        // ✅ CreateEntity로 생성
+        var entity = CreateEntity(type);
+
+        // ✅ 공통 필드 매핑
+        entity.Name = row.Name;
+        entity.Poss = row.StartPos;
+        entity.Pose = row.EndPos;
+        entity.Ori = row.Ori;
+
+        // 네 현재 엔티티 구조에서 SizeRaw는 double[]니까 dims 저장
+        entity.SizeDims = row.Dims;
+
+        // ✅ 타입별 치수 속성 반영 (각 클래스에서 구현해두면 좋음)
+        entity.ApplyDims(row.Dims);
+
+        // ✅ 컨테이너에 분류 저장
+        AddToContainer(result, entity, line, type);
+      }
+
+      LastResult = result;
+      return result;
+    }
+
+    private static StructureEntity CreateEntity(string typeUpper) => typeUpper switch
+    {
+      "ANG" => new AngDesignData(),
+      "BEAM" => new BeamDesignData(),
+      "BSC" => new BscDesignData(),
+      "BULB" => new BulbDesignData(),
+      "RBAR" => new RbarDesignData(),
+      _ => new UnknownDesignData(),
+    };
+
+    private static void AddToContainer(RawDesignData data, StructureEntity e, string rawLine, string typeUpper)
+    {
+      switch (e)
+      {
+        case AngDesignData ang:
+          data.AngDesignList.Add(ang);
+          break;
+
+        case BeamDesignData beam:
+          data.BeamDesignList.Add(beam);
+          break;
+
+        case BscDesignData bsc:
+          data.BscDesignList.Add(bsc);
+          break;
+
+        case BulbDesignData bulb:
+          data.BulbDesignList.Add(bulb);
+          break;
+
+        case RbarDesignData rbar:
+          data.RbarDesignList.Add(rbar);
+          break;
+
+        case UnknownDesignData unk:
+          // Unknown에 타입/라인 보관하고 싶으면 UnknownDesignData에 필드 추가 추천
+          // 예: unk.Type = typeUpper; unk.RawLine = rawLine;
+          data.UnknownDesignList.Add(unk);
+          break;
+
+        default:
+          // 혹시 모를 방어 코드
+          data.UnknownDesignList.Add(new UnknownDesignData
+          {
+            Name = e.Name,
+            Poss = e.Poss,
+            Pose = e.Pose,
+            Ori = e.Ori,
+            SizeDims = e.SizeDims
+          });
+          break;
       }
     }
 
-    private StructureEntity ParseLine(string line)
+    // -----------------------
+    // Parsing helpers
+    // -----------------------
+
+    private readonly record struct ParsedRow(
+      string Name,
+      string Type,
+      double[] Dims,
+      double[] StartPos,
+      double[] EndPos,
+      double[] Ori
+    );
+
+    private bool TryParseLine(string line, out ParsedRow row)
     {
-      // CSV 쉼표 분리
-      var cols = line.Split(',');
+      row = default;
 
-      // 필수 컬럼 인덱스가 존재하는지 확인 (최소 8개 컬럼 필요)
-      if (cols.Length < 8) return null;
+      try
+      {
+        var cols = line.Split(',');
+        if (cols.Length <= 7) return false;
 
-      // [데이터 추출] 
-      // 이미지 기준: 0:Name, 2:Pos, 3:Poss, 4:Pose, 5:Size, 7:Ori
-      string name = cols[0].Trim();
-      string posStr = cols[2].Trim();
-      string possStr = cols[3].Trim();
-      string poseStr = cols[4].Trim();
-      string sizeRaw = cols[5].Trim();
-      string oriStr = cols[7].Trim();
+        string name = cols[0].Trim();
+        string possStr = cols[3].Trim();
+        string poseStr = cols[4].Trim();
+        string sizeText = cols[5].Trim();
+        string oriStr = cols[7].Trim();
 
-      // [Factory Logic] Size 문자열 기반 클래스 생성
-      StructureEntity entity = CreateEntityBySize(sizeRaw);
+        var (type, dims) = ExtractTypeAndDims(sizeText);
 
-      // [데이터 주입]
-      entity.Name = name;
-      entity.SizeRaw = sizeRaw;
-      entity.Pos = ParseCoordinateString(posStr);
-      entity.Poss = ParseCoordinateString(possStr);
-      entity.Pose = ParseCoordinateString(poseStr);
-      entity.Ori = ParseOrientationString(oriStr);
+        var startPos = ExtractDoubles(possStr);
+        var endPos = ExtractDoubles(poseStr);
+        var ori = ExtractDoubles(oriStr);
 
-      return entity;
+        if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3)
+          return false;
+
+        row = new ParsedRow(name, type, dims, startPos, endPos, ori);
+        return true;
+      }
+      catch
+      {
+        return false;
+      }
     }
 
-    // Size 문자열 분석하여 적절한 자식 클래스 반환
-    private StructureEntity CreateEntityBySize(string sizeRaw)
+    private static (string typeUpper, double[] dims) ExtractTypeAndDims(string sizeText)
     {
-      string upperSize = sizeRaw.ToUpper();
+      var upper = (sizeText ?? "").Trim().ToUpperInvariant();
 
-      // 1. 정규식을 사용하여 문자열 내의 모든 숫자(소수점 포함) 추출
-      // 예: "BEAM_176.0x24.0x200.0x8.0" -> [176.0, 24.0, 200.0, 8.0]
-      var matches = Regex.Matches(upperSize, @"\d+(\.\d+)?");
-      var dims = matches.Cast<Match>()
-                        .Select(m => double.Parse(m.Value))
-                        .ToArray();
+      var m = _sizeTypeRegex.Match(upper);
+      if (!m.Success) return ("UNKNOWN", Array.Empty<double>());
 
-      // 2. 프리픽스에 따른 다형성 객체 생성 및 데이터 주입
-      if (upperSize.StartsWith("ANG"))
-      {
-        var ang = new AngStructure();
-        if (dims.Length >= 3)
-        {
-          ang.Width = dims[0];
-          ang.Height = dims[1];
-          ang.Thickness = dims[2];
-        }
-        return ang;
-      }
-      else if (upperSize.StartsWith("BEAM"))
-      {
-        var beam = new BeamStructure();
-        if (dims.Length >= 4)
-        {
-          // 주의: 아래 인덱스는 CSV 데이터의 숫자 순서에 맞게 맵핑되었습니다.
-          // 실제 데이터의 순서(높이, 폭 등)가 다르다면 인덱스를 수정하십시오.
-          beam.Width = dims[0];
-          beam.Height = dims[1];
-          beam.InnerThickness = dims[2];
-          beam.OuterThickness = dims[3];
-        }
-        return beam;
-      }
-      else if (upperSize.StartsWith("BSC"))
-      {
-        var bsc = new BscStructure();
-        if (dims.Length >= 4)
-        {
-          bsc.Height = dims[0];
-          bsc.Width = dims[1];
-          bsc.InnerThickness = dims[2];
-          bsc.OuterThickness = dims[3];
-        }
-        return bsc;
-      }
-      else if (upperSize.StartsWith("BULB"))
-      {
-        var bulb = new BulbStructure();
-        if (dims.Length >= 2)
-        {
-          bulb.Width = dims[0];
-          bulb.Thickness = dims[1];
-        }
-        return bulb;
-      }
-      else if (upperSize.StartsWith("RBAR"))
-      {
-        var rbar = new RbarStructure();
-        if (dims.Length >= 1)
-        {
-          rbar.Diameter = dims[0];
-        }
-        return rbar;
-      }
+      var type = m.Groups["type"].Value.ToUpperInvariant();
 
-      // 매칭되는 타입이 없을 경우
-      return new UnknownStructure();
+      var dims = _numRegex.Matches(upper)
+                         .Select(x => double.Parse(x.Value, CultureInfo.InvariantCulture))
+                         .ToArray();
+
+      return (type, dims);
     }
 
-    // 좌표 문자열 파싱 ("X ... Y ... Z ...")
-    private Point3D ParseCoordinateString(string coordString)
+    private static double[] ExtractDoubles(string s)
     {
-      var match = _coordRegex.Match(coordString);
-      if (!match.Success) return new Point3D(0, 0, 0); // 실패 시 원점
-
-      double x = double.Parse(match.Groups[1].Value);
-      double y = double.Parse(match.Groups[2].Value);
-      double z = double.Parse(match.Groups[3].Value);
-
-      return new Point3D(x, y, z);
-    }
-
-    // 방향 벡터 파싱 ("1.000 0.000 0.000" -> 공백 분리)
-    private Vector3D ParseOrientationString(string oriString)
-    {
-      if (string.IsNullOrWhiteSpace(oriString)) return new Vector3D(0, 0, 0);
-
-      // 공백을 기준으로 분리하고 빈 항목 제거
-      var parts = oriString.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-      if (parts.Length < 3) return new Vector3D(0, 0, 0);
-
-      if (double.TryParse(parts[0], out double x) &&
-          double.TryParse(parts[1], out double y) &&
-          double.TryParse(parts[2], out double z))
-      {
-        return new Vector3D(x, y, z);
-      }
-
-      return new Vector3D(0, 0, 0);
-    }
-
-    public RawStructureData GetGroupedData()
-    {
-      // LINQ의 OfType<T>()를 사용하여 특정 타입의 객체만 필터링하고 리스트로 변환합니다.
-      return new RawStructureData(
-          angList: ParsedEntities.OfType<AngStructure>().ToList(),
-          beamList: ParsedEntities.OfType<BeamStructure>().ToList(),
-          bscList: ParsedEntities.OfType<BscStructure>().ToList(),
-          bulbList: ParsedEntities.OfType<BulbStructure>().ToList(),
-          rbarList: ParsedEntities.OfType<RbarStructure>().ToList(),
-          unknownList: ParsedEntities.OfType<UnknownStructure>().ToList()
-      );
+      return _numRegex.Matches(s ?? "")
+                      .Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture))
+                      .ToArray();
     }
   }
 }
