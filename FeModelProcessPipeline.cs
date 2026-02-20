@@ -15,14 +15,16 @@ namespace HiTessModelBuilder.Pipeline
     private readonly string _inputFileName;
     private readonly string _csvFolderPath;
     private readonly bool _pipelineDebug;
+    private readonly bool _verboseDebug;
     public FeModelProcessPipeline(RawStructureDesignData? rawStructureDesignData, FeModelContext context,
-      string CsvFolderPath, string inputFileName, bool pipelineDebug) 
+      string CsvFolderPath, string inputFileName, bool pipelineDebug, bool verboseDebug) 
     {
       this._rawStructureDesignData = rawStructureDesignData;
       this._context = context;
       this._csvFolderPath = CsvFolderPath;
       this._inputFileName = inputFileName;
       this._pipelineDebug = pipelineDebug;
+      this._verboseDebug = verboseDebug;
 
     }
 
@@ -37,7 +39,7 @@ namespace HiTessModelBuilder.Pipeline
     {
       string stageName = "STAGE_00";
       Console.WriteLine($"================ {stageName} =================");
-      StructuralSanityInspector.Inspect(_context, _pipelineDebug);
+      StructuralSanityInspector.Inspect(_context, _pipelineDebug, _verboseDebug);
       BdfExporter.Export(_context, _csvFolderPath, stageName);
     }
   }
