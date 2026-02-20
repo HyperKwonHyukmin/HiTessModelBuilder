@@ -22,7 +22,7 @@ namespace HiTessModelBuilder
         FeModelLoader.LoadAndBuild(StrucCsv, PipeCsv, EquipCsv, csvDebug:false, FeModelDebug:false);
 
       var pipeline = new FeModelProcessPipeline(rawStructureDesignData, context, CsvFolderPath, 
-        inputFileName, pipelineDebug: true);
+        inputFileName, pipelineDebug: true, verboseDebug: false);
       pipeline.Run(); 
 
       //BdfExporter.Export(context, CsvFolderPath, "Test");
