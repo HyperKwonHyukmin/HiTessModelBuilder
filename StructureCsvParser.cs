@@ -19,14 +19,14 @@ namespace HiTessModelBuilder.Parsers
     /// <summary>
     /// 파싱 결과를 구조화된 데이터(RawDesignData)로 보관
     /// </summary>
-    public RawDesignData? LastResult { get; private set; }
+    public RawStructureDesignData? LastResult { get; private set; }
 
     /// <summary>
     /// [추가됨] CsvRawDataParser 등 외부에서 전체 리스트에 접근하기 위한 속성
     /// </summary>
     public List<StructureEntity> ParsedEntities { get; private set; } = new List<StructureEntity>();
 
-    public RawDesignData Parse(string filePath)
+    public RawStructureDesignData Parse(string filePath)
     {
       // 1. 초기화
       ParsedEntities.Clear();
@@ -35,7 +35,7 @@ namespace HiTessModelBuilder.Parsers
         throw new FileNotFoundException($"CSV File not found: {filePath}");
 
       // 2. 타입별 컨테이너 생성 (GitHub 버전 로직 유지)
-      var result = new RawDesignData(
+      var result = new RawStructureDesignData(
           angDesignList: new List<AngDesignData>(),
           beamDesignList: new List<BeamDesignData>(),
           bscDesignList: new List<BscDesignData>(),
@@ -91,7 +91,7 @@ namespace HiTessModelBuilder.Parsers
       _ => new UnknownDesignData(),
     };
 
-    private static void AddToContainer(RawDesignData data, StructureEntity e, string rawLine, string typeUpper)
+    private static void AddToContainer(RawStructureDesignData data, StructureEntity e, string rawLine, string typeUpper)
     {
       switch (e)
       {
