@@ -1,5 +1,8 @@
-using System;
+using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Services.Initialzation;
+using HiTessModelBuilder.Pipeline;
+using System;
+using System.Security.Cryptography.X509Certificates;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace HiTessModelBuilder
@@ -15,7 +18,16 @@ namespace HiTessModelBuilder
       string CsvFolderPath = Path.GetDirectoryName(StrucCsv);
       string inputFileName = Path.GetFileName(StrucCsv);
 
-      FeModelLoader.LoadAndBuild(StrucCsv, PipeCsv, EquipCsv);
+      (RawStructureDesignData? rawStructureDesignData, FeModelContext context) = 
+        FeModelLoader.LoadAndBuild(StrucCsv, PipeCsv, EquipCsv, csvDebug:false, FeModelDebug:false);
+
+      var pipeline = new FeModelProcessPipeline(rawStructureDesignData, context, CsvFolderPath, 
+        inputFileName, pipelineDebug: true);
+      pipeline.Run(); 
+
+      //BdfExporter.Export(context, CsvFolderPath, "Test");
+
+
     }
 
   }
