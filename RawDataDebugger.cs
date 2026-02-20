@@ -26,6 +26,7 @@ namespace HiTessModelBuilder.Services.Debugging
       Console.WriteLine($" - BSC  (Channel)   : {data.BscDesignList?.Count ?? 0}");
       Console.WriteLine($" - Bulb  (Bar) : {data.BulbDesignList?.Count ?? 0}");
       Console.WriteLine($" - RBar  (라운드)   : {data.RbarDesignList?.Count ?? 0}");
+      Console.WriteLine($" - Tube  (튜브)   : {data.TubeDesignList?.Count ?? 0}");
       Console.WriteLine($" - Unknown        : {data.UnknownDesignList?.Count ?? 0}");
       Console.WriteLine("--------------------------------------------------------");
 
@@ -44,6 +45,9 @@ namespace HiTessModelBuilder.Services.Debugging
 
       PrintList("RBAR", data.RbarDesignList, e =>
           $"Dia={e.Diameter}");
+
+      PrintList("TUBE", data.TubeDesignList, e =>
+           $"Dia={e.OuterDiameter}, Thickness={e.Thickness}");
 
       // 3. Unknown 데이터 확인 (파싱 실패 원인 분석용)
       PrintUnknownList(data.UnknownDesignList);
