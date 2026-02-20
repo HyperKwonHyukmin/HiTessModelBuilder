@@ -1,9 +1,9 @@
+using HiTessModelBuilder.Model.Entities;
 using System;
 using System.Linq;
 using System.Text;
-using MooringFitting2026.Model.Entities;
 
-namespace HiTessModelBuilder.Debug
+namespace HiTessModelBuilder.Services.Debugging
 {
   public class FeModelDebugger
   {
