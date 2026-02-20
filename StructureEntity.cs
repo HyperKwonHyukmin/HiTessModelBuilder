@@ -63,6 +63,7 @@ namespace HiTessModelBuilder.Model.Entities
     public double OuterThickness { get; set; }
 
     // Nastran 출력용
+    // BEAM_200x200x8x12 : +          176.0    24.0   200.0     8.00.0     
     public double Dim1 => Width - (2 * OuterThickness);
     public double Dim2 => 2 * OuterThickness;
     public double Dim3 => Height;
@@ -73,8 +74,8 @@ namespace HiTessModelBuilder.Model.Entities
       // 예: [176, 24, 200, 8] 가정
       if (dims == null || dims.Length < 4) return;
       Width = dims[0];
-      InnerThickness = dims[1];
-      Height = dims[2];
+      Height = dims[1];
+      InnerThickness = dims[2];
       OuterThickness = dims[3];
     }
   }
