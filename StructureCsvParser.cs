@@ -76,6 +76,7 @@ namespace HiTessModelBuilder.Parsers
       "BSC" => new BscDesignData(),
       "BULB" => new BulbDesignData(),
       "RBAR" => new RbarDesignData(),
+      "TUBE" => new TubeDesignData(),
       _ => new UnknownDesignData(),
     };
 
@@ -87,6 +88,7 @@ namespace HiTessModelBuilder.Parsers
           bscDesignList: ParsedEntities.OfType<BscDesignData>().ToList(),
           bulbDesignList: ParsedEntities.OfType<BulbDesignData>().ToList(),
           rbarDesignList: ParsedEntities.OfType<RbarDesignData>().ToList(),
+          tubeDesignList: ParsedEntities.OfType<TubeDesignData>().ToList(),
           unknownDesignList: ParsedEntities.OfType<UnknownDesignData>().ToList()
       );
     }
