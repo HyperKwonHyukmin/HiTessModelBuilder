@@ -28,28 +28,16 @@ namespace HiTessModelBuilder.Parsers
 
     public RawStructureDesignData Parse(string filePath)
     {
-      // 1. 초기화
       ParsedEntities.Clear();
 
       if (!File.Exists(filePath))
         throw new FileNotFoundException($"CSV File not found: {filePath}");
 
-      // 2. 타입별 컨테이너 생성 (GitHub 버전 로직 유지)
-      var result = new RawStructureDesignData(
-          angDesignList: new List<AngDesignData>(),
-          beamDesignList: new List<BeamDesignData>(),
-          bscDesignList: new List<BscDesignData>(),
-          bulbDesignList: new List<BulbDesignData>(),
-          rbarDesignList: new List<RbarDesignData>(),
-          unknownDesignList: new List<UnknownDesignData>()
-      );
-
-      // 3. 파일 읽기 및 파싱
+      // 1. 파일 읽기 및 파싱 (오직 생성하고 바구니에 담는 역할만 수행!)
       foreach (var line in File.ReadLines(filePath).Skip(1))
       {
         if (string.IsNullOrWhiteSpace(line)) continue;
 
-        // 라인 파싱 시도
         if (!TryParseLine(line, out var row))
           continue;
 
@@ -64,20 +52,20 @@ namespace HiTessModelBuilder.Parsers
         entity.Pose = row.EndPos;
         entity.Ori = row.Ori;
         entity.SizeDims = row.Dims;
-        entity.SizeText = row.SizeRaw; // 원본 사이즈 문자열 저장 (StructureEntity에 SizeText 필드가 있다면)
+        entity.SizeText = row.SizeRaw;
 
         // 타입별 치수 속성 반영
         entity.ApplyDims(row.Dims);
 
-        // [중요] 전체 리스트에 추가 (오류 해결 핵심)
+        // 오직 이 전체 리스트에만 담습니다! (단일 책임)
         ParsedEntities.Add(entity);
-
-        // 컨테이너에 분류 저장
-        AddToContainer(result, entity, line, type);
       }
 
-      LastResult = result;
-      return result;
+      // 2. 파싱이 다 끝난 후, 예쁘게 분류해서 반환합니다.
+      var finalResult = GetGroupedData();
+      LastResult = finalResult;
+
+      return finalResult;
     }
 
 
@@ -91,32 +79,16 @@ namespace HiTessModelBuilder.Parsers
       _ => new UnknownDesignData(),
     };
 
-    private static void AddToContainer(RawStructureDesignData data, StructureEntity e, string rawLine, string typeUpper)
+    public RawStructureDesignData GetGroupedData()
     {
-      switch (e)
-      {
-        case AngDesignData ang: data.AngDesignList.Add(ang); break;
-        case BeamDesignData beam: data.BeamDesignList.Add(beam); break;
-        case BscDesignData bsc: data.BscDesignList.Add(bsc); break;
-        case BulbDesignData bulb: data.BulbDesignList.Add(bulb); break;
-        case RbarDesignData rbar: data.RbarDesignList.Add(rbar); break;
-        case UnknownDesignData unk:
-          unk.RawLine = rawLine; // UnknownDesignData에 RawLine 필드가 있다고 가정
-          data.UnknownDesignList.Add(unk);
-          break;
-        default:
-          // 방어 코드
-          data.UnknownDesignList.Add(new UnknownDesignData
-          {
-            Name = e.Name,
-            Poss = e.Poss,
-            Pose = e.Pose,
-            Ori = e.Ori,
-            SizeDims = e.SizeDims,
-            RawLine = rawLine
-          });
-          break;
-      }
+      return new RawStructureDesignData(
+          angDesignList: ParsedEntities.OfType<AngDesignData>().ToList(),
+          beamDesignList: ParsedEntities.OfType<BeamDesignData>().ToList(),
+          bscDesignList: ParsedEntities.OfType<BscDesignData>().ToList(),
+          bulbDesignList: ParsedEntities.OfType<BulbDesignData>().ToList(),
+          rbarDesignList: ParsedEntities.OfType<RbarDesignData>().ToList(),
+          unknownDesignList: ParsedEntities.OfType<UnknownDesignData>().ToList()
+      );
     }
 
     // -----------------------
