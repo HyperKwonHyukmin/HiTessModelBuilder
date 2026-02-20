@@ -3,7 +3,7 @@ using System.Linq;
 using System.Text;
 using MooringFitting2026.Model.Entities;
 
-namespace MooringFitting2026.Debug
+namespace HiTessModelBuilder.Debug
 {
   public class FeModelDebugger
   {
