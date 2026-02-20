@@ -3,23 +3,18 @@ using HiTessModelBuilder.Pipeline.ElementInspector;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace HiTessModelBuilder.Pipeline.Preprocess
 {
   public static class StructuralSanityInspector
   {
-    public static void Inspect(FeModelContext context, bool pipelineDebug)
+    // ★ 최적화 1: void 대신 List<int>를 반환하여 계산된 자유단 노드를 밖으로 전달
+    public static List<int> Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
-      List<int> freeEndNodes = new List<int>();
-
-      freeEndNodes = InspectTopology(context, pipelineDebug);
+      return InspectTopology(context, pipelineDebug, verboseDebug);
     }
 
-
-    private static List<int> InspectTopology(
-        FeModelContext context, bool pipelineDebug)
+    private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
       // 01. Element 그룹 연결성 확인
       var connectedGroups = ElementConnectivityInspector.FindConnectedElementGroups(context.Elements);
@@ -37,47 +32,47 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       // A. 자유단 노드 (Degree = 1) -> SPC 생성 대상
       var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
 
+      int printLimit = verboseDebug ? int.MaxValue : 30;
+
       if (pipelineDebug)
       {
-        PrintNodeStat("02_A - 자유단 노드 (연결 1개)", endNodes, int.MaxValue);
+        PrintNodeStat("02_A - 자유단 노드 (연결 1개)", endNodes, printLimit);
       }
 
       // B. 미사용 노드 (Degree = 0)
-      var isolatedNodes = context.Nodes.GetAllNodes()
-          .Select(kv => kv.Key)
+      // ★ 최적화 2: GetAllNodes() 대신 가벼운 Keys 컬렉션을 사용하여 메모리 절약
+      var isolatedNodes = context.Nodes.Keys
           .Where(id => !nodeDegree.TryGetValue(id, out var deg) || deg == 0)
           .ToList();
 
       if (pipelineDebug)
       {
         if (isolatedNodes.Count > 0)
-        {
-          PrintNodeStat("02_B - 고립된 노드 (연결 0개)", isolatedNodes, int.MaxValue);
-        }
+          PrintNodeStat("02_B - 고립된 노드 (연결 0개)", isolatedNodes, printLimit);
         else
-        {
-          Console.WriteLine("02_B - 고립된 노드 없음");
-        }
+          Console.WriteLine("02_B - 고립된 노드 (연결 0개) 없음");
       }
-      int removedOrphans = RemoveOrphanNodesByElementConnection(context, isolatedNodes);
-      if (pipelineDebug)
+
+      // C. 고립 노드 삭제
+      int removedOrphans = RemoveOrphanNodes(context, isolatedNodes);
+      if (pipelineDebug && removedOrphans > 0)
       {
-        if (removedOrphans > 0)
-          Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 삭제했습니다.");
+        Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 즉시 삭제했습니다.");
       }
+
       return endNodes;
     }
 
-    private static int RemoveOrphanNodesByElementConnection(FeModelContext context, List<int> isolatedNodes)
+    // ★ 최적화 3: 불필요한 Element 순회(Any, Contains)를 완전히 제거하여 O(1) 삭제 달성
+    private static int RemoveOrphanNodes(FeModelContext context, List<int> isolatedNodes)
     {
       if (isolatedNodes == null || isolatedNodes.Count == 0) return 0;
+
       int removed = 0;
       foreach (var nid in isolatedNodes)
-      { 
-        if (!context.Nodes.Contains(nid)) continue;
-
-        bool referenced = context.Elements.Any(kv => kv.Value.NodeIDs.Contains(nid));
-        if (!referenced)
+      {
+        // 이미 Degree 분석에서 연결이 없다는 것이 증명되었으므로 묻지도 따지지도 않고 바로 삭제합니다.
+        if (context.Nodes.Contains(nid))
         {
           context.Nodes.Remove(nid);
           removed++;
@@ -86,6 +81,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       return removed;
     }
 
+    // --- 아래 헬퍼 메서드들은 기존과 동일 ---
     private static void PrintNodeStat(string title, List<int> nodes, int limit)
     {
       if (nodes.Count == 0) return;
@@ -117,6 +113,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       Console.WriteLine($"[실패] {msg}");
       Console.ResetColor();
     }
+
     private static string SummarizeIds(List<int> ids, int limit)
     {
       if (ids == null || ids.Count == 0) return "";
