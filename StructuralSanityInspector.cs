@@ -28,7 +28,10 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
       // 5. 데이터 무결성 검사 
       InspectIntegrity(context, pipelineDebug, verboseDebug);
-      
+
+      // 6. 고립 요소 검사 (Isolation)
+      InspectIsolation(context, pipelineDebug, verboseDebug);
+
 
 
     }
@@ -203,34 +206,58 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
     private static void InspectIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
+      // 1. 불량 요소 탐색 (검사는 무조건 수행)
       var invalidElements = ElementIntegrityInspector.FindElementsWithInvalidReference(context);
 
-      if (invalidElements.Count == 0)
-      {
-        LogPass("06 - 데이터 무결성 : 모든 요소가 유효한 노드와 속성을 참조하고 있습니다.");
-        return;
-      }
-
-      // 로그 메시지 (복구 알림)
-      Console.ForegroundColor = ConsoleColor.Magenta;
-      Console.WriteLine($"[복구] 06 - 데이터 무결성 : 존재하지 않는 노드/속성 참조 요소 {invalidElements.Count}개를 삭제합니다.");
-      Console.ResetColor();
-     
-
-      // 요소 삭제 (자동 복구)
+      // 2. 요소 자동 삭제 (복구도 무조건 수행)
       int deletedCount = 0;
-      foreach (var eid in invalidElements)
+      if (invalidElements.Count > 0)
       {
-        // ★ [수정] Elements.Remove는 void이므로 if문 조건으로 쓸 수 없음
-        // 존재 여부를 확인하고 삭제
-        if (context.Elements.Contains(eid))
+        foreach (var eid in invalidElements)
         {
-          context.Elements.Remove(eid);
-          deletedCount++;
+          if (context.Elements.Contains(eid))
+          {
+            context.Elements.Remove(eid);
+            deletedCount++;
+          }
         }
       }
 
-      Console.WriteLine($"      -> [완료] 총 {deletedCount}개의 불량 요소를 모델에서 제거했습니다.");
+      // ★ 3. 출력은 pipelineDebug가 true일 때만 수행합니다.
+      if (pipelineDebug)
+      {
+        if (invalidElements.Count == 0)
+        {
+          LogPass("06 - 데이터 무결성 : 모든 요소가 유효한 노드와 속성을 참조하고 있습니다.");
+        }
+        else
+        {
+          Console.ForegroundColor = ConsoleColor.Magenta;
+          Console.WriteLine($"[복구] 06 - 데이터 무결성 : 존재하지 않는 노드/속성을 참조하는 불량 요소 {deletedCount}개를 모델에서 자동 삭제했습니다.");
+          Console.ResetColor();
+
+          // ★ verboseDebug에 따라 출력 개수 조절
+          int printLimit = verboseDebug ? int.MaxValue : 5;
+          Console.WriteLine($"      삭제된 IDs: {SummarizeIds(invalidElements, printLimit)}");
+        }
+      }
+    }
+
+    private static void InspectIsolation(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    {
+      var isolation = ElementIsolationInspector.FindIsolatedElements(context);
+
+      if (isolation.Count == 0)
+      {
+        LogPass("07 - 요소 고립 : 고립된(연결되지 않은) 요소가 없습니다.");
+        return;
+      }
+
+      LogWarning($"07 - 요소 고립 : 다른 요소와 연결되지 않은 고립 요소가 {isolation.Count}개 있습니다.");
+      if (opt.DebugMode)
+      {
+        Console.WriteLine($"     IDs: {SummarizeIds(isolation, opt)}");
+      }
     }
 
     private static int RemoveOrphanNodes(FeModelContext context, List<int> isolatedNodes)
