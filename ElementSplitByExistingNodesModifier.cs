@@ -13,21 +13,23 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
   /// </summary>
   public static class ElementSplitByExistingNodesModifier
   {
+    // =================================================================
+    // 내부 알고리즘 설정값 (캡슐화)
+    // =================================================================
+    private const double ParamTol = 1e-9;
+    private const double MergeTolAlong = 0.05;
+    private const double MinSegLenTol = 1e-6;
+    private const double GridCellSize = 5.0;
+    private const bool SnapNodeToLine = false;
+    private const bool ReuseOriginalIdForFirst = true;
+
     /// <summary>
-    /// 실행 옵션 정의
+    /// 사용자 실행 옵션 정의 (파이프라인 연동용)
     /// </summary>
     public sealed record Options(
         double DistanceTol = 0.5,       // 점-선 거리 허용치 (이 거리 이내면 선 위의 점으로 간주)
-        double ParamTol = 1e-9,         // 선분 양 끝점 제외를 위한 파라미터 여유값
-        double MergeTolAlong = 0.05,    // 선분 방향으로 매우 가까운 노드들을 하나로 병합할 허용치
-        double MinSegLenTol = 1e-6,     // 분할 후 생성되는 세그먼트의 최소 길이 (너무 짧으면 생성 안 함)
-        double GridCellSize = 5.0,      // 검색 속도 향상을 위한 SpatialHash 셀 크기
-        bool SnapNodeToLine = false,    // true일 경우, 노드 좌표를 직선상으로 강제 이동(Snap) 시킴
-        bool ReuseOriginalIdForFirst = true, // 첫 번째 분할 조각에 기존 Element ID를 재사용할지 여부
-        bool DryRun = false,            // true일 경우 실제 분할은 하지 않고 로그만 출력
-        bool Debug = false,             // 상세 디버그 로그 출력 여부
-        int MaxPrintElements = 50,      // 디버그 시 출력할 최대 요소 개수
-        int MaxPrintNodesPerElement = 10 // 요소당 출력할 내부 노드 개수
+        bool PipelineDebug = false,     // 파이프라인 단계별 요약 정보 출력 여부
+        bool VerboseDebug = false       // 개별 요소의 분할 과정 상세 출력 여부
     );
 
     public sealed record Result(
@@ -45,29 +47,37 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     /// <summary>
     /// 수정자 실행 메인 메서드입니다.
     /// </summary>
-    public static Result Run(FeModelContext context, Options? opt = null, Action<string>? log = null)
+    /// <summary>
+    /// 요소(Element) 경로 위의 노드들을 탐색하여 요소를 분할(Split)합니다.
+    /// </summary>
+    public static Result Run(FeModelContext context, Options? opt = null)
     {
       opt ??= new Options();
-      log ??= Console.WriteLine;
-
       var nodes = context.Nodes;
 
       // 1) Spatial Hash 구축 (노드 검색 가속화)
-      //    모든 노드를 그리드에 매핑하여, 요소 주변의 노드를 빠르게 찾습니다.
-      var grid = new SpatialHash(nodes, opt.GridCellSize);
+      var grid = new SpatialHash(nodes, GridCellSize);
 
-      // 2) 분할 후보 탐색 (Find Candidates)
-      var (scanned, candidates) = FindSplitCandidates(context, grid, opt, log);
+      // 2) 분할 후보 탐색
+      var (scanned, candidates) = FindSplitCandidates(context, grid, opt);
 
-      // DryRun 모드면 여기서 종료
-      if (opt.DryRun)
+      // 3) 분할 적용
+      var (splitCount, removed, added) = ApplySplit(context, candidates, opt);
+
+      // 4) PipelineDebug 출력 (Sanity Inspector 스타일)
+      if (opt.PipelineDebug)
       {
-        PrintCandidatesSummary(candidates, opt, log);
-        return new Result(scanned, candidates.Count, 0, 0, 0);
+        if (splitCount > 0)
+        {
+          Console.ForegroundColor = ConsoleColor.Cyan;
+          Console.WriteLine($"[변경] 요소 자동 분할 : 대상 요소 {candidates.Count}개 중 {splitCount}개 분할됨 (기존 요소 {removed}개 삭제, 신규 요소 {added}개 생성)");
+          Console.ResetColor();
+        }
+        else
+        {
+          Console.WriteLine($"[통과] 요소 자동 분할 : 분할이 필요한 요소가 발견되지 않았습니다.");
+        }
       }
-
-      // 3) 분할 적용 (Apply Split)
-      var (splitCount, removed, added) = ApplySplit(context, candidates, opt, log);
 
       return new Result(scanned, candidates.Count, splitCount, removed, added);
     }
