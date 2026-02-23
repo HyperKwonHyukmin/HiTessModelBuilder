@@ -22,11 +22,16 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       // 3. Equivalence 검사 (노드 중복)
       double EquivalenceTolerance = 0.1;
       InspectEquivalence(context, EquivalenceTolerance, pipelineDebug, verboseDebug);
+
+      // 4. Duplicate 검사 (요소 중복)
+      InspectDuplicate(context, pipelineDebug, verboseDebug);
       
+
     }
 
     private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
+      // 01. Element 그룹 연결성 확인
       var connectedGroups = ElementConnectivityInspector.FindConnectedElementGroups(context.Elements);
       if (pipelineDebug)
       {
@@ -37,28 +42,43 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       }
 
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
-      var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
-
-      // ★ 상세 출력 제어: verbose가 켜져 있으면 전부 출력, 아니면 5개만 깔끔하게 출력
       int printLimit = verboseDebug ? int.MaxValue : 5;
 
+      // A. 자유단 노드 (Degree = 1) -> SPC 생성 대상
+      var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
       if (pipelineDebug)
       {
-        PrintNodeStat("02_A - 자유단 노드 (연결 1개)", endNodes, printLimit);
+        if (endNodes.Count == 0)
+        {
+          LogPass("02_A - 자유단 노드 (연결 1개) : 발견되지 않았습니다.");
+        }
+        else
+        {
+          // 자유단 노드는 SPC 대상이므로 상황을 인지할 수 있게 [주의] 혹은 [안내] 격으로 노출합니다.
+          LogWarning($"02_A - 자유단 노드 (연결 1개) : {endNodes.Count}개 발견 (SPC 자동 생성 대상)");
+          Console.WriteLine($"      IDs: {SummarizeIds(endNodes, printLimit)}");
+        }
       }
 
+      // B. 미사용 노드 (Degree = 0)
       var isolatedNodes = context.Nodes.Keys
           .Where(id => !nodeDegree.TryGetValue(id, out var deg) || deg == 0)
           .ToList();
 
       if (pipelineDebug)
       {
-        if (isolatedNodes.Count > 0)
-          PrintNodeStat("02_B - 고립된 노드 (연결 0개)", isolatedNodes, printLimit);
+        if (isolatedNodes.Count == 0)
+        {
+          LogPass("02_B - 고립된 노드 (연결 0개) : 없습니다. (모든 노드가 정상 연결됨)");
+        }
         else
-          Console.WriteLine("02_B - 고립된 노드 (연결 0개) 없음");
+        {
+          LogWarning($"02_B - 고립된 노드 (연결 0개) : {isolatedNodes.Count}개 발견 (자동 삭제 예정)");
+          Console.WriteLine($"      IDs: {SummarizeIds(isolatedNodes, printLimit)}");
+        }
       }
 
+      // C. 고립 노드 삭제
       int removedOrphans = RemoveOrphanNodes(context, isolatedNodes);
       if (pipelineDebug && removedOrphans > 0)
       {
@@ -103,23 +123,28 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       }
     }
 
-    private static void InspectEquivalence(FeModelContext context, double EquivalenceTolerance, 
-      bool pipelineDebug, bool verboseDebug)
+    private static void InspectEquivalence(FeModelContext context, double EquivalenceTolerance,
+          bool pipelineDebug, bool verboseDebug)
     {
+      // 검사는 무조건 백그라운드에서 수행합니다 (향후 자동 병합 기능 등을 위해)
       var coincidentGroups = NodeEquivalenceInspector.InspectEquivalenceNodes(context, EquivalenceTolerance);
 
-      if (coincidentGroups.Count == 0)
-      {
-        LogPass($"04 - 노드 중복 : 허용오차({EquivalenceTolerance}) 내에 겹치는 노드가 없습니다.");
-        return;
-      }
-
-      LogWarning($"04 - 노드 중복 : 위치가 겹치는 노드 그룹이 {coincidentGroups.Count}개 발견되었습니다.");
-
+      // ★ 출력은 pipelineDebug가 켜져 있을 때만 수행합니다.
       if (pipelineDebug)
       {
+        if (coincidentGroups.Count == 0)
+        {
+          LogPass($"04 - 노드 중복 : 허용오차({EquivalenceTolerance}) 내에 겹치는 노드가 없습니다.");
+          return;
+        }
+
+        LogWarning($"04 - 노드 중복 : 위치가 겹치는 노드 그룹이 {coincidentGroups.Count}개 발견되었습니다.");
+
+        // ★ verboseDebug에 따라 출력 개수 조절 (상세=전부, 아니면 5개)
+        int printLimit = verboseDebug ? int.MaxValue : 5;
         int shown = 0;
-        foreach (var group in coincidentGroups.Take(10))
+
+        foreach (var group in coincidentGroups.Take(printLimit))
         {
           shown++;
           int repID = group.FirstOrDefault();
@@ -128,13 +153,41 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
           if (context.Nodes.Contains(repID))
           {
             var node = context.Nodes[repID];
-            Console.WriteLine($"     그룹 {shown}: IDs [{ids}] 위치 ({node.X:F1}, {node.Y:F1}, {node.Z:F1})");
+            Console.WriteLine($"      그룹 {shown}: IDs [{ids}] 위치 ({node.X:F1}, {node.Y:F1}, {node.Z:F1})");
           }
         }
-        if (coincidentGroups.Count > 10) Console.WriteLine("     ... (생략됨)");
+
+        if (coincidentGroups.Count > printLimit)
+        {
+          Console.WriteLine($"      ... (총 {coincidentGroups.Count}개 그룹 중 {printLimit}개만 출력됨. 상세 출력은 verboseDebug 켜기)");
+        }
       }
     }
 
+    private static void InspectDuplicate(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    {
+      var duplicateGroups = ElementDuplicateInspector.FindDuplicateGroups(context);
+
+      if (duplicateGroups.Count == 0)
+      {
+        LogPass("05 - 요소 중복 : 완전히 겹치는 중복 요소가 없습니다.");
+        return;
+      }
+
+      LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다!");
+
+      if (opt.DebugMode)
+      {
+        int limit = opt.PrintAllNodeIds ? int.MaxValue : 20;
+        int count = 0;
+        foreach (var group in duplicateGroups)
+        {
+          if (++count > limit) break;
+          Console.WriteLine($"   세트 #{count}: [{string.Join(", ", group)}]");
+        }
+        if (duplicateGroups.Count > limit) Console.WriteLine("   ...");
+      }
+    }
     private static int RemoveOrphanNodes(FeModelContext context, List<int> isolatedNodes)
     {
       if (isolatedNodes == null || isolatedNodes.Count == 0) return 0;
