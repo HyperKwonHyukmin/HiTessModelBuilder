@@ -1,5 +1,6 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Pipeline.Preprocess;
+using HiTessModelBuilder.Pipeline.ElementModifier;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,14 +34,31 @@ namespace HiTessModelBuilder.Pipeline
       if (this._pipelineDebug) Console.WriteLine("\n[Pipeline Started] Processing FE Model...");
 
       ExportBaseline();
+      RunStagedPipeline();
     }
 
     private void ExportBaseline()
     {
       string stageName = "STAGE_00";
       Console.WriteLine($"================ {stageName} =================");
+      var freeEndNodes = StructuralSanityInspector.Inspect(_context, _pipelineDebug, _verboseDebug);
+      BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
+    }
+
+    private void RunStagedPipeline()
+    {
+      RunStage("STAGE_01", () => ElementSplitByExistingNodesRun(_pipelineDebug, _verboseDebug));
+    }
+
+    private void RunStage(string stageName, Action action, string customExportName = null)
+    {
+      Console.WriteLine($"================ {stageName} =================");
+      action();
       StructuralSanityInspector.Inspect(_context, _pipelineDebug, _verboseDebug);
-      BdfExporter.Export(_context, _csvFolderPath, stageName);
+    }
+    private void ElementSplitByExistingNodesRun(bool pipelineDebug, bool verboseDebug)
+    {
+      var opt = new ElementSplitByExistingNodesModifier.Options(1.0, 1e-9, 0.05, 1e-6, 5.0, false, true, false, pipelineDebug);
+      ElementSplitByExistingNodesModifier.Run(_context, opt, Console.WriteLine);
     }
   }
-}
