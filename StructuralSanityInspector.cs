@@ -25,7 +25,11 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
       // 4. Duplicate 검사 (요소 중복)
       InspectDuplicate(context, pipelineDebug, verboseDebug);
+
+      // 5. 데이터 무결성 검사 
+      InspectIntegrity(context, pipelineDebug, verboseDebug);
       
+
 
     }
 
@@ -166,28 +170,69 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
     private static void InspectDuplicate(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
+      // 검사는 무조건 수행합니다.
       var duplicateGroups = ElementDuplicateInspector.FindDuplicateGroups(context);
 
-      if (duplicateGroups.Count == 0)
+      // ★ 출력은 pipelineDebug가 true일 때만 수행합니다.
+      if (pipelineDebug)
       {
-        LogPass("05 - 요소 중복 : 완전히 겹치는 중복 요소가 없습니다.");
+        if (duplicateGroups.Count == 0)
+        {
+          LogPass("05 - 요소 중복 : 완전히 겹치는 중복 요소가 없습니다.");
+          return;
+        }
+
+        LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다!");
+
+        // ★ verboseDebug에 따라 출력 개수 조절
+        int printLimit = verboseDebug ? int.MaxValue : 5;
+        int count = 0;
+
+        foreach (var group in duplicateGroups.Take(printLimit))
+        {
+          count++;
+          Console.WriteLine($"      세트 #{count}: [Element IDs: {string.Join(", ", group)}]");
+        }
+
+        if (duplicateGroups.Count > printLimit)
+        {
+          Console.WriteLine($"      ... (총 {duplicateGroups.Count}개 세트 중 {printLimit}개만 출력됨. 상세 출력은 verboseDebug 켜기)");
+        }
+      }
+    }
+
+    private static void InspectIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    {
+      var invalidElements = ElementIntegrityInspector.FindElementsWithInvalidReference(context);
+
+      if (invalidElements.Count == 0)
+      {
+        LogPass("06 - 데이터 무결성 : 모든 요소가 유효한 노드와 속성을 참조하고 있습니다.");
         return;
       }
 
-      LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다!");
+      // 로그 메시지 (복구 알림)
+      Console.ForegroundColor = ConsoleColor.Magenta;
+      Console.WriteLine($"[복구] 06 - 데이터 무결성 : 존재하지 않는 노드/속성 참조 요소 {invalidElements.Count}개를 삭제합니다.");
+      Console.ResetColor();
+     
 
-      if (opt.DebugMode)
+      // 요소 삭제 (자동 복구)
+      int deletedCount = 0;
+      foreach (var eid in invalidElements)
       {
-        int limit = opt.PrintAllNodeIds ? int.MaxValue : 20;
-        int count = 0;
-        foreach (var group in duplicateGroups)
+        // ★ [수정] Elements.Remove는 void이므로 if문 조건으로 쓸 수 없음
+        // 존재 여부를 확인하고 삭제
+        if (context.Elements.Contains(eid))
         {
-          if (++count > limit) break;
-          Console.WriteLine($"   세트 #{count}: [{string.Join(", ", group)}]");
+          context.Elements.Remove(eid);
+          deletedCount++;
         }
-        if (duplicateGroups.Count > limit) Console.WriteLine("   ...");
       }
+
+      Console.WriteLine($"      -> [완료] 총 {deletedCount}개의 불량 요소를 모델에서 제거했습니다.");
     }
+
     private static int RemoveOrphanNodes(FeModelContext context, List<int> isolatedNodes)
     {
       if (isolatedNodes == null || isolatedNodes.Count == 0) return 0;
@@ -217,6 +262,13 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
     {
       Console.ForegroundColor = ConsoleColor.Yellow;
       Console.WriteLine($"[주의] {msg}");
+      Console.ResetColor();
+    }
+
+    private static void LogCritical(string msg)
+    {
+      Console.ForegroundColor = ConsoleColor.Red;
+      Console.WriteLine($"[실패] {msg}");
       Console.ResetColor();
     }
 
