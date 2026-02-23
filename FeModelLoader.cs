@@ -3,12 +3,9 @@ using HiTessModelBuilder.Parsers;
 using HiTessModelBuilder.Services.Builders;
 using HiTessModelBuilder.Services.Debugging;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace HiTessModelBuilder.Services.Initialzation
+
+namespace HiTessModelBuilder.Services.Initialization
 {
   public static class FeModelLoader
   {
