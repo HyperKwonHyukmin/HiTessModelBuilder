@@ -1,5 +1,6 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +18,11 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       // 2. 기하학적 형상 검사 (Geometry)
       double shortElementDistanceThreshold = 1.0;
       InspectGeometry(context, shortElementDistanceThreshold, pipelineDebug, verboseDebug);
+
+      // 3. Equivalence 검사 (노드 중복)
+      double EquivalenceTolerance = 0.1;
+      InspectEquivalence(context, EquivalenceTolerance, pipelineDebug, verboseDebug);
+      
     }
 
     private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
@@ -94,6 +100,38 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
             }
           }
         }
+      }
+    }
+
+    private static void InspectEquivalence(FeModelContext context, double EquivalenceTolerance, 
+      bool pipelineDebug, bool verboseDebug)
+    {
+      var coincidentGroups = NodeEquivalenceInspector.InspectEquivalenceNodes(context, EquivalenceTolerance);
+
+      if (coincidentGroups.Count == 0)
+      {
+        LogPass($"04 - 노드 중복 : 허용오차({EquivalenceTolerance}) 내에 겹치는 노드가 없습니다.");
+        return;
+      }
+
+      LogWarning($"04 - 노드 중복 : 위치가 겹치는 노드 그룹이 {coincidentGroups.Count}개 발견되었습니다.");
+
+      if (pipelineDebug)
+      {
+        int shown = 0;
+        foreach (var group in coincidentGroups.Take(10))
+        {
+          shown++;
+          int repID = group.FirstOrDefault();
+          string ids = string.Join(", ", group);
+
+          if (context.Nodes.Contains(repID))
+          {
+            var node = context.Nodes[repID];
+            Console.WriteLine($"     그룹 {shown}: IDs [{ids}] 위치 ({node.X:F1}, {node.Y:F1}, {node.Z:F1})");
+          }
+        }
+        if (coincidentGroups.Count > 10) Console.WriteLine("     ... (생략됨)");
       }
     }
 
