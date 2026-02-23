@@ -245,18 +245,23 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
     private static void InspectIsolation(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
+      // 검사는 백그라운드에서 무조건 수행합니다.
       var isolation = ElementIsolationInspector.FindIsolatedElements(context);
 
-      if (isolation.Count == 0)
+      // 출력은 pipelineDebug가 활성화되었을 때만 수행합니다.
+      if (pipelineDebug)
       {
-        LogPass("07 - 요소 고립 : 고립된(연결되지 않은) 요소가 없습니다.");
-        return;
-      }
+        if (isolation.Count == 0)
+        {
+          LogPass("07 - 요소 고립 : 고립된(연결되지 않은) 요소가 없습니다.");
+          return;
+        }
 
-      LogWarning($"07 - 요소 고립 : 다른 요소와 연결되지 않은 고립 요소가 {isolation.Count}개 있습니다.");
-      if (opt.DebugMode)
-      {
-        Console.WriteLine($"     IDs: {SummarizeIds(isolation, opt)}");
+        LogWarning($"07 - 요소 고립 : 메인 구조물과 연결되지 않은 고립 요소가 {isolation.Count}개 발견되었습니다.");
+
+        // verboseDebug에 따라 출력할 Element ID 개수 조절 (상세=전부, 아니면 기본 5개)
+        int printLimit = verboseDebug ? int.MaxValue : 5;
+        Console.WriteLine($"      고립된 Element IDs: {SummarizeIds(isolation, printLimit)}");
       }
     }
 
@@ -276,13 +281,6 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
     }
 
     // --- 헬퍼 메서드 ---
-    private static void PrintNodeStat(string title, List<int> nodes, int limit)
-    {
-      if (nodes.Count == 0) return;
-      Console.WriteLine($"{title} : {nodes.Count}개 발견");
-      Console.WriteLine($"      IDs: {SummarizeIds(nodes, limit)}");
-    }
-
     private static void LogPass(string msg) => Console.WriteLine($"[통과] {msg}");
 
     private static void LogWarning(string msg)
