@@ -8,10 +8,17 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 {
   public static class StructuralSanityInspector
   {
+
     // ★ 최적화 1: void 대신 List<int>를 반환하여 계산된 자유단 노드를 밖으로 전달
-    public static List<int> Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    public static void Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
-      return InspectTopology(context, pipelineDebug, verboseDebug);
+      // 1. 위상학적 연결성 검사 (Topology)
+      List<int> freeEndNodes = new List<int>();
+      freeEndNodes =  InspectTopology(context, pipelineDebug:false, verboseDebug:false);
+
+      // 2. 기하학적 형상 검사 (Geometry)
+      double ShortElementDistanceThreshold = 0.1;
+      InspectGeometry(context, ShortElementDistanceThreshold:1.0, pipelineDebug:false, verboseDebug:false);
     }
 
     private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
@@ -61,6 +68,26 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       }
 
       return endNodes;
+    }
+
+    private static void InspectGeometry(FeModelContext context, double ShortElementDistanceThreshold,
+      bool pipelineDebug, bool verboseDebug)
+    {
+      var shortElements = ElementDetectShortInspector.Run(context, ShortElementDistanceThreshold);
+
+      if (shortElements.Count == 0)
+      {
+        LogPass("03 - 기하 형상 : 너무 짧은 요소가 없습니다.");
+      }
+      else
+      {
+        LogWarning($"03 - 기하 형상 : 길이가 {ShortElementDistanceThreshold} 미만인 짧은 요소가 {shortElements.Count}개 발견되었습니다.");
+        if (opt.DebugMode)
+        {
+          var elementIds = shortElements.Select(t => t.eleId).ToList();
+          Console.WriteLine($"      IDs: {SummarizeIds(elementIds, opt)}");
+        }
+      }
     }
 
     // ★ 최적화 3: 불필요한 Element 순회(Any, Contains)를 완전히 제거하여 O(1) 삭제 달성
