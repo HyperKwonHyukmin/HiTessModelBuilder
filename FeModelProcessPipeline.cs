@@ -29,36 +29,37 @@ namespace HiTessModelBuilder.Pipeline
 
     }
 
+    /// <summary>
+    /// 등록된 파이프라인의 모든 스테이지를 순차적으로 실행합니다.
+    /// </summary>
     public void Run()
     {
       if (this._pipelineDebug) Console.WriteLine("\n[Pipeline Started] Processing FE Model...");
 
-      ExportBaseline();
-      RunStagedPipeline();
-    }
+      // Stage 00 : 아무런 수정 없이 초기 상태(Baseline) 검사 및 파일 출력
+      RunStage("STAGE_00", () => { /* Baseline은 수정 Action이 없습니다. */ });
 
-    private void ExportBaseline()
-    {
-      string stageName = "STAGE_00";
-      Console.WriteLine($"================ {stageName} =================");
-      var freeEndNodes = StructuralSanityInspector.Inspect(_context, _pipelineDebug, _verboseDebug);
-      BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
-    }
-
-    private void RunStagedPipeline()
-    {
-      //Stage 01 : 요소(Element) 경로 상에 존재하는 노드(Node)를 기준으로 요소를 분할(Split)
+      // Stage 01 : 요소(Element) 경로 상에 존재하는 노드(Node)를 기준으로 요소를 분할(Split)
       RunStage("STAGE_01", () => ElementSplitByExistingNodesRun(_pipelineDebug, _verboseDebug));
 
-      //Stage 02 : 서로 교차하는(X자, T자 등) 요소들을 찾아 교차점에 노드를 생성하고, 해당 노드를 기준으로 요소를 분할
+      // Stage 02 : 서로 교차하는(X자, T자 등) 요소들을 찾아 교차점에 노드를 생성하고 분할
       RunStage("STAGE_02", () => ElementIntersectionSplitRun(_pipelineDebug, _verboseDebug));
     }
 
-    private void RunStage(string stageName, Action action, string customExportName = null)
+    /// <summary>
+    /// 개별 파이프라인 스테이지를 실행하고, 구조 건전성 검사 후 BDF 파일로 내보냅니다.
+    /// </summary>
+    private void RunStage(string stageName, Action action)
     {
-      Console.WriteLine($"================ {stageName} =================");
+      Console.WriteLine($"\n================ {stageName} =================");
+
+      // 1. 해당 스테이지의 수정 작업(Modifier) 실행
       action();
+
+      // 2. 구조 건전성 검사 (Topology, Geometry, Duplicates 등) 수행 및 SPC 대상 반환
       var freeEndNodes = StructuralSanityInspector.Inspect(_context, _pipelineDebug, _verboseDebug);
+
+      // 3. 현재 상태를 BDF로 출력
       BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
     }
 
