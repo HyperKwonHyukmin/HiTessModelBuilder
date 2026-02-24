@@ -54,7 +54,13 @@ namespace HiTessModelBuilder.Pipeline
       //          : (Nastran 등 해석 솔버에서 강성이 무한대가 되어 에러가 나는 것을 방지)
       RunStage("STAGE_03", () => ElementShortCollapseRun(_pipelineDebug, _verboseDebug));
 
-      RunStage("STAGE_04", () => ElementCollinearOverlapGroupRun(_pipelineDebug, _verboseDebug));
+      // Stage 04 : 평행 요소 간 인접 노드 병합 (Equivalence)
+      //          : 방향이 같은(평행한) 두 요소가 겹쳐있을 때, 서로 다른 요소에 속한 끝 노드가
+      //          : 지정된 오차(예: 50mm) 이내에 있다면 이 노드들을 강제로 하나로 합칩니다.
+      RunStage("STAGE_04", () => ElementCollinearNodeMergeRun(_pipelineDebug, _verboseDebug));
+
+      // STAGE_05 : 평행 요소 간 인접 노드 병합
+      RunStage("STAGE_05", () => ElementExtendToIntersectRun(_pipelineDebug, _verboseDebug));
     }
 
     private void RunStage(string stageName, Action action)
@@ -72,8 +78,7 @@ namespace HiTessModelBuilder.Pipeline
     }
 
     private void ElementSplitByExistingNodesRun(bool pipelineDebug, bool verboseDebug)
-    {
-      // 수정된 파이프라인 호출부
+    { 
       var opt = new ElementSplitByExistingNodesModifier.Options(
           DistanceTol: 1.0,
           PipelineDebug: pipelineDebug,
@@ -109,12 +114,33 @@ namespace HiTessModelBuilder.Pipeline
       ElementShortCollapseModifier.Run(_context, opt, Console.WriteLine);
     }
 
-    private void ElementCollinearOverlapGroupRun(bool pipelineDebug, bool verboseDebug)
+
+    private void ElementCollinearNodeMergeRun(bool pipelineDebug, bool verboseDebug)
     {
-      var overlapGroup = ElementCollinearOverlapGroupInspector.FindSegmentationGroups(_context, 3e-2, 20.0);
-      ElementCollinearOverlapAlignSplitModifier.Run(_context, overlapGroup, 0.05, 1e-3, isDebug, Console.WriteLine, false);
+      var opt = new ElementCollinearNodeMergeModifier.Options(
+          DistanceTolerance: 30.0,
+          AngleToleranceDeg: 3.0,
+          PipelineDebug: pipelineDebug,
+          VerboseDebug: verboseDebug
+      );
+      ElementCollinearNodeMergeModifier.Run(_context, opt, Console.WriteLine);
     }
 
+    private void ElementExtendToIntersectRun(bool pipelineDebug, bool verboseDebug)
+    {
+      var opt = new ElementExtendToIntersectModifier.Options(
+          ExtraMargin: 10.0,
+          CoplanarTolerance: 1.0,
+          PipelineDebug: pipelineDebug,
+          VerboseDebug: verboseDebug,
+
+          // [여기에 안 붙는 녀석들의 Element ID를 입력하세요]
+          DiagnosticSourceEid: 374,  // 광선을 쏘는 녀석 (허공에 뜬 부재 ID)
+          DiagnosticTargetEid: 373   // 맞아야 하는 녀석 (몸통 부재 ID)
+      );
+
+      ElementExtendToIntersectModifier.Run(_context, opt, Console.WriteLine);
+    }
 
   }
 }
