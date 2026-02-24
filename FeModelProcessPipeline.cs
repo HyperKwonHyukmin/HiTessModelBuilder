@@ -43,12 +43,10 @@ namespace HiTessModelBuilder.Pipeline
       RunStage("STAGE_01", () => ElementSplitByExistingNodesRun(_pipelineDebug, _verboseDebug));
 
       // Stage 02 : 서로 교차하는(X자, T자 등) 요소들을 찾아 교차점에 노드를 생성하고 분할
+      //          : 길이가 매우 짧으면서 한쪽 끝이 허공에 떠 있는 불필요한 꼬투리 요소 삭제
       RunStage("STAGE_02", () => ElementIntersectionSplitRun(_pipelineDebug, _verboseDebug));
     }
 
-    /// <summary>
-    /// 개별 파이프라인 스테이지를 실행하고, 구조 건전성 검사 후 BDF 파일로 내보냅니다.
-    /// </summary>
     private void RunStage(string stageName, Action action)
     {
       Console.WriteLine($"\n================ {stageName} =================");
@@ -76,12 +74,19 @@ namespace HiTessModelBuilder.Pipeline
 
     private void ElementIntersectionSplitRun(bool pipelineDebug, bool verboseDebug)
     {
-      var opt = new ElementIntersectionSplitModifier.Options(
+      var opt1 = new ElementIntersectionSplitModifier.Options(
           DistTol: 1.0,
           PipelineDebug: pipelineDebug,
           VerboseDebug: verboseDebug
       );
-      ElementIntersectionSplitModifier.Run(_context, opt, Console.WriteLine);
+      ElementIntersectionSplitModifier.Run(_context, opt1, Console.WriteLine);
+
+      var opt2 = new ElementDanglingShortRemoveModifier.Options(
+          LengthThreshold: 50.0,
+          PipelineDebug: pipelineDebug,
+          VerboseDebug: verboseDebug
+      );
+      ElementDanglingShortRemoveModifier.Run(_context, opt2, Console.WriteLine);
     }
   }
 }
