@@ -62,9 +62,6 @@ namespace HiTessModelBuilder.Pipeline
       BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
     }
 
-    /// <summary>
-    /// 요소(Element) 경로 상에 존재하는 노드(Node)를 기준으로 요소를 분할(Split)하는 단계를 실행합니다.
-    /// </summary>
     private void ElementSplitByExistingNodesRun(bool pipelineDebug, bool verboseDebug)
     {
       // 수정된 파이프라인 호출부
@@ -78,8 +75,12 @@ namespace HiTessModelBuilder.Pipeline
 
     private void ElementIntersectionSplitRun(bool pipelineDebug, bool verboseDebug)
     {
-      var opt = new ElementIntersectionSplitModifier.Options(1.0, 1e-9, 200.0, 1e-6, 0.05, true, true, false, isDebug);
+      var opt = new ElementIntersectionSplitModifier.Options(
+          DistTol: 1.0,
+          PipelineDebug: pipelineDebug,
+          VerboseDebug: verboseDebug
+      );
       ElementIntersectionSplitModifier.Run(_context, opt, Console.WriteLine);
-          }
+    }
   }
 }
