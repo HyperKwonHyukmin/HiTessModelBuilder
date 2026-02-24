@@ -13,17 +13,25 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
   /// </summary>
   public static class ElementIntersectionSplitModifier
   {
+    // =================================================================
+    // 내부 알고리즘 설정값 (캡슐화)
+    // =================================================================
+    private const double ParamTol = 1e-9;
+    private const double GridCellSize = 200.0;
+    private const double MinSegLenTol = 1e-6;
+    private const double MergeTolAlong = 0.05;
+    private const bool ReuseOriginalIdForFirst = true;
+    private const bool CreateNodeUsingAddOrGet = true;
+
+    /// <summary>
+    /// 교차 요소 분할 파이프라인 실행 옵션입니다.
+    /// </summary>
     public sealed record Options(
-        double DistTol = 1.0,                 // 두 선분 사이의 최단 거리가 이 값 이내면 교차로 간주
-        double ParamTol = 1e-9,               // 교차점 파라미터(0~1) 경계 오차 허용값
-        double GridCellSize = 200.0,          // 검색 가속화를 위한 그리드 셀 크기
-        double MinSegLenTol = 1e-6,           // 분할 후 생성될 세그먼트의 최소 길이 (너무 짧으면 무시)
-        double MergeTolAlong = 0.05,          // 한 요소 위에서 교차점이 너무 가까우면 하나로 병합
-        bool ReuseOriginalIdForFirst = true,  // 분할된 첫 번째 조각에 원본 ID 유지 여부
-        bool CreateNodeUsingAddOrGet = true,  // 노드 생성 시 중복 좌표 체크(AddOrGet) 사용 여부
-        bool DryRun = false,                  // true일 경우 실제 분할 없이 로그만 출력
-        bool Debug = false,                   // 상세 디버그 로그 출력
-        int MaxPrint = 50                     // 로그 출력 최대 개수 제한
+        double DistTol = 1.0,           // 두 선분 사이의 최단 거리가 이 값 이내면 교차로 간주
+        bool PipelineDebug = false,     // 파이프라인 단계별 요약 정보 출력 여부
+        bool VerboseDebug = false,      // 개별 요소의 분할 과정 상세 출력 여부
+        bool DryRun = false,            // true일 경우 실제 분할 없이 로그만 출력
+        int MaxPrint = 50               // 로그 출력 최대 개수 제한
     );
 
     public sealed record Result(
@@ -49,7 +57,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       var elements = context.Elements;
 
       // 1) Spatial Hash 그리드 생성 (교차 후보 고속 탐색용)
-      var grid = new ElementSpatialHash(elements, nodes, opt.GridCellSize, opt.DistTol);
+      var grid = new ElementSpatialHash(elements, nodes, GridCellSize, opt.DistTol);
 
       int scanned = 0;
       int pairTested = 0;
@@ -99,7 +107,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             continue;
 
           // 세그먼트 간 교차 검사
-          if (TrySegmentSegmentIntersection(A0, A1, B0, B1, opt.DistTol, opt.ParamTol,
+          if (TrySegmentSegmentIntersection(A0, A1, B0, B1, opt.DistTol, ParamTol,
                 out var s, out var t, out var P, out var Q, out var dist))
           {
             intersections++;
@@ -115,7 +123,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             else
             {
               // 교차점에 노드 생성 (또는 기존 노드 재사용)
-              nid = opt.CreateNodeUsingAddOrGet
+              nid = CreateNodeUsingAddOrGet
                   ? nodes.AddOrGet(X.X, X.Y, X.Z)
                   : AddNewNodeById(nodes, X.X, X.Y, X.Z);
 
@@ -127,7 +135,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             AddSplitPoint(splitMap, eid, nid, s);
             AddSplitPoint(splitMap, otherId, nid, t);
 
-            if (opt.Debug && intersections <= opt.MaxPrint)
+            if (opt.VerboseDebug && intersections <= opt.MaxPrint)
               log($"[교차 발견] E{eid} & E{otherId} -> 교차점 N{nid} (s={s:F3}, t={t:F3}, 거리={dist:F4})");
           }
         }
@@ -143,6 +151,20 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         splitCount = r.splitCount;
         removed = r.removed;
         added = r.added;
+      }
+
+      if (opt.PipelineDebug)
+      {
+        if (splitCount > 0)
+        {
+          Console.ForegroundColor = ConsoleColor.Cyan;
+          Console.WriteLine($"[변경] 교차 요소 분할 : 대상 요소 {needSplit}개 중 {splitCount}개 분할됨 (기존 요소 {removed}개 삭제, 신규 요소 {added}개 생성, 신규 노드 {nodesCreated}개 생성)");
+          Console.ResetColor();
+        }
+        else
+        {
+          Console.WriteLine($"[통과] 교차 요소 분할 : 교차 분할이 필요한 요소가 발견되지 않았습니다.");
+        }
       }
 
       return new Result(
@@ -203,7 +225,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             .ToList();
 
         // 같은 위치(u)에 여러 교차점이 찍힌 경우 하나로 병합 (중복 요소들이 겹쳐있을 때 중요)
-        hits = MergeCloseByU(hits, opt.MergeTolAlong, A, B);
+        hits = MergeCloseByU(hits, MergeTolAlong, A, B);
 
         // 체인 구성: [Start] -> [Split1] -> ... -> [End]
         var chain = new List<int> { n0 };
@@ -231,7 +253,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           // 너무 짧은 세그먼트는 생성하지 않음
           double len = Point3dUtils.Norm(Point3dUtils.Sub(p2, p1));
-          if (len < opt.MinSegLenTol) continue;
+          if (len < MinSegLenTol) continue;
 
           segs.Add((a, b));
         }
@@ -250,7 +272,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
         Dictionary<string, string> CopyExtra() => new Dictionary<string, string>(extraBase);
 
-        if (opt.ReuseOriginalIdForFirst)
+        if (ReuseOriginalIdForFirst)
         {
           // 기존 ID 덮어쓰기
           elements.Remove(eid);
@@ -260,10 +282,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, CopyExtra());
             added++;
-            if (opt.Debug)
+            if (opt.VerboseDebug)
               log($"   -> [추가 생성] E{newId} (노드: {segs[i].n1}-{segs[i].n2})");
           }
-          if (opt.Debug)
+          if (opt.VerboseDebug)
             log($"[분할 적용] E{eid} 유지 및 분할됨 (총 {segs.Count} 조각).");
         }
         else
@@ -276,10 +298,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, CopyExtra());
             added++;
-            if (opt.Debug)
+            if (opt.VerboseDebug)
               log($"   -> [신규 생성] E{newId} (노드: {segs[i].n1}-{segs[i].n2})");
           }
-          if (opt.Debug)
+          if (opt.VerboseDebug)
             log($"[분할 적용] 원본 E{eid} 삭제 후 {segs.Count} 조각으로 재생성.");
         }
 
@@ -481,116 +503,5 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       return newId;
     }
 
-    // --------------------------------------------------------------------------------
-    // Inner Class: Spatial Hash for Segments
-    // --------------------------------------------------------------------------------
-    public sealed class ElementSpatialHash
-    {
-      private readonly double _cell;
-      private readonly double _inflate;
-      private readonly Dictionary<(int, int, int), List<int>> _map = new();
-      private readonly Dictionary<int, BoundingBox> _bbox = new();
-
-      public ElementSpatialHash(Elements elements, Nodes nodes, double cellSize, double inflate)
-      {
-        _cell = Math.Max(cellSize, 1e-9);
-        _inflate = Math.Max(inflate, 0);
-
-        var ids = elements.Keys.ToList();
-        foreach (var eid in ids)
-        {
-          if (!elements.Contains(eid)) continue;
-
-          if (!TryGetSegment(nodes, elements, eid, out var a, out var b))
-            continue;
-
-          var bb = BoundingBox.FromSegment(a, b, _inflate);
-          _bbox[eid] = bb;
-
-          foreach (var key in CoveredCells(bb))
-          {
-            if (!_map.TryGetValue(key, out var list))
-            {
-              list = new List<int>();
-              _map[key] = list;
-            }
-            list.Add(eid);
-          }
-        }
-      }
-
-      public IEnumerable<int> QueryCandidates(int eid)
-      {
-        if (!_bbox.TryGetValue(eid, out var bb))
-          return Enumerable.Empty<int>();
-
-        var set = new HashSet<int>();
-        foreach (var key in CoveredCells(bb))
-        {
-          if (_map.TryGetValue(key, out var list))
-          {
-            for (int i = 0; i < list.Count; i++)
-              set.Add(list[i]);
-          }
-        }
-        return set;
-      }
-
-      private IEnumerable<(int, int, int)> CoveredCells(BoundingBox bb)
-      {
-        var (ix0, iy0, iz0) = Key(bb.Min);
-        var (ix1, iy1, iz1) = Key(bb.Max);
-
-        int x0 = Math.Min(ix0, ix1), x1 = Math.Max(ix0, ix1);
-        int y0 = Math.Min(iy0, iy1), y1 = Math.Max(iy0, iy1);
-        int z0 = Math.Min(iz0, iz1), z1 = Math.Max(iz0, iz1);
-
-        for (int ix = x0; ix <= x1; ix++)
-          for (int iy = y0; iy <= y1; iy++)
-            for (int iz = z0; iz <= z1; iz++)
-              yield return (ix, iy, iz);
-      }
-
-      private (int, int, int) Key(Point3D p)
-      {
-        return ((int)Math.Floor(p.X / _cell), (int)Math.Floor(p.Y / _cell), (int)Math.Floor(p.Z / _cell));
-      }
-
-      private bool TryGetSegment(Nodes nodes, Elements elements, int eid, out Point3D a, out Point3D b)
-      {
-        a = default!; b = default!;
-        if (!elements.Contains(eid)) return false;
-        var e = elements[eid];
-        if (e.NodeIDs == null || e.NodeIDs.Count < 2) return false;
-        int n0 = e.NodeIDs.First(); int n1 = e.NodeIDs.Last();
-        if (!nodes.Contains(n0) || !nodes.Contains(n1)) return false;
-        a = nodes[n0]; b = nodes[n1];
-        return true;
-      }
-    }
-
-    private readonly struct BoundingBox
-    {
-      public readonly Point3D Min;
-      public readonly Point3D Max;
-
-      public BoundingBox(Point3D min, Point3D max)
-      {
-        Min = min; Max = max;
-      }
-
-      public static BoundingBox FromSegment(Point3D a, Point3D b, double inflate)
-      {
-        double minX = Math.Min(a.X, b.X) - inflate;
-        double minY = Math.Min(a.Y, b.Y) - inflate;
-        double minZ = Math.Min(a.Z, b.Z) - inflate;
-
-        double maxX = Math.Max(a.X, b.X) + inflate;
-        double maxY = Math.Max(a.Y, b.Y) + inflate;
-        double maxZ = Math.Max(a.Z, b.Z) + inflate;
-
-        return new BoundingBox(new Point3D(minX, minY, minZ), new Point3D(maxX, maxY, maxZ));
-      }
-    }
   }
 }
