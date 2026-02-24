@@ -29,7 +29,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     public sealed record Options(
         double DistanceTol = 0.5,       // 점-선 거리 허용치 (이 거리 이내면 선 위의 점으로 간주)
         bool PipelineDebug = false,     // 파이프라인 단계별 요약 정보 출력 여부
-        bool VerboseDebug = false       // 개별 요소의 분할 과정 상세 출력 여부
+        bool VerboseDebug = false,      // 개별 요소의 분할 과정 상세 출력 여부
+        int MaxPrintElements = 10,      // 디버그 출력 시 표시할 최대 요소 개수
+        int MaxPrintNodesPerElement = 5 // 요소당 표시할 최대 분할 노드 개수
     );
 
     public sealed record Result(
@@ -50,19 +52,21 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     /// <summary>
     /// 요소(Element) 경로 위의 노드들을 탐색하여 요소를 분할(Split)합니다.
     /// </summary>
-    public static Result Run(FeModelContext context, Options? opt = null)
+    public static Result Run(FeModelContext context, Options? opt = null, Action<string>? log = null)
     {
       opt ??= new Options();
+      log ??= Console.WriteLine; // 외부에서 로거를 안 넘기면 기본 콘솔 출력 사용
+
       var nodes = context.Nodes;
 
       // 1) Spatial Hash 구축 (노드 검색 가속화)
       var grid = new SpatialHash(nodes, GridCellSize);
 
-      // 2) 분할 후보 탐색
-      var (scanned, candidates) = FindSplitCandidates(context, grid, opt);
+      // 2) 분할 후보 탐색 (log 파라미터 전달)
+      var (scanned, candidates) = FindSplitCandidates(context, grid, opt, log);
 
-      // 3) 분할 적용
-      var (splitCount, removed, added) = ApplySplit(context, candidates, opt);
+      // 3) 분할 적용 (log 파라미터 전달)
+      var (splitCount, removed, added) = ApplySplit(context, candidates, opt, log);
 
       // 4) PipelineDebug 출력 (Sanity Inspector 스타일)
       if (opt.PipelineDebug)
@@ -137,7 +141,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           double u = projResult.T; // 매개변수 t (0.0 ~ 1.0)
 
           // 1. 범위 체크 (양 끝점 근처 제외)
-          if (u <= 0.0 + opt.ParamTol || u >= 1.0 - opt.ParamTol) continue;
+          if (u <= 0.0 + ParamTol || u >= 1.0 - ParamTol) continue;
 
           // 2. 거리 체크 (직선과의 거리가 허용오차 이내인지)
           if (projResult.Distance > opt.DistanceTol) continue;
@@ -150,10 +154,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
         // 시작점 기준 정렬 및 근접 노드 병합
         hits.Sort((x, y) => x.S.CompareTo(y.S));
-        var merged = MergeCloseHits(hits, opt.MergeTolAlong);
+        var merged = MergeCloseHits(hits, MergeTolAlong);
 
         // [옵션] 노드 스냅: 노드를 정확히 직선 위로 이동
-        if (opt.SnapNodeToLine)
+        if (SnapNodeToLine)
         {
           foreach (var h in merged)
           {
@@ -226,7 +230,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           var p2 = nodes.GetNodeCoordinates(n2);
 
           // 너무 짧은 요소 생성 방지
-          if (DistanceUtils.GetDistanceBetweenNodes(p1, p2) < opt.MinSegLenTol) continue;
+          if (DistanceUtils.GetDistanceBetweenNodes(p1, p2) < MinSegLenTol) continue;
 
           segs.Add((n1, n2));
         }
@@ -242,7 +246,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         // 속성 복사
         var extra = (e.ExtraData != null) ? e.ExtraData.ToDictionary(k => k.Key, v => v.Value) : null;
 
-        if (opt.ReuseOriginalIdForFirst)
+        if (ReuseOriginalIdForFirst)
         {
           // 첫 번째 조각은 기존 ID 재사용 (덮어쓰기)
           elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, extra);
@@ -252,10 +256,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, extra);
             added++;
-            if (opt.Debug)
+            if (opt.VerboseDebug)
               log($"   -> [추가] E{newId} 생성 (노드: {segs[i].n1}-{segs[i].n2})");
           }
-          if (opt.Debug)
+          if (opt.VerboseDebug)
             log($"[분할 완료] E{eid} 유지 및 분할됨. (총 {segs.Count}개 조각)");
         }
         else
@@ -267,10 +271,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, extra);
             added++;
-            if (opt.Debug)
+            if (opt.VerboseDebug)
               log($"   -> [신규] E{newId} 생성 (노드: {segs[i].n1}-{segs[i].n2})");
           }
-          if (opt.Debug)
+          if (opt.VerboseDebug)
             log($"[분할 완료] 원본 E{eid} 삭제 후 {segs.Count}개로 재생성.");
         }
         splitCount++;
@@ -350,55 +354,5 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         Dist = dist;
       }
     }
-
-    // 내부 전용 SpatialHash (단순화 버전)
-    private sealed class SpatialHash
-    {
-      private readonly double _cell;
-      private readonly Dictionary<(int, int, int), List<int>> _map = new();
-
-      public SpatialHash(Nodes nodes, double cellSize)
-      {
-        _cell = Math.Max(cellSize, 1e-9);
-        foreach (var kv in nodes)
-        {
-          int nid = kv.Key;
-          var p = nodes.GetNodeCoordinates(nid);
-          var key = Key(p);
-          if (!_map.TryGetValue(key, out var list))
-          {
-            list = new List<int>();
-            _map[key] = list;
-          }
-          list.Add(nid);
-        }
-      }
-
-      public HashSet<int> Query(BoundingBox bbox)
-      {
-        var result = new HashSet<int>();
-        var (ix0, iy0, iz0) = Key(bbox.Min);
-        var (ix1, iy1, iz1) = Key(bbox.Max);
-
-        for (int ix = Math.Min(ix0, ix1); ix <= Math.Max(ix0, ix1); ix++)
-          for (int iy = Math.Min(iy0, iy1); iy <= Math.Max(iy0, iy1); iy++)
-            for (int iz = Math.Min(iz0, iz1); iz <= Math.Max(iz0, iz1); iz++)
-            {
-              if (_map.TryGetValue((ix, iy, iz), out var list))
-              {
-                foreach (var nid in list) result.Add(nid);
-              }
-            }
-        return result;
-      }
-
-      private (int, int, int) Key(Point3D p)
-      {
-        int ix = (int)Math.Floor(p.X / _cell);
-        int iy = (int)Math.Floor(p.Y / _cell);
-        int iz = (int)Math.Floor(p.Z / _cell);
-        return (ix, iy, iz);
-      }
-    }
-  }
+  }  
 }
