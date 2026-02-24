@@ -1,8 +1,10 @@
 using HiTessModelBuilder.Model.Entities;
-using HiTessModelBuilder.Pipeline.Preprocess;
 using HiTessModelBuilder.Pipeline.ElementModifier;
+using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.Preprocess;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -45,6 +47,14 @@ namespace HiTessModelBuilder.Pipeline
       // Stage 02 : 서로 교차하는(X자, T자 등) 요소들을 찾아 교차점에 노드를 생성하고 분할
       //          : 길이가 매우 짧으면서 한쪽 끝이 허공에 떠 있는 불필요한 꼬투리 요소 삭제
       RunStage("STAGE_02", () => ElementIntersectionSplitRun(_pipelineDebug, _verboseDebug));
+
+      // Stage 03 : 미세 요소 붕괴(Collapse) 및 메쉬 꿰매기 (Healing)
+      //          : 이전 분할 과정에서 생긴 '지나치게 짧은 불량 요소(1mm 미만 등)'를 찾아 삭제하고,
+      //          : 벌어진 양 끝 노드를 강제로 하나로 합쳐(Merge) 찢어진 메쉬를 꿰매기
+      //          : (Nastran 등 해석 솔버에서 강성이 무한대가 되어 에러가 나는 것을 방지)
+      RunStage("STAGE_03", () => ElementShortCollapseRun(_pipelineDebug, _verboseDebug));
+
+      RunStage("STAGE_04", () => ElementCollinearOverlapGroupRun(_pipelineDebug, _verboseDebug));
     }
 
     private void RunStage(string stageName, Action action)
@@ -88,5 +98,23 @@ namespace HiTessModelBuilder.Pipeline
       );
       ElementDanglingShortRemoveModifier.Run(_context, opt2, Console.WriteLine);
     }
+
+    private void ElementShortCollapseRun(bool pipelineDebug, bool verboseDebug)
+    {
+      var opt = new ElementShortCollapseModifier.Options(
+          Tolerance: 1.0,
+          PipelineDebug: pipelineDebug,
+          VerboseDebug: verboseDebug
+      );
+      ElementShortCollapseModifier.Run(_context, opt, Console.WriteLine);
+    }
+
+    private void ElementCollinearOverlapGroupRun(bool pipelineDebug, bool verboseDebug)
+    {
+      var overlapGroup = ElementCollinearOverlapGroupInspector.FindSegmentationGroups(_context, 3e-2, 20.0);
+      ElementCollinearOverlapAlignSplitModifier.Run(_context, overlapGroup, 0.05, 1e-3, isDebug, Console.WriteLine, false);
+    }
+
+
   }
 }
