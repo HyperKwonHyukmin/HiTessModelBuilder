@@ -119,7 +119,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         if (len <= 1e-9) continue;
 
         // [최적화] 해당 요소를 감싸는 BoundingBox 생성
-        var bbox = CreateBoundingBoxFromSegment(A, B, opt.DistanceTol);
+        var bbox = BoundingBox.FromSegment(A, B, opt.DistanceTol);
 
         // Grid를 통해 주변 노드 후보 검색
         var candidateNodeIds = grid.Query(bbox);
@@ -282,19 +282,6 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     // Helper Methods & Classes
     // =================================================================
 
-    private static BoundingBox CreateBoundingBoxFromSegment(Point3D a, Point3D b, double inflate)
-    {
-      double minX = Math.Min(a.X, b.X) - inflate;
-      double minY = Math.Min(a.Y, b.Y) - inflate;
-      double minZ = Math.Min(a.Z, b.Z) - inflate;
-
-      double maxX = Math.Max(a.X, b.X) + inflate;
-      double maxY = Math.Max(a.Y, b.Y) + inflate;
-      double maxZ = Math.Max(a.Z, b.Z) + inflate;
-
-      return new BoundingBox(new Point3D(minX, minY, minZ), new Point3D(maxX, maxY, maxZ));
-    }
-
     /// <summary>
     /// 선분 방향으로 매우 가까운 노드들은 하나로 병합 (가장 가까운 놈 선택)
     /// </summary>
@@ -338,15 +325,29 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       }
     }
 
+    /// <summary>
+    /// 요소(Element) 경로를 검사할 때, 선분 위 또는 근처에서 발견된 노드의 투영 정보를 담는 구조체입니다.
+    /// </summary>
     private readonly struct NodeHit
     {
+      /// <summary>발견된 노드의 고유 ID</summary>
       public readonly int NodeId;
-      public readonly double U;    // 비율 (0~1)
-      public readonly double S;    // 시작점으로부터 거리
-      public readonly double Dist; // 직선과의 수직 거리
+
+      /// <summary>선분 시작점(0.0)부터 끝점(1.0) 사이의 투영 위치 비율 (u 값)</summary>
+      public readonly double U;
+
+      /// <summary>선분 시작점으로부터의 실제 물리적 거리</summary>
+      public readonly double S;
+
+      /// <summary>직선(요소 경로)과 노드 사이의 최단 수직 거리</summary>
+      public readonly double Dist;
+
       public NodeHit(int nodeId, double u, double s, double dist)
       {
-        NodeId = nodeId; U = u; S = s; Dist = dist;
+        NodeId = nodeId;
+        U = u;
+        S = s;
+        Dist = dist;
       }
     }
 
