@@ -1,8 +1,9 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Services.Initialization;
 using HiTessModelBuilder.Pipeline;
+using HiTessModelBuilder.Services.Logging; // 추가
 using System;
-
+using System.IO;
 
 namespace HiTessModelBuilder
 {
@@ -14,31 +15,35 @@ namespace HiTessModelBuilder
       string PipeCsv = PathManager.Current.Pipe;
       string EquipCsv = PathManager.Current.Equip;
 
-      //string StrucCsv = args[0]; // 첫 번째 드래그 앤 드롭된 파일
-      //string PipeCsv = null; // 첫 번째 드래그 앤 드롭된 파일
-      //string EquipCsv = null; // 첫 번째 드래그 앤 드롭된 파일
-
       string CsvFolderPath = Path.GetDirectoryName(StrucCsv);
       string inputFileName = Path.GetFileName(StrucCsv);
 
-      (RawStructureDesignData? rawStructureDesignData, FeModelContext context) =
-        FeModelLoader.LoadAndBuild(StrucCsv, PipeCsv, EquipCsv, csvDebug: false, FeModelDebug: false);
+      // 1. Logger 초기화 (using 문을 사용하여 블록을 벗어나면 자동으로 파일이 닫히게 함)
+      using (var logger = new PipelineLogger(CsvFolderPath, inputFileName))
+      {
+        try
+        {
+          logger.LogInfo("=== HiTess Model Builder 파이프라인 시작 ===");
 
-      var pipeline = new FeModelProcessPipeline(rawStructureDesignData, context, CsvFolderPath,
-        inputFileName, pipelineDebug: true, verboseDebug: false);
+          (RawStructureDesignData? rawStructureDesignData, FeModelContext context) =
+            FeModelLoader.LoadAndBuild(StrucCsv, PipeCsv, EquipCsv, csvDebug: false, FeModelDebug: false);
 
-      // STAGE_00: 원본 데이터의 물리적 무결성 및 초기 연결 상태(Topology) 점검
-      // STAGE_01: 타 부재의 노드가 요소 경로 내 존재할 경우, 해당 위치를 분할하여 절점 공유
-      // STAGE_02: 교차 부재(X/T) 간 신규 절점 생성 및 불필요한 미세 꼬투리(Dangling) 제거
-      // STAGE_03: 해석 에러 방지를 위해 1mm 미만 미세 요소를 제거하고 인접 노드를 강제 통합(Healing)
-      //           동일 직선상에서 미세하게 어긋난 평행 부재의 인접 노드들을 병합하여 연결성 최적화
-      // STAGE_04: 부재 연장 적용 후 (가능한 경우만), 변화된 위상이 안정화될 때까지 전체 공정을 반복 수행(Convergence Loop)
-      pipeline.RunFocusingOn(4);
+          // 2. 파이프라인 생성 시 Logger 인스턴스 주입 (다음 스텝에서 Pipeline 생성자 수정 필요)
+          var pipeline = new FeModelProcessPipeline(
+              rawStructureDesignData, context, CsvFolderPath, inputFileName,
+              pipelineDebug: true, verboseDebug: false, logger: logger);
 
-      //BdfExporter.Export(context, CsvFolderPath, "Test");
+          pipeline.RunFocusingOn(6);
 
-
+          logger.LogSuccess("=== 파이프라인 전체 프로세스 정상 종료 ===");
+        }
+        catch (Exception ex)
+        {
+          // 프로그램이 뻗어버리는 치명적 오류(Unhandled Exception) 발생 시 상세 내용 파일 기록
+          logger.LogError("파이프라인 실행 중 치명적인 오류가 발생하여 중단되었습니다.", ex);
+          logger.LogInfo("위 에러 스택 트레이스를 개발팀에 전달해 주세요.");
+        }
+      } // <- 이 시점에 로그 파일 쓰기가 완료되고 파일이 잠금 해제됨
     }
-
   }
 }
