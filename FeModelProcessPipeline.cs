@@ -65,19 +65,42 @@ namespace HiTessModelBuilder.Pipeline
             ElementSplitByExistingNodesRun(_pipelineDebug, currentVerbose);
             ElementIntersectionSplitRun(_pipelineDebug, currentVerbose);
             ElementShortCollapseRun(_pipelineDebug, currentVerbose);
+            ElementCollinearNodeMergeRun(_pipelineDebug, currentVerbose);
             break;
+
+          // case4는 대상 element 없을때까지 반복 수행
           case 4:
-            ElementSplitByExistingNodesRun(_pipelineDebug, currentVerbose);
-            ElementIntersectionSplitRun(_pipelineDebug, currentVerbose);
-            ElementShortCollapseRun(_pipelineDebug, currentVerbose);
-            ElementCollinearNodeMergeRun(_pipelineDebug, currentVerbose);
-            break;
-          case 5:
-            ElementExtendToIntersectRun(_pipelineDebug, currentVerbose);
-            ElementSplitByExistingNodesRun(_pipelineDebug, currentVerbose);
-            ElementIntersectionSplitRun(_pipelineDebug, currentVerbose);
-            ElementShortCollapseRun(_pipelineDebug, currentVerbose);
-            ElementCollinearNodeMergeRun(_pipelineDebug, currentVerbose);
+            int iteration = 0;
+            int maxIterations = 10; // 무한 루프 방지용 안전 장치
+            int extendedCount = 0;
+
+            do
+            {
+              iteration++;
+              if (_pipelineDebug || currentVerbose)
+                Console.WriteLine($"\n      [Stage 4 - Iteration {iteration}] 수렴 루프 진행 중...");
+
+              // 1. 연장을 먼저 시도하고, 몇 개나 연장되었는지 받아옵니다.
+              extendedCount = ElementExtendToIntersectRun(_pipelineDebug, currentVerbose);
+
+              // 2. 단 1개라도 연장되었다면 위상이 변했을 것이므로 후속 힐링 작업을 수행합니다.
+              if (extendedCount > 0)
+              {
+                ElementSplitByExistingNodesRun(_pipelineDebug, currentVerbose);
+                ElementIntersectionSplitRun(_pipelineDebug, currentVerbose);
+                ElementShortCollapseRun(_pipelineDebug, currentVerbose);
+                ElementCollinearNodeMergeRun(_pipelineDebug, currentVerbose);
+              }
+
+              // 연장된 부재가 없으면(extendedCount == 0) 루프를 종료합니다.
+            } while (extendedCount > 0 && iteration < maxIterations);
+
+            if (_pipelineDebug && iteration >= maxIterations)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"      [경고] Stage 4 최대 반복 횟수({maxIterations}회) 초과. 수렴하지 못했을 수 있습니다.");
+              Console.ResetColor();
+            }
             break;
         }
 
@@ -85,12 +108,6 @@ namespace HiTessModelBuilder.Pipeline
         var freeEndNodes = StructuralSanityInspector.Inspect(_context, _pipelineDebug, currentVerbose);
         BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
       }
-    }
-
-    // 전체 실행 래퍼 메서드
-    public void Run()
-    {
-      RunFocusingOn(5);
     }
 
     // --- 이하 Modifier 실행 헬퍼 메서드들은 기존 코드와 동일합니다 ---
@@ -127,12 +144,15 @@ namespace HiTessModelBuilder.Pipeline
       ElementCollinearNodeMergeModifier.Run(_context, opt, Console.WriteLine);
     }
 
-    private void ElementExtendToIntersectRun(bool pDebug, bool vDebug)
+    // void -> int 로 변경
+    private int ElementExtendToIntersectRun(bool pDebug, bool vDebug)
     {
+      // (진단 옵션은 필요 없다면 제거)
       var opt = new ElementExtendToIntersectModifier.Options(
-          ExtraMargin: 10.0, CoplanarTolerance: 1.0, PipelineDebug: pDebug, VerboseDebug: vDebug,
-          DiagnosticSourceEid: 374, DiagnosticTargetEid: 373);
-      ElementExtendToIntersectModifier.Run(_context, opt, Console.WriteLine);
+          ExtraMargin: 10.0, CoplanarTolerance: 1.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
+
+      // 실행 결과를 리턴합니다.
+      return ElementExtendToIntersectModifier.Run(_context, opt, Console.WriteLine);
     }
   }
 }
