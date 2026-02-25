@@ -37,81 +37,60 @@ namespace HiTessModelBuilder.Exporter
 
     public void Run()
     {
-      // 01. Nastran 솔버 입력
+      // Nastran 솔버 입력
       ExecutiveControlSection();
 
-      // 02. 출력결과 종류 설정, LoadCase 설정
-      //CaseControlSection();
+      // 출력결과 종류 설정, LoadCase 설정
+      CaseControlSection();
 
-      // 03. Node, Element 데이터 입력
+      // Subcase 입력
+      SubcaseSection();
+
+      // Node, Element 데이터 입력
       NodeElementSection();
 
-      // 04. Property, Material 데이터 입력
+      // Property, Material 데이터 입력
       PropertyMaterialSection();
 
+      // RBE 연결
       RigidElementSection();
 
-      // 05. 경계 조건 데이터 입력
+      // 경계 조건 데이터 입력
       BoundaryConditionSection();
 
-      //LoadBulkSection();
+      // 하중 입력
+      LoadBulkSection();
+
+      // 종료 시그니쳐
+      EndSigniture();
 
     }
 
-    // 01. Nastran 솔버 입력
     public void ExecutiveControlSection()
     {
       BdfLines.Add(BdfFormatFields.FormatField($"SOL {this.sol}"));
       BdfLines.Add(BdfFormatFields.FormatField($"CEND"));
     }
 
-    // 02. 출력결과 종류 설정, LoadCase 설정
-    // [수정된 부분] 02. 출력결과 종류 설정, LoadCase 설정
-    //public void CaseControlSection()
-    //{
-    //  BdfLines.Add("DISPLACEMENT = ALL");
-    //  BdfLines.Add("FORCE = ALL");
-    //  BdfLines.Add("SPCFORCES = ALL");
-    //  BdfLines.Add("STRESS = ALL");
+    public void CaseControlSection()
+    {
+      BdfLines.Add("DISPLACEMENT = ALL");
+      BdfLines.Add("FORCE = ALL");
+      BdfLines.Add("SPCFORCES = ALL");
+      BdfLines.Add("STRESS = ALL");
+    }
 
-      // 1. 실제로 존재하는 Load ID 목록 추출 (중복 제거 및 정렬)
-      //List<int> activeLoadIds;
+    public void SubcaseSection()
+    {
+      BdfLines.Add("SUBCASE       1");
+      BdfLines.Add("LABEL = LC1");
+      BdfLines.Add("SPC = 1");
+      BdfLines.Add("LOAD = 2");
+      BdfLines.Add("ANALYSIS = STATICS");
+      BdfLines.Add("BEGIN BULK");
+      BdfLines.Add("PARAM,POST,-1");
+    }      
 
-      //if (this.ForceLoads != null && this.ForceLoads.Count > 0)
-      //{
-      //  // ForceLoads에 데이터가 있다면 그 ID들을 사용 (예: 2, 3, 4...)
-      //  activeLoadIds = this.ForceLoads
-      //                  .Select(f => f.LoadCaseID)
-      //                  .Distinct()
-      //                  .OrderBy(id => id)
-      //                  .ToList();
-      //}
-      //else
-      //{
-      //  // 하중 데이터가 없는 경우(Shape만 볼 때 등), 생성자에서 받은 개수만큼 1부터 생성
-      //  activeLoadIds = Enumerable.Range(1, this.LoadCase).ToList();
-      //}
-
-      // 2. Subcase 생성
-      // subcaseIndex는 1부터 순차적으로 증가 (SUBCASE 1, SUBCASE 2...)
-      // targetLoadId는 실제 데이터의 ID 사용 (LOAD = 2, LOAD = 3...)
-    //  for (int i = 0; i < activeLoadIds.Count; i++)
-    //  {
-    //    int subcaseId = i + 1;
-    //    int targetLoadId = activeLoadIds[i];
-
-    //    BdfLines.Add($"SUBCASE {subcaseId}");
-    //    BdfLines.Add("    ANALYSIS = STATICS");
-    //    BdfLines.Add($"    LABEL = Load Case {targetLoadId}");
-    //    BdfLines.Add("    SPC = 1");             // SPC는 1번 고정
-    //    BdfLines.Add($"    LOAD = {targetLoadId}"); // 실제 하중 ID (2부터 시작)
-    //  }
-
-    //  BdfLines.Add("BEGIN BULK");
-    //  BdfLines.Add("PARAM,POST,-1");
-    //}
-
-    // 03. Node, Element 데이터 입력
     public void NodeElementSection()
     {
       foreach (var node in this.feModelContext.Nodes)
@@ -367,6 +346,10 @@ namespace HiTessModelBuilder.Exporter
       }
     }
 
+    public void LoadBulkSection()
+    {
+      BdfLines.Add("GRAV           2          9800.0     0.0     0.0    -1.0 ");
+    }
     //public void LoadBulkSection()
     //{
     //  if (this.ForceLoads == null || this.ForceLoads.Count == 0) return;
@@ -394,5 +377,9 @@ namespace HiTessModelBuilder.Exporter
     //  }
     //}
 
+    public void EndSigniture()
+    {
+      BdfLines.Add("ENDDATA");
+    }
   }
 }
