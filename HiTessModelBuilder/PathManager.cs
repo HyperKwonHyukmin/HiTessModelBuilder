@@ -20,7 +20,8 @@ namespace HiTessModelBuilder
     );
 
     private static readonly (string Stru, string? Pipe, string? Equip) Case2 = (
-      @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\KangSangHoon_csv\3515\02\3515-35020-struData-READONLY_20250731.csv",
+      //@"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\KangSangHoon_csv\3515\02\3515-35020-struData-READONLY_20250731.csv",
+      null,
       @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\KangSangHoon_csv\3515\02\3515-35020-pipeData-READONLY_20250731.csv",
       null
     );
@@ -57,7 +58,7 @@ namespace HiTessModelBuilder
     );
 
 
-    public static (string Stru, string? Pipe, string? Equip) Current = Case2;
+    public static (string? Stru, string? Pipe, string? Equip) Current = Case2;
 
     
   }

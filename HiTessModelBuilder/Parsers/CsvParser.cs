@@ -16,63 +16,78 @@ namespace HiTessModelBuilder.Parsers
     private static readonly Regex _sizeTypeRegex =
       new(@"^(?<type>[A-Z]+)_", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// 파싱 결과를 구조화된 데이터(RawDesignData)로 보관
-    /// </summary>
-    public RawStructureDesignData? LastResult { get; private set; }
+    public RawCsvDesignData? LastResult { get; private set; }
 
-    /// <summary>
-    /// [추가됨] CsvRawDataParser 등 외부에서 전체 리스트에 접근하기 위한 속성
-    /// </summary>
-    public List<StructureEntity> ParsedEntities { get; private set; } = new List<StructureEntity>();
+    // Structure와 Pipe 엔티티를 각각 담을 리스트 (분리 보관)
+    public List<StructureEntity> ParsedStruEntities { get; private set; } = new List<StructureEntity>();
+    public List<PipeEntity> ParsedPipeEntities { get; private set; } = new List<PipeEntity>();
 
-    public RawStructureDesignData Parse(string filePath)
+    public RawCsvDesignData Parse(string? struCsvPath, string? pipeCsvPath)
     {
-      ParsedEntities.Clear();
+      ParsedStruEntities.Clear();
+      ParsedPipeEntities.Clear();
 
-      if (!File.Exists(filePath))
-        throw new FileNotFoundException($"CSV File not found: {filePath}");
-
-      // 1. 파일 읽기 및 파싱 (오직 생성하고 바구니에 담는 역할만 수행!)
-      foreach (var line in File.ReadLines(filePath).Skip(1))
+      if (struCsvPath != null && File.Exists(struCsvPath))
       {
-        if (string.IsNullOrWhiteSpace(line)) continue;
+        foreach (var line in File.ReadLines(struCsvPath).Skip(1))
+        {
+          if (string.IsNullOrWhiteSpace(line)) continue;
+          if (!TryStruParseLine(line, out var row)) continue;
 
-        if (!TryParseLine(line, out var row))
-          continue;
+          var type = row.Type.Trim().ToUpperInvariant();
+          var entity = CreateStruEntity(type);
 
-        var type = row.Type.Trim().ToUpperInvariant();
+          entity.Name = row.Name;
+          entity.Poss = row.StartPos;
+          entity.Pose = row.EndPos;
+          entity.Ori = row.Ori;
+          entity.SizeDims = row.Dims;
+          entity.SizeText = row.SizeRaw;
 
-        // 엔티티 생성
-        var entity = CreateEntity(type);
-
-        // 공통 필드 매핑
-        entity.Name = row.Name;
-        entity.Poss = row.StartPos;
-        entity.Pose = row.EndPos;
-        entity.Ori = row.Ori;
-        entity.SizeDims = row.Dims;
-        entity.SizeText = row.SizeRaw;
-
-        // 타입별 치수 속성 반영
-        entity.ApplyDims(row.Dims);
-
-        // 오직 이 전체 리스트에만 담습니다! (단일 책임)
-        ParsedEntities.Add(entity);
+          entity.ApplyDims(row.Dims);
+          ParsedStruEntities.Add(entity);
+        }
       }
 
-      // 2. 파싱이 다 끝난 후, 예쁘게 분류해서 반환합니다.
+      if (pipeCsvPath != null && File.Exists(pipeCsvPath))
+      {
+        foreach (var line in File.ReadLines(pipeCsvPath).Skip(1))
+        {
+          if (string.IsNullOrWhiteSpace(line)) continue;
+          if (!TryPipeParseLine(line, out var row)) continue;
+
+          var type = row.Type.Trim().ToUpperInvariant();
+          var entity = new PipeEntity();
+
+          entity.Name = row.Name;
+          entity.Type = type;
+          entity.Branch = row.Branch;
+          entity.APos = row.APos;
+          entity.LPos = row.LPos;
+          entity.Normal = row.Normal;
+          entity.InterPos = row.InterPos;
+          entity.P3Pos = row.P3Pos;
+          entity.Rest = row.Rest ?? Array.Empty<double>();
+          entity.Mass = row.Mass;
+
+          entity.OutDia = row.OutDia;
+          entity.Thick = row.Thick;
+          entity.OutDia2 = row.OutDia2;
+          entity.Thick2 = row.Thick2;
+
+          ParsedPipeEntities.Add(entity);
+        }
+      }
+
       var finalResult = GetGroupedData();
       LastResult = finalResult;
-
       return finalResult;
     }
 
-
-    private static StructureEntity CreateEntity(string typeUpper) => typeUpper switch
+    private static StructureEntity CreateStruEntity(string typeUpper) => typeUpper switch
     {
       "ANG" => new AngDesignData(),
-      "BEAM" => new BeamDesignData(), // 또는 H-BEAM 처리
+      "BEAM" => new BeamDesignData(),
       "BSC" => new BscDesignData(),
       "BULB" => new BulbDesignData(),
       "FBAR" => new FbarDesignData(),
@@ -81,102 +96,160 @@ namespace HiTessModelBuilder.Parsers
       _ => new UnknownDesignData(),
     };
 
-    public RawStructureDesignData GetGroupedData()
+
+    public RawCsvDesignData GetGroupedData()
     {
-      return new RawStructureDesignData(
-          angDesignList: ParsedEntities.OfType<AngDesignData>().ToList(),
-          beamDesignList: ParsedEntities.OfType<BeamDesignData>().ToList(),
-          bscDesignList: ParsedEntities.OfType<BscDesignData>().ToList(),
-          bulbDesignList: ParsedEntities.OfType<BulbDesignData>().ToList(),
-          fbarDesignList: ParsedEntities.OfType<FbarDesignData>().ToList(),
-          rbarDesignList: ParsedEntities.OfType<RbarDesignData>().ToList(),
-          tubeDesignList: ParsedEntities.OfType<TubeDesignData>().ToList(),
-          unknownDesignList: ParsedEntities.OfType<UnknownDesignData>().ToList()
+      // (참고: 향후 RawCsvDesignData 내부에 Pipe 리스트도 포함하도록 업데이트가 필요합니다)
+      return new RawCsvDesignData(
+          angDesignList: ParsedStruEntities.OfType<AngDesignData>().ToList(),
+          beamDesignList: ParsedStruEntities.OfType<BeamDesignData>().ToList(),
+          bscDesignList: ParsedStruEntities.OfType<BscDesignData>().ToList(),
+          bulbDesignList: ParsedStruEntities.OfType<BulbDesignData>().ToList(),
+          fbarDesignList: ParsedStruEntities.OfType<FbarDesignData>().ToList(),
+          rbarDesignList: ParsedStruEntities.OfType<RbarDesignData>().ToList(),
+          tubeDesignList: ParsedStruEntities.OfType<TubeDesignData>().ToList(),
+          unknownDesignList: ParsedStruEntities.OfType<UnknownDesignData>().ToList(),
+          // [추가] 파싱 완료된 Pipe 엔티티 리스트 전달
+          pipeList: ParsedPipeEntities
+      // 여기에 pipeList: ParsedPipeEntities.ToList() 등을 추가하시면 됩니다.
       );
     }
 
     // -----------------------
-    // Parsing helpers
+    // Parsing Structs
     // -----------------------
 
-    private readonly record struct ParsedRow(
-      string Name,
-      string Type,
-      string SizeRaw, // 원본 사이즈 문자열 추가
-      double[] Dims,
-      double[] StartPos,
-      double[] EndPos,
-      double[] Ori,
-      string Classification
+    private readonly record struct StruParsedRow(
+      string Name, string Type, string SizeRaw, double[] Dims,
+      double[] StartPos, double[] EndPos, double[] Ori
     );
 
-    private bool TryParseLine(string line, out ParsedRow row)
+    private readonly record struct PipeParsedRow(
+      string Name, string Type, string Branch,
+      double[] APos, double[] LPos, double[] Normal,
+      double[]? InterPos, double[]? P3Pos, double[]? Rest,
+      double OutDia, double Thick, double OutDia2, double Thick2, double Mass
+    );
+
+    // -----------------------
+    // Parsing Logic
+    // -----------------------
+
+    private bool TryStruParseLine(string line, out StruParsedRow row)
     {
       row = default;
-
       try
       {
-        // 콤마 분리 (따옴표 처리 등이 필요하면 더 정교한 CSV 파서 필요)
         var cols = line.Split(',');
-
-        // 인덱스 안전 점검 (최소 컬럼 수 확인 필요)
-        // 예: Name(0), ..., Start(2,3,4), End(5,6,7), Size(?), Ori(?) 
-        // 업로드된 코드 기준 인덱스: Name=0, Start=3, End=4, Size=5, Ori=7 
-        // (주의: cols[3], cols[4], cols[7]이 하나의 문자열 안에 "x,y,z" 형태로 들어있는지, 
-        //  아니면 csv 컬럼 자체가 나뉘어 있는지 확인 필요. 
-        //  아래 코드는 GitHub 원본의 로직(ExtractDoubles)을 따름)
-
         if (cols.Length <= 7) return false;
 
         string name = cols[0].Trim();
-        string possStr = cols[3].Trim();
-        string poseStr = cols[4].Trim();
-        string sizeText = cols[5].Trim();
-        string oriStr = cols[7].Trim();
-        string classification = "Stru";
+        var (type, dims) = ExtractTypeAndDims(cols[5].Trim());
+        var startPos = ExtractDoubles(cols[3]);
+        var endPos = ExtractDoubles(cols[4]);
+        var ori = ExtractDoubles(cols[7]);
 
-        var (type, dims) = ExtractTypeAndDims(sizeText);
+        if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3) return false;
 
-        var startPos = ExtractDoubles(possStr);
-        var endPos = ExtractDoubles(poseStr);
-        var ori = ExtractDoubles(oriStr);
-
-        // 좌표 데이터 유효성 검사 (각각 3개 이상의 좌표값이 있어야 함)
-        if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3)
-          return false;
-
-        row = new ParsedRow(name, type, sizeText, dims, startPos, endPos, ori, classification);
+        row = new StruParsedRow(name, type, cols[5].Trim(), dims, startPos, endPos, ori);
         return true;
       }
-      catch
-      {
-        return false;
-      }
+      catch { return false; }
     }
+
+    /// <summary>
+    /// 배관(Pipe) 데이터를 파싱합니다. 
+    /// 선택적 속성(P3Pos, InterPos)은 값이 없으면 null을 반환하여 유령 노드 생성을 방지합니다.
+    /// </summary>
+    private bool TryPipeParseLine(string line, out PipeParsedRow row)
+    {
+      row = default;
+      try
+      {
+        var cols = line.Split(',');
+        if (cols.Length < 15) return false;
+
+        string name = cols[0].Trim();
+        string type = cols[1].Trim();
+        string branch = cols[5].Trim();
+
+        // 1. 필수 좌표 파싱 (없거나 3차원이 아니면 불량 행 처리)
+        var aPos = ExtractDoubles(cols[3]);
+        var lPos = ExtractDoubles(cols[4]);
+        if (aPos.Length < 3 || lPos.Length < 3) return false;
+
+        // 2. 방향 벡터 (없으면 기본값 0,0,0)
+        var normal = ExtractDoubles(cols[8]);
+        if (normal.Length < 3) normal = new double[] { 0.0, 0.0, 0.0 };
+
+        // 3. 선택적 좌표 (없으면 null 반환)
+        var interPos = ExtractDoublesOrNull(cols[9]);
+        var p3Pos = ExtractDoublesOrNull(cols[10]);
+
+        // 4. 경계조건 (예: "123456" -> [1,2,3,4,5,6], 없으면 null)
+        var rest = ParseRest(cols[13]);
+
+        // 5. 숫자형 데이터 파싱 (없으면 0.0)
+        double outDia = ParseDoubleSafe(cols[6]);
+        double thick = ParseDoubleSafe(cols[7]);
+        double outDia2 = ParseDoubleSafe(cols[11]);
+        double thick2 = ParseDoubleSafe(cols[12]);
+        double mass = ParseDoubleSafe(cols[14]);
+
+        row = new PipeParsedRow(
+            name, type, branch,
+            aPos, lPos, normal,
+            interPos, p3Pos, rest,
+            outDia, thick, outDia2, thick2, mass
+        );
+        return true;
+      }
+      catch { return false; }
+    }
+
+    // -----------------------
+    // Helper Methods
+    // -----------------------
 
     private static (string typeUpper, double[] dims) ExtractTypeAndDims(string sizeText)
     {
       var upper = (sizeText ?? "").Trim().ToUpperInvariant();
-
       var m = _sizeTypeRegex.Match(upper);
-
-      // 타입 매칭 실패 시 UNKNOWN 처리하되, 치수는 파싱 시도
       string type = m.Success ? m.Groups["type"].Value.ToUpperInvariant() : "UNKNOWN";
-
-      var dims = _numRegex.Matches(upper)
-                         .Select(x => double.Parse(x.Value, CultureInfo.InvariantCulture))
-                         .ToArray();
-
+      var dims = _numRegex.Matches(upper).Select(x => double.Parse(x.Value, CultureInfo.InvariantCulture)).ToArray();
       return (type, dims);
     }
 
-    private static double[] ExtractDoubles(string s)
+    private static double[] ExtractDoubles(string? s)
     {
-      // 문자열 내의 모든 숫자를 추출하여 배열로 반환
-      // 예: "100.5, 200, 300" -> [100.5, 200, 300]
       return _numRegex.Matches(s ?? "")
                       .Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture))
                       .ToArray();
+    }
+
+    /// <summary>
+    /// 배열 데이터 추출 시, 숫자가 하나도 발견되지 않으면 빈 배열이 아닌 null을 반환합니다.
+    /// </summary>
+    private static double[]? ExtractDoublesOrNull(string? s)
+    {
+      var arr = ExtractDoubles(s);
+      return arr.Length > 0 ? arr : null;
+    }
+
+    private static double ParseDoubleSafe(string? value)
+    {
+      if (string.IsNullOrWhiteSpace(value)) return 0.0;
+      return double.TryParse(value.Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out double result) ? result : 0.0;
+    }
+
+    /// <summary>
+    /// "123456"과 같은 경계조건 문자열을 double 배열 [1, 2, 3, 4, 5, 6]로 파싱합니다.
+    /// </summary>
+    private static double[]? ParseRest(string? s)
+    {
+      if (string.IsNullOrWhiteSpace(s)) return null;
+      var digits = s.Trim().Where(char.IsDigit).Select(c => (double)char.GetNumericValue(c)).ToArray();
+      return digits.Length > 0 ? digits : null;
     }
   }
 }

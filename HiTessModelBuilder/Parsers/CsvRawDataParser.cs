@@ -21,7 +21,7 @@ namespace HiTessModelBuilder.Parsers
       _debugPrint = debugPrint;
     }
 
-    public RawStructureDesignData? Run()
+    public RawCsvDesignData? Run()
     {
       // 1. Structure 파싱
       if (_debugPrint) Console.WriteLine($"[Parser] Reading Structure CSV: {_strucCsv}");
@@ -32,7 +32,7 @@ namespace HiTessModelBuilder.Parsers
       try
       {
         // StructureCsvParser 내부에 Parse 메서드와 ParsedEntities 속성이 있다고 가정
-        var rawStructureDesignData = csvParser.Parse(_strucCsv);
+        var rawStructureDesignData = csvParser.Parse(_strucCsv, _pipeCsv);
         
 
         // 2. 디버그 모드일 경우 검증 출력

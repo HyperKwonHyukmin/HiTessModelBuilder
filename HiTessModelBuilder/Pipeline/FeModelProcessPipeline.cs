@@ -9,7 +9,7 @@ namespace HiTessModelBuilder.Pipeline
 {
   public class FeModelProcessPipeline
   {
-    private readonly RawStructureDesignData _rawStructureDesignData;
+    private readonly RawCsvDesignData _rawStructureDesignData;
     private readonly FeModelContext _context;
     private readonly string _inputFileName;
     private readonly string _csvFolderPath;
@@ -17,7 +17,7 @@ namespace HiTessModelBuilder.Pipeline
     private readonly bool _verboseDebug;
     private readonly PipelineLogger _logger; 
 
-    public FeModelProcessPipeline(RawStructureDesignData? rawStructureDesignData, FeModelContext context,
+    public FeModelProcessPipeline(RawCsvDesignData? rawStructureDesignData, FeModelContext context,
       string CsvFolderPath, string inputFileName, bool pipelineDebug, bool verboseDebug, PipelineLogger logger)
     {
       this._rawStructureDesignData = rawStructureDesignData;

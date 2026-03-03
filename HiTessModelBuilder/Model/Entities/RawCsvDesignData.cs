@@ -5,7 +5,7 @@ namespace HiTessModelBuilder.Model.Entities
   /// <summary>
   /// CSV에서 파싱된 모든 구조물 데이터를 타입별로 분류하여 보관하는 컨테이너 클래스입니다.
   /// </summary>
-  public class RawStructureDesignData
+  public class RawCsvDesignData
   {
     /// <summary>Angle(ㄱ형강) 데이터 리스트</summary>
     public List<AngDesignData> AngDesignList { get; init; }
@@ -31,7 +31,9 @@ namespace HiTessModelBuilder.Model.Entities
     /// <summary>분류되지 않은 데이터 리스트</summary>
     public List<UnknownDesignData> UnknownDesignList { get; init; }
 
-    public RawStructureDesignData(
+    public List<PipeEntity> PipeList { get; init; } = new();
+
+    public RawCsvDesignData(
         List<AngDesignData> angDesignList,
         List<BeamDesignData> beamDesignList,
         List<BscDesignData> bscDesignList,
@@ -39,7 +41,8 @@ namespace HiTessModelBuilder.Model.Entities
         List<FbarDesignData> fbarDesignList,
         List<RbarDesignData> rbarDesignList,
         List<TubeDesignData> tubeDesignList,
-        List<UnknownDesignData> unknownDesignList)
+        List<UnknownDesignData> unknownDesignList,
+        List<PipeEntity> pipeList = null)
     {
       AngDesignList = angDesignList;
       BeamDesignList = beamDesignList;
@@ -49,6 +52,7 @@ namespace HiTessModelBuilder.Model.Entities
       RbarDesignList = rbarDesignList;
       TubeDesignList = tubeDesignList;
       UnknownDesignList = unknownDesignList;
+      PipeList = pipeList ?? new List<PipeEntity>(); // [추가]
     }
   }
 }

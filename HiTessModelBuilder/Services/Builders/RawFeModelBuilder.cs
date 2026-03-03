@@ -10,16 +10,16 @@ namespace HiTessModelBuilder.Services.Builders
   public class RawFeModelBuilder
   {
     // 아키텍트 조언: 외부 조작을 막기 위해 private readonly 사용
-    private readonly RawStructureDesignData _rawStructureDesignData;
+    private readonly RawCsvDesignData _rawStructureDesignData;
     private readonly FeModelContext _feModelContext;
     private readonly bool _debugPrint;
 
     public RawFeModelBuilder(
-        RawStructureDesignData rawStructureDesignData,
+        RawCsvDesignData? StructureData,
         FeModelContext feModelContext,
         bool debugPrint = false)
     {
-      _rawStructureDesignData = rawStructureDesignData ?? throw new ArgumentNullException(nameof(rawStructureDesignData));
+      _rawStructureDesignData = StructureData ?? throw new ArgumentNullException(nameof(StructureData));
       _feModelContext = feModelContext ?? throw new ArgumentNullException(nameof(feModelContext));
       _debugPrint = debugPrint;
     }
@@ -56,15 +56,15 @@ namespace HiTessModelBuilder.Services.Builders
       BuildStruElements(_rawStructureDesignData.TubeDesignList, materialID, "TUBE", "TUBE", "TUBE",
           e => new[] { e.Dim1 , e.Dim2});
 
+      foreach(var list in _rawStructureDesignData.PipeList)
+      {
+        Console.WriteLine(list);
+      }
+
       if (_debugPrint) Console.WriteLine("[Builder] FE Model Build Completed Successfully.");
     }
 
-    /// <summary>
-    /// 반복되는 Node, Property, Element 생성 로직을 처리하는 제네릭 헬퍼 메서드입니다.
-    /// </summary>
-    /// <summary>
-    /// 반복되는 Node, Property, Element 생성 로직을 처리하는 제네릭 헬퍼 메서드입니다.
-    /// </summary>
+
     private void BuildStruElements<T>(
         IEnumerable<T> designList,
         int materialID,
