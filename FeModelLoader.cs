@@ -9,25 +9,22 @@ namespace HiTessModelBuilder.Services.Initialization
 {
   public static class FeModelLoader
   {
-    public static (RawStructureDesignData? rawStructureDesignData, FeModelContext context)
+    public static (RawCsvDesignData? rawStructureDesignData, FeModelContext context)
       LoadAndBuild(string StrucCsv, string PipeCsv, string EquipCsv, 
       bool csvDebug = false, bool FeModelDebug = false)
     {
-      // Struc.csv는 필수 
-      if (!File.Exists(StrucCsv))
-        throw new FileNotFoundException($"Structure CSV not found: {StrucCsv}");
 
       if (csvDebug) Console.WriteLine("\n[Loader] Parsing CSV Data...");
 
       // CSV 파싱 시작 (Structure, Pipe, Equip)
       var csvParser = new CsvRawDataParser(StrucCsv, PipeCsv, EquipCsv, debugPrint: csvDebug);
-      var rawStructureDesignData = csvParser.Run();
+      var rawCsvDesignData = csvParser.Run();
 
       // 빈 Fe 모델 컨텍스트 생성
       var context = FeModelContext.CreateEmpty();
 
       // FE 인스턴스 생성 시작
-      var builder = new RawFeModelBuilder(rawStructureDesignData, context, debugPrint: FeModelDebug);
+      var builder = new RawFeModelBuilder(rawCsvDesignData, context, debugPrint: FeModelDebug);
       builder.Build();
 
       if (FeModelDebug)
@@ -41,7 +38,7 @@ namespace HiTessModelBuilder.Services.Initialization
         debugger.PrintDebugInfo();
       }
 
-      return (rawStructureDesignData, context);
+      return (rawCsvDesignData, context);
 
     }
   }
