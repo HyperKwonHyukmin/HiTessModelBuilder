@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36623.8 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HiTessModelBuilder", "HiTessModelBuilder\HiTessModelBuilder.csproj", "{DFAB3DFE-6761-4207-B5E0-B1237FB1B0BF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DFAB3DFE-6761-4207-B5E0-B1237FB1B0BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DFAB3DFE-6761-4207-B5E0-B1237FB1B0BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DFAB3DFE-6761-4207-B5E0-B1237FB1B0BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DFAB3DFE-6761-4207-B5E0-B1237FB1B0BF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B193DDF8-C423-4B9A-B32B-DC82C44F7F7C}
+	EndGlobalSection
+EndGlobal
