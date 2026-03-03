@@ -30,8 +30,6 @@ namespace HiTessModelBuilder.Parsers
     {
       ParsedEntities.Clear();
 
-      Console.WriteLine($"struCsvPath:{struCsvPath}, pipeCsvPath:{pipeCsvPath}");
-
       if (struCsvPath != null)
       {
         foreach (var line in File.ReadLines(struCsvPath).Skip(1))
@@ -44,7 +42,7 @@ namespace HiTessModelBuilder.Parsers
           var type = row.Type.Trim().ToUpperInvariant();
 
           // 엔티티 생성
-          var entity = CreateEntity(type);
+          var entity = CreateStruEntity(type);
 
           // 공통 필드 매핑
           entity.Name = row.Name;
@@ -67,7 +65,9 @@ namespace HiTessModelBuilder.Parsers
         foreach (var line in File.ReadLines(pipeCsvPath).Skip(1))
         {
           if (string.IsNullOrWhiteSpace(line)) continue;
-          Console.WriteLine(line);
+
+          if (!TryPipeParseLine(line, out var row))
+            continue;
         }
       }
 
@@ -80,7 +80,7 @@ namespace HiTessModelBuilder.Parsers
     }
 
 
-    private static StructureEntity CreateEntity(string typeUpper) => typeUpper switch
+    private static StructureEntity CreateStruEntity(string typeUpper) => typeUpper switch
     {
       "ANG" => new AngDesignData(),
       "BEAM" => new BeamDesignData(), // 또는 H-BEAM 처리
@@ -110,24 +110,33 @@ namespace HiTessModelBuilder.Parsers
     // Parsing helpers
     // -----------------------
 
-    private readonly record struct ParsedRow(
+    private readonly record struct StruParsedRow(
       string Name,
       string Type,
       string SizeRaw, // 원본 사이즈 문자열 추가
       double[] Dims,
       double[] StartPos,
       double[] EndPos,
-      double[] Ori,
-      string Classification
+      double[] Ori
     );
 
-    private bool TryStruParseLine(string line, out ParsedRow row)
+    private readonly record struct PipeParsedRow(
+      string Name,
+      string Type,
+      string SizeRaw, 
+      double[] Dims,
+      double[] StartPos,
+      double[] EndPos,
+      double[] Ori
+    );
+
+    private bool TryStruParseLine(string line, out StruParsedRow row)
     {
       row = default;
 
       try
       {
-        // 콤마 분 (따옴표 처리 등이 필요하면 더 정교한 CSV 파서 필요)
+        // 콤마 분리 (따옴표 처리 등이 필요하면 더 정교한 CSV 파서 필요)
         var cols = line.Split(',');
 
         // 인덱스 안전 점검 (최소 컬럼 수 확인 필요)
@@ -144,7 +153,6 @@ namespace HiTessModelBuilder.Parsers
         string poseStr = cols[4].Trim();
         string sizeText = cols[5].Trim();
         string oriStr = cols[7].Trim();
-        string classification = "Stru";
 
         var (type, dims) = ExtractTypeAndDims(sizeText);
 
@@ -156,7 +164,7 @@ namespace HiTessModelBuilder.Parsers
         if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3)
           return false;
 
-        row = new ParsedRow(name, type, sizeText, dims, startPos, endPos, ori, classification);
+        row = new StruParsedRow(name, type, sizeText, dims, startPos, endPos, ori);
         return true;
       }
       catch
@@ -165,7 +173,7 @@ namespace HiTessModelBuilder.Parsers
       }
     }
 
-    private bool TryPipeParseLine(string line, out ParsedRow row)
+    private bool TryPipeParseLine(string line, out StruParsedRow row)
     {
       row = default;
 
@@ -174,26 +182,30 @@ namespace HiTessModelBuilder.Parsers
         // 콤마 분리 (따옴표 처리 등이 필요하면 더 정교한 CSV 파서 필요)
         var cols = line.Split(',');
 
-        if (cols.Length <= 7) return false;
-
         string name = cols[0].Trim();
-        string possStr = cols[3].Trim();
-        string poseStr = cols[4].Trim();
-        string sizeText = cols[5].Trim();
-        string oriStr = cols[7].Trim();
-        string classification = "Stru";
+        string apos = cols[3].Trim();
+        string lpos = cols[4].Trim();
+        string branch = cols[5].Trim();
+        double outdia = ParseDoubleSafe(cols[6]);
+        double thick = ParseDoubleSafe(cols[7]);
+        string normal = cols[8].Trim();
+        string interpos = cols[9].Trim();
+        string p3pos = cols[10].Trim();
+        double outdia2 = ParseDoubleSafe(cols[11]);
+        double thick2 = ParseDoubleSafe(cols[12]);
+        string rest = cols[13].Trim();
+        double mass = ParseDoubleSafe(cols[14]); 
 
-        var (type, dims) = ExtractTypeAndDims(sizeText);
+        var startPos = ExtractDoubles(apos);
+        var endPos = ExtractDoubles(lpos);
+        var Normal = ExtractDoubles(normal);
+        var Interpos = ExtractDoubles(interpos);
+        var P3pos = ExtractDoubles(p3pos);
 
-        var startPos = ExtractDoubles(possStr);
-        var endPos = ExtractDoubles(poseStr);
-        var ori = ExtractDoubles(oriStr);
 
-        // 좌표 데이터 유효성 검사 (각각 3개 이상의 좌표값이 있어야 함)
-        if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3)
-          return false;
 
-        row = new ParsedRow(name, type, sizeText, dims, startPos, endPos, ori, classification);
+
+        //row = new ParsedRow(name, type, sizeText, dims, startPos, endPos, ori);
         return true;
       }
       catch
@@ -208,7 +220,7 @@ namespace HiTessModelBuilder.Parsers
 
       var m = _sizeTypeRegex.Match(upper);
 
-      // 타입 매칭 실패 시 UNKNOWN 처리하되, 치수는 파싱 시도
+      // 타 매칭 실패 시 UNKNOWN 처리하되, 치수는 파싱 시도
       string type = m.Success ? m.Groups["type"].Value.ToUpperInvariant() : "UNKNOWN";
 
       var dims = _numRegex.Matches(upper)
@@ -225,6 +237,19 @@ namespace HiTessModelBuilder.Parsers
       return _numRegex.Matches(s ?? "")
                       .Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture))
                       .ToArray();
+    }
+
+    private static double ParseDoubleSafe(string? value)
+    {
+      if (string.IsNullOrWhiteSpace(value))
+        return 0.0;
+
+      return double.TryParse(value.Trim(),
+                             System.Globalization.NumberStyles.Any,
+                             System.Globalization.CultureInfo.InvariantCulture,
+                             out double result)
+          ? result
+          : 0.0;
     }
   }
 }
