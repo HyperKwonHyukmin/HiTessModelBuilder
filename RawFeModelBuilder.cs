@@ -1,5 +1,7 @@
 using HiTessModelBuilder.Model.Entities;
+using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Pipeline.Utils;
+using HiTessModelBuilder.Model.Geometry;
 using System;
 using System.Collections.Generic;
 
@@ -56,7 +58,7 @@ namespace HiTessModelBuilder.Services.Builders
           e => new[] { e.Dim1 });
 
       BuildStruElements(_rawStructureDesignData.TubeDesignList, materialID, "TUBE", "TUBE", "TUBE",
-          e => new[] { e.Dim1 , e.Dim2});
+          e => new[] { e.Dim1, e.Dim2 });
 
       PipeBuild();
 
@@ -77,7 +79,7 @@ namespace HiTessModelBuilder.Services.Builders
 
       foreach (var entity in designList)
       {
-        // 1. Property 치수 추출 및 생
+        // 1. Property 치수 추출 및 생성
         double[] inputDim = dimSelector(entity);
         int propertyID = _feModelContext.Properties.AddOrGet(propertyShape, inputDim, materialID);
 
@@ -118,23 +120,39 @@ namespace HiTessModelBuilder.Services.Builders
                 };
 
         // 4. Element 생성
-        _feModelContext.Elements.AddNew(new List<int> { nodeA_ID, nodeB_ID }, propertyID, barOrientation,extraData);
+        try
+        {
+          _feModelContext.Elements.AddNew(new List<int> { nodeA_ID, nodeB_ID }, propertyID, barOrientation, extraData);
+        }
+        catch (Exception ex)
+        {
+          if (_debugPrint)
+          {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"[Error] 구조 부재 생성 실패! Entity ID: {entity.Name}");
+            Console.WriteLine($"  -> 상세 에러: {ex.Message}");
+            Console.ResetColor();
+          }
+          continue; // 실패 시 프로그램 중단 없이 다음 부재로 넘어감
+        }
       }
     }
 
+    // 제외 대상 : ATTA
     private void PipeBuild()
     {
-      foreach(var pipeData in _rawStructureDesignData.PipeList)
+      foreach (var pipeData in _rawStructureDesignData.PipeList)
       {
         Dictionary<string, string?> extraData = new Dictionary<string, string?>();
         extraData["Name"] = pipeData.Name;
         extraData["Branch"] = pipeData.Branch;
         extraData["Rest"] = pipeData.Rest;
         extraData["Mass"] = pipeData.Mass;
+        extraData["Category"] = "Pipe";
 
-        if ((pipeData.Type == "TUBI") || (pipeData.Type == "OLET") || (pipeData.Type == "FLAN") || (pipeData.Type == "REDU"))
+        if ((pipeData.Type == "TUBI") || (pipeData.Type == "OLET") || (pipeData.Type == "FLAN") || (pipeData.Type == "REDU")
+          || (pipeData.Type == "COUP"))
         {
-          Console.WriteLine(pipeData);
           // extraData 정의 : 추가 정보는 여기에 다 때려넣기 
           extraData["Type"] = pipeData.Type;
           int materialID = _feModelContext.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
@@ -142,19 +160,45 @@ namespace HiTessModelBuilder.Services.Builders
           double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
           int propertyID = _feModelContext.Properties.AddOrGet("TUBE", propertyDim, materialID);
 
-          // 1. 방향 벡터(Direction Vector) 계산: 료점(LPos) - 시작점(APos)
+          // 1. 방향 벡터(Direction Vector) 계산: 종료점(LPos) - 시작점(APos)
           double dx = pipeData.LPos[0] - pipeData.APos[0];
           double dy = pipeData.LPos[1] - pipeData.APos[1];
-          double dz = pipeData.LPos[2] - pipeData.APos[2];          
+          double dz = pipeData.LPos[2] - pipeData.APos[2];
 
           // 2. 직교 벡터(Orientation Vector) 계산
           double[] barOrientation = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.LPos);
           int startNodeID = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
           int endNodeID = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
-          int elementID = _feModelContext.Elements.AddNew(new List<int> { startNodeID, endNodeID }, propertyID, barOrientation, extraData);
 
-          if (pipeElementIDsByType.ContainsKey(pipeData.Type))
-            pipeElementIDsByType[pipeData.Type].Add(elementID);
+          if (startNodeID == endNodeID)
+          {
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Yellow;
+              Console.WriteLine($"[Warning] 길이가 0인 배관 발견 (시작점=끝점). 생성 스킵 -> Pipe Name: {pipeData.Name}");
+              Console.ResetColor();
+            }
+            continue;
+          }
+
+          try
+          {
+            int elementID = _feModelContext.Elements.AddNew(new List<int> { startNodeID, endNodeID }, propertyID, barOrientation, extraData);
+
+            if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+              pipeElementIDsByType[pipeData.Type].Add(elementID);
+          }
+          catch (Exception ex)
+          {
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] 일반 배관({pipeData.Type}) 생성 실패! Pipe Name: {pipeData.Name} / 에러: {ex.Message}");
+              Console.ResetColor();
+            }
+
+            continue;
+          }
 
           // 3. 디버그 출력: 방향 벡터와 직교 벡터를 나란히 출력하여 비교
           //double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
@@ -177,15 +221,27 @@ namespace HiTessModelBuilder.Services.Builders
           int startNodeID = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
           int betweenNodeID = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
           int endNodeID = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
-          int elementID1 = _feModelContext.Elements.AddNew(
-            new List<int> { startNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
-          int elementID2 = _feModelContext.Elements.AddNew(
-            new List<int> { betweenNodeID, endNodeID }, propertyID, barOrientation2, extraData);
 
-          if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+          try
           {
-            pipeElementIDsByType[pipeData.Type].Add(elementID1);
-            pipeElementIDsByType[pipeData.Type].Add(elementID2);
+            int elementID1 = _feModelContext.Elements.AddNew(new List<int> { startNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
+            int elementID2 = _feModelContext.Elements.AddNew(new List<int> { betweenNodeID, endNodeID }, propertyID, barOrientation2, extraData);
+
+            if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+            {
+              pipeElementIDsByType[pipeData.Type].Add(elementID1);
+              pipeElementIDsByType[pipeData.Type].Add(elementID2);
+            }
+          }
+          catch (Exception ex)
+          {
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] TRAP 배관 생성 실패! Pipe Name: {pipeData.Name} / 에러: {ex.Message}");
+              Console.ResetColor();
+            }
+            continue;
           }
 
         }
@@ -226,23 +282,26 @@ namespace HiTessModelBuilder.Services.Builders
           }
           catch (Exception ex)
           {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"[Error] 배관 요소 생성 실패! Pipe Name: {pipeData.Name}");
-            Console.WriteLine($"  -> 상세 에러: {ex.Message}");
-            Console.ResetColor();
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] 배관 요소 생성 실패! Pipe Name: {pipeData.Name}");
+              Console.WriteLine($"  -> 세 에러: {ex.Message}");
+              Console.ResetColor();
+            }
 
             // 에러를 무시하고 다음 배관으로 넘어갈지, 아니면 프로그램을 중단할지에 따라 선택
             continue; // 넘어가려면 continue; 중단하려면 throw; 사용
           }
-        }         
-        
+        }
 
-        else if ((pipeData.Type == "ELBO")|| (pipeData.Type == "BEND"))
+
+        else if ((pipeData.Type == "ELBO") || (pipeData.Type == "BEND"))
         {
           extraData["Type"] = pipeData.Type;
           int materialID = _feModelContext.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
 
-          double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 }; 
+          double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
           int propertyID = _feModelContext.Properties.AddOrGet("TUBE", propertyDim, materialID);
 
           double[] barOrientation1 = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.Pos);
@@ -251,19 +310,31 @@ namespace HiTessModelBuilder.Services.Builders
           int startNodeID = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
           int endNodeID = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
 
-          int elementID1 = _feModelContext.Elements.AddNew(
-            new List<int> { startNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
-          int elementID2 = _feModelContext.Elements.AddNew(
-            new List<int> { betweenNodeID, endNodeID }, propertyID, barOrientation2, extraData);
-
-          if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+          try
           {
-            pipeElementIDsByType[pipeData.Type].Add(elementID1);
-            pipeElementIDsByType[pipeData.Type].Add(elementID2);
+            int elementID1 = _feModelContext.Elements.AddNew(new List<int> { startNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
+            int elementID2 = _feModelContext.Elements.AddNew(new List<int> { betweenNodeID, endNodeID }, propertyID, barOrientation2, extraData);
+
+            if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+            {
+              pipeElementIDsByType[pipeData.Type].Add(elementID1);
+              pipeElementIDsByType[pipeData.Type].Add(elementID2);
+            }
+          }
+          catch (Exception ex)
+          {
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] {pipeData.Type} 배관 생성 실패! Pipe Name: {pipeData.Name} / 에러: {ex.Message}");
+              Console.ResetColor();
+            }
+
+            continue;
           }
         }
 
-        else if (pipeData.Type == "VALV") 
+        else if (pipeData.Type == "VALV")
         {
           extraData["Type"] = pipeData.Type;
           int materialID = _feModelContext.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
@@ -277,24 +348,140 @@ namespace HiTessModelBuilder.Services.Builders
           int startNodeID = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
           int endNodeID = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
 
-          int elementID1 = _feModelContext.Elements.AddNew(
-            new List<int> { startNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
-          int elementID2 = _feModelContext.Elements.AddNew(
-            new List<int> { betweenNodeID, endNodeID }, propertyID, barOrientation2, extraData);
-
-          if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+          try
           {
-            pipeElementIDsByType[pipeData.Type].Add(elementID1);
-            pipeElementIDsByType[pipeData.Type].Add(elementID2);
+            int elementID1 = _feModelContext.Elements.AddNew(new List<int> { startNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
+            int elementID2 = _feModelContext.Elements.AddNew(new List<int> { betweenNodeID, endNodeID }, propertyID, barOrientation2, extraData);
+
+            if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+            {
+              pipeElementIDsByType[pipeData.Type].Add(elementID1);
+              pipeElementIDsByType[pipeData.Type].Add(elementID2);
+            }
+          }
+          catch (Exception ex)
+          {
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] VALV 배관 생성 실패! Pipe Name: {pipeData.Name} / 에러: {ex.Message}");
+              Console.ResetColor();
+            }
+
+            continue;
           }
         }
 
         else if (pipeData.Type == "UBOLT")
         {
+          extraData["Type"] = pipeData.Type;
+          int independentNodeID = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
+          // 나중에 노드를 추가할 요량으로 빈 배열로 RBE 생성
+          int rbeId = _feModelContext.Rigids.AddNew(independentNodeID, Array.Empty<int>(), pipeData.Rest, extraData);
 
+
+          if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+          {
+            pipeElementIDsByType[pipeData.Type].Add(rbeId);
+          }
         }
 
+        else if (pipeData.Type == "VTWA")
+        {
+          extraData["Type"] = pipeData.Type;
+          int materialID = _feModelContext.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
+          double[] VTWA_Dim = [35.0, 7.0];
 
+          double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
+
+          int propertyID = _feModelContext.Properties.AddOrGet("TUBE", VTWA_Dim, materialID);
+
+          double[] barOrientation1 = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.Pos);
+          double[] barOrientation2 = GeometryUtils.CalculateBarOrientation(pipeData.Pos, pipeData.LPos);
+          double[] barOrientation3 = GeometryUtils.CalculateBarOrientation(pipeData.Pos, pipeData.P3Pos);
+
+          int betweenNodeID = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
+          int beforeNodeID = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
+          int afterNodeID = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
+          int downNodeID = _feModelContext.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]);
+
+          try
+          {
+            int elementID1 = _feModelContext.Elements.AddNew(
+            new List<int> { beforeNodeID, betweenNodeID }, propertyID, barOrientation1, extraData);
+            int elementID2 = _feModelContext.Elements.AddNew(
+              new List<int> { betweenNodeID, afterNodeID }, propertyID, barOrientation2, extraData);
+            int elementID3 = _feModelContext.Elements.AddNew(
+              new List<int> { betweenNodeID, downNodeID }, propertyID, barOrientation2, extraData);
+
+            if (pipeElementIDsByType.ContainsKey(pipeData.Type))
+            {
+              pipeElementIDsByType[pipeData.Type].Add(elementID1);
+              pipeElementIDsByType[pipeData.Type].Add(elementID2);
+              pipeElementIDsByType[pipeData.Type].Add(elementID3);
+            }
+          }
+          catch (Exception ex)
+          {
+            if (_debugPrint)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] 배관 요소 생성 실패! Pipe Name: {pipeData.Name}");
+              Console.WriteLine($"  -> 상세 에러: {ex.Message}");
+              Console.ResetColor();
+            }
+            // 에러를 무시하고 다음 배관으로 넘어갈지, 아니면 프로그램을 중단할지에 따라 선택
+            continue; // 넘어가려면 continue; 중단하려면 throw; 사용
+          }
+        }
+
+        else if ((pipeData.Type == "ATTA")|| (pipeData.Type == "EXP"))
+        {
+          extraData["Type"] = pipeData.Type;
+          bool isMassValid = double.TryParse(pipeData.Mass,
+                                           System.Globalization.NumberStyles.Any,
+                                           System.Globalization.CultureInfo.InvariantCulture,
+                                           out double massValue);
+
+          // 10kg 이상만 취급
+          if (massValue > 10.0)
+          {
+            try
+            {
+              // 1. 현재까지 생성된 "배관(Pipe) 전용 노드" 집합 추출
+              var validPipeNodes = _feModelContext.GetNodesUsedInPipeElements();
+
+              // 2. 부착물(ATTA)이 위치할 목표 좌표 (일반적으로 APos 사)
+              var targetPos = new Point3D(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
+
+              // 3. 반경 10.0mm(허용 오차) 이내에서 가장 가까운 배관 노드 탐색
+              int closestPipeNodeId = _feModelContext.Nodes.FindClosestValidNode(targetPos, validPipeNodes, tolerance: 100.0);
+
+              // 4. 노드를 찾은 경우에만 PointMass 생성
+              if (closestPipeNodeId != -1)
+              {
+                _feModelContext.PointMasses.AddNew(closestPipeNodeId, massValue, extraData);
+              }
+              else
+              {
+                if (_debugPrint)
+                {
+                  Console.ForegroundColor = ConsoleColor.Yellow;
+                  Console.WriteLine($"[Warning] 허용 오차 내 부착할 배관 노드를 찾지 못해 ATTA 생성을 스킵합니다. Name: {pipeData.Name}");
+                  Console.ResetColor();
+                }
+
+              }
+            }
+            catch (Exception ex)
+            {
+              Console.ForegroundColor = ConsoleColor.Red;
+              Console.WriteLine($"[Error] ATTA(PointMass) 생성 실패! Name: {pipeData.Name} / 에러: {ex.Message}");
+              Console.ResetColor();
+              continue;
+            }
+          }
+        }
       }
     }
   }
