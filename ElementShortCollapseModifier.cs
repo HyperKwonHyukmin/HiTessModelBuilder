@@ -28,6 +28,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       int collapsedCount = 0;
       int removedDegenerateCount = 0;
 
+      // ★ [추가] 병합 이력을 추적할 매핑 딕셔너리 생성
+      var nodeMapping = new Dictionary<int, int>();
+
       // 컬렉션 수정 중 오류를 방지하기 위해 스냅샷 생성
       foreach (var eid in elements.Keys.ToList())
       {
@@ -49,6 +52,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // n1은 살리고, n2는 삭제(n1으로 통폐합)
           int keep = n1;
           int remove = n2;
+
+          // ★ [추가] 노드 치환 기록 (n2가 n1로 흡수됨)
+          nodeMapping[remove] = keep;
 
           // 1. 타겟이 된 짧은 요소 자체는 삭제
           elements.Remove(eid);
@@ -81,7 +87,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             int propId = neighborEle.PropertyID;
 
             elements.Remove(neighborEid);
-            elements.AddWithID(neighborEid, newNodeIds, propId, extraData);
+            elements.AddWithID(neighborEid, newNodeIds, propId, neighborEle.Orientation, extraData);
           }
 
           // 3. 더 이상 쓰이지 않는 노드 삭제
@@ -90,6 +96,24 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           if (opt.VerboseDebug)
             log($"   -> [병합] E{eid} 삭제됨. 노드 N{remove}가 N{keep}으로 통폐합되었습니다.");
+        }
+
+        // ★ [추가] 연쇄 병합(A->B, B->C)을 추적하여 RBE와 PointMass에 최종 번호 전파
+        if (nodeMapping.Count > 0)
+        {
+          var resolvedMapping = new Dictionary<int, int>();
+          foreach (var key in nodeMapping.Keys)
+          {
+            int finalNode = key;
+            while (nodeMapping.TryGetValue(finalNode, out int nextNode))
+            {
+              finalNode = nextNode;
+            }
+            resolvedMapping[key] = finalNode;
+          }
+          // 변경된 노드 번호를 RBE와 질량에 업데이트
+          context.Rigids.RemapAllNodes(resolvedMapping);
+          context.PointMasses.RemapAllNodes(resolvedMapping);
         }
       }
 
