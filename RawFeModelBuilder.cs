@@ -143,7 +143,7 @@ namespace HiTessModelBuilder.Services.Builders
     {
       foreach (var pipeData in _rawStructureDesignData.PipeList)
       {
-        // 1. 공통 데이터 추출 및 질량 변환
+        // 1. 공통 속성 및 질량 변환
         bool isMassValid = double.TryParse(pipeData.Mass,
                                            System.Globalization.NumberStyles.Any,
                                            System.Globalization.CultureInfo.InvariantCulture,
@@ -160,20 +160,17 @@ namespace HiTessModelBuilder.Services.Builders
         int materialID = _feModelContext.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
 
         // =======================================================
-        // A. 일반 배관, 엘보, 벤드 (InterPos 처리가 필요한 타입들)
+        // A. 다중 분할이 필요한 일반 배관 (TUBI, ELBO, BEND)
         // =======================================================
-        if (pipeData.Type == "TUBI" || pipeData.Type == "OLET" || pipeData.Type == "FLAN" ||
-            pipeData.Type == "REDU" || pipeData.Type == "COUP" ||
-            pipeData.Type == "ELBO" || pipeData.Type == "BEND")
+        if (pipeData.Type == "TUBI" || pipeData.Type == "ELBO" || pipeData.Type == "BEND")
         {
           double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
           int propertyID = _feModelContext.Properties.AddOrGet("TUBE", propertyDim, materialID);
 
-          // 노드 체인 구성 (APos -> InterPos -> LPos)
+          // 노드 체인 성: APos -> [InterPos 배열 노드들] -> LPos
           List<int> nodeChain = new List<int>();
           nodeChain.Add(_feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]));
 
-          // InterPos가 존재한다면 중간 노드들 추가 (XYZ가 연속된 1차원 배열 형태라고 가정)
           if (pipeData.InterPos != null && pipeData.InterPos.Length >= 3)
           {
             for (int i = 0; i < pipeData.InterPos.Length; i += 3)
@@ -181,148 +178,144 @@ namespace HiTessModelBuilder.Services.Builders
               nodeChain.Add(_feModelContext.Nodes.AddOrGet(pipeData.InterPos[i], pipeData.InterPos[i + 1], pipeData.InterPos[i + 2]));
             }
           }
-
           nodeChain.Add(_feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]));
 
-          // 체인을 따라 연속된 Element 생성
+          // 체인을 순회하며 다중 요소 생성
           for (int i = 0; i < nodeChain.Count - 1; i++)
           {
-            int n1 = nodeChain[i];
-            int n2 = nodeChain[i + 1];
-            if (n1 == n2) continue; // 길이 0 방어
-
-            var p1 = _feModelContext.Nodes[n1];
-            var p2 = _feModelContext.Nodes[n2];
-            double[] barOri = GeometryUtils.CalculateBarOrientation(new[] { p1.X, p1.Y, p1.Z }, new[] { p2.X, p2.Y, p2.Z });
-
-            try
-            {
-              int eid = _feModelContext.Elements.AddNew(new List<int> { n1, n2 }, propertyID, barOri, extraData);
-              if (pipeElementIDsByType.ContainsKey(pipeData.Type)) pipeElementIDsByType[pipeData.Type].Add(eid);
-            }
-            catch (Exception ex) { LogError(pipeData, ex); }
+            CreateElementSafe(nodeChain[i], nodeChain[i + 1], propertyID, pipeData.Normal, extraData, pipeData); // 곡관은 보통 주어진 Normal을 그대로 사용
           }
+        }
 
-          // FLAN 등 질량이 있는 경우 Pos 위치에 PointMass 추가
+        // =======================================================
+        // B. 단일 요소 배관 (OLET, REDU, COUP)
+        // =======================================================
+        else if (pipeData.Type == "OLET" || pipeData.Type == "REDU" || pipeData.Type == "COUP")
+        {
+          double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
+          int propertyID = _feModelContext.Properties.AddOrGet("TUBE", propertyDim, materialID);
+
+          double[] barOrientation = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.LPos);
+          int startNode = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
+          int endNode = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
+
+          CreateElementSafe(startNode, endNode, propertyID, barOrientation, extraData, pipeData);
+        }
+
+        // =======================================================
+        // C. TEE (3방향 분기 배관)
+        // =======================================================
+        else if (pipeData.Type == "TEE")
+        {
+          double[] propertyDim1 = new double[] { pipeData.Dim1, pipeData.Dim2 };
+          double[] propertyDim2 = new double[] { pipeData.Dim3, pipeData.Dim4 };
+          int propertyID1 = _feModelContext.Properties.AddOrGet("TUBE", propertyDim1, materialID);
+          int propertyID2 = _feModelContext.Properties.AddOrGet("TUBE", propertyDim2, materialID);
+
+          int centerNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
+          int startNode = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
+          int endNode = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
+
+          CreateElementSafe(startNode, centerNode, propertyID1, pipeData.Normal, extraData, pipeData);
+          CreateElementSafe(centerNode, endNode, propertyID1, pipeData.Normal, extraData, pipeData);
+
+          if (pipeData.P3Pos != null && pipeData.P3Pos.Length >= 3)
+          {
+            int p3Node = _feModelContext.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]);
+            CreateElementSafe(centerNode, p3Node, propertyID2, pipeData.Normal, extraData, pipeData);
+          }
+        }
+
+        // =======================================================
+        // D. FLAN (요소 + 질량 동시 생성)
+        // =======================================================
+        else if (pipeData.Type == "FLAN")
+        {
+          // 질량 부여
           if (isMassValid && massValue > 0.0)
           {
             int posNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
             _feModelContext.PointMasses.AddNew(posNode, massValue, extraData);
           }
-        }
 
-        // =======================================================
-        // B. TEE (분기가 3개인 배관)
-        // =======================================================
-        else if (pipeData.Type == "TEE")
-        {
-          double[] propertyDim1 = new double[] { pipeData.Dim1, pipeData.Dim2 };
-          int propertyID1 = _feModelContext.Properties.AddOrGet("TUBE", propertyDim1, materialID);
-
-          int centerNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
-          int startNode = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
-          int endNode = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
-
-          double[] ori1 = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.Pos);
-          double[] ori2 = GeometryUtils.CalculateBarOrientation(pipeData.Pos, pipeData.LPos);
-
-          CreateElementSafe(startNode, centerNode, propertyID1, ori1, extraData, pipeData);
-          CreateElementSafe(centerNode, endNode, propertyID1, ori2, extraData, pipeData);
-
-          if (pipeData.P3Pos != null && pipeData.P3Pos.Length >= 3)
+          // APos와 LPos가 다르고 외경이 0이 아니면 요소 생성
+          if (pipeData.OutDia > 0)
           {
-            double[] propertyDim2 = new double[] { pipeData.Dim3, pipeData.Dim4 };
-            int propertyID2 = _feModelContext.Properties.AddOrGet("TUBE", propertyDim2, materialID);
-            int p3Node = _feModelContext.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]);
-            double[] ori3 = GeometryUtils.CalculateBarOrientation(pipeData.Pos, pipeData.P3Pos);
+            double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
+            int propertyID = _feModelContext.Properties.AddOrGet("TUBE", propertyDim, materialID);
+            double[] barOrientation = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.LPos);
 
-            CreateElementSafe(centerNode, p3Node, propertyID2, ori3, extraData, pipeData);
+            int startNode = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
+            int endNode = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
+
+            CreateElementSafe(startNode, endNode, propertyID, barOrientation, extraData, pipeData);
           }
         }
 
         // =======================================================
-        // C. VTWA (Tee와 비슷하나 3개의 요소를 교차 생성 + 질량)
-        // =======================================================
-        else if (pipeData.Type == "VTWA")
-        {
-          double[] VTWA_Dim = { 35.0, 7.0 };
-          int propertyID = _feModelContext.Properties.AddOrGet("TUBE", VTWA_Dim, materialID);
-
-          int centerNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
-          int startNode = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
-          int endNode = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
-
-          double[] ori1 = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.Pos);
-          double[] ori2 = GeometryUtils.CalculateBarOrientation(pipeData.Pos, pipeData.LPos);
-
-          CreateElementSafe(startNode, centerNode, propertyID, ori1, extraData, pipeData);
-          CreateElementSafe(centerNode, endNode, propertyID, ori2, extraData, pipeData);
-
-          if (pipeData.P3Pos != null && pipeData.P3Pos.Length >= 3)
-          {
-            int p3Node = _feModelContext.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]);
-            double[] ori3 = GeometryUtils.CalculateBarOrientation(pipeData.Pos, pipeData.P3Pos);
-            CreateElementSafe(centerNode, p3Node, propertyID, ori3, extraData, pipeData);
-          }
-
-          if (isMassValid && massValue > 0.0)
-            _feModelContext.PointMasses.AddNew(centerNode, massValue, extraData);
-        }
-
-        // =======================================================
-        // D. [수정됨] VALV, TRAP, FILT, EXP (Rigid + Mass 전략)
+        // E. 밸브 및 특수 부속 (VALV, TRAP, FILT, EXP) : Rigid + Mass
         // =======================================================
         else if (pipeData.Type == "VALV" || pipeData.Type == "TRAP" || pipeData.Type == "FILT" || pipeData.Type == "EXP")
         {
-          // 1. 노드 생성 (Pos가 RBE의 중심, APos/LPos가 연결단)
           int centerNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
           int startNode = _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
           int endNode = _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]);
 
-          if (startNode == endNode)
+          if (startNode != endNode)
           {
-            if (_debugPrint)
-            {
-              Console.ForegroundColor = ConsoleColor.Yellow;
-              Console.WriteLine($"[Warning] 길이가 0인 {pipeData.Type} 발견. 생성 스킵 -> Name: {pipeData.Name}");
-              Console.ResetColor();
-            }
-            continue; // 찌그러진 데이터 방어
+            int rbeId = _feModelContext.Rigids.AddNew(centerNode, new List<int> { startNode, endNode }, "123456", extraData);
+            if (pipeElementIDsByType.ContainsKey(pipeData.Type)) pipeElementIDsByType[pipeData.Type].Add(rbeId);
           }
 
-          try
+          if (isMassValid && massValue > 0.0)
           {
-            // 2. 강체(RBE2) 생성: Pos(마스터) -> APos, LPos(슬레이브)
-            int rbeId = _feModelContext.Rigids.AddNew(
-                independentNodeID: centerNode,
-                dependentNodeIDs: new List<int> { startNode, endNode },
-                cm: "123456",
-                extraData: extraData
-            );
-
-            if (pipeElementIDsByType.ContainsKey(pipeData.Type))
-            {
-              pipeElementIDsByType[pipeData.Type].Add(rbeId);
-            }
-
-            // 3. 중심 노드에 질량(PointMass) 부여
-            if (isMassValid && massValue > 0.0)
-            {
-              _feModelContext.PointMasses.AddNew(centerNode, massValue, extraData);
-            }
-          }
-          catch (Exception ex)
-          {
-            LogError(pipeData, ex);
+            _feModelContext.PointMasses.AddNew(centerNode, massValue, extraData);
           }
         }
 
         // =======================================================
-        // E. ATTA, EXP (Point Mass 전용)
+        // F. VTWA (3방향 강체 연결 + 질량)
         // =======================================================
-        else if (pipeData.Type == "ATTA" || pipeData.Type == "EXP")
+        else if (pipeData.Type == "VTWA")
         {
-          if (isMassValid && massValue > 10.0) // 기존에 명시하신 10kg 이상 조건 유지
+          int centerNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
+          List<int> depNodes = new List<int>
+          {
+              _feModelContext.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]),
+              _feModelContext.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2])
+          };
+          if (pipeData.P3Pos != null && pipeData.P3Pos.Length >= 3)
+          {
+            depNodes.Add(_feModelContext.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]));
+          }
+
+          int rbeId = _feModelContext.Rigids.AddNew(centerNode, depNodes, "123456", extraData);
+          if (pipeElementIDsByType.ContainsKey(pipeData.Type)) pipeElementIDsByType[pipeData.Type].Add(rbeId);
+
+          if (isMassValid && massValue > 0.0)
+          {
+            _feModelContext.PointMasses.AddNew(centerNode, massValue, extraData);
+          }
+        }
+
+        // =======================================================
+        // G. UBOLT
+        // =======================================================
+        else if (pipeData.Type == "UBOLT")
+        {
+          int indepNode = _feModelContext.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
+          // 나중에 구조물(InterPos) 노드를 종속으로 추가할 수 있도록 빈 배열 생성
+          int rbeId = _feModelContext.Rigids.AddNew(indepNode, Array.Empty<int>(), pipeData.Rest ?? "123456", extraData);
+
+          if (pipeElementIDsByType.ContainsKey(pipeData.Type)) pipeElementIDsByType[pipeData.Type].Add(rbeId);
+        }
+
+        // =======================================================
+        // H. ATTA (부착 질량 전용)
+        // =======================================================
+        else if (pipeData.Type == "ATTA")
+        {
+          if (isMassValid && massValue > 10.0)
           {
             var validPipeNodes = _feModelContext.GetNodesUsedInPipeElements();
             var targetPos = new HiTessModelBuilder.Model.Geometry.Point3D(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
@@ -336,7 +329,7 @@ namespace HiTessModelBuilder.Services.Builders
             else if (_debugPrint)
             {
               Console.ForegroundColor = ConsoleColor.Yellow;
-              Console.WriteLine($"[Warning] 주변에 부착할 배관 노드 없음. ATTA 생략: {pipeData.Name}");
+              Console.WriteLine($"[Warning] 100mm 이내 부착할 배관 노드 없음. ATTA 생략: {pipeData.Name}");
               Console.ResetColor();
             }
           }
@@ -344,7 +337,7 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    // --- 가독성을 위한 Helper Method (RawFeModelBuilder 클래스 내부에 추가) ---
+    // --- 가독성 및 안전성을 위한 Element 생성 Helper ---
     private void CreateElementSafe(int n1, int n2, int propId, double[] ori, Dictionary<string, string?> extra, PipeEntity pipe)
     {
       if (n1 == n2) return;
@@ -353,7 +346,15 @@ namespace HiTessModelBuilder.Services.Builders
         int eid = _feModelContext.Elements.AddNew(new List<int> { n1, n2 }, propId, ori, extra);
         if (pipeElementIDsByType.ContainsKey(pipe.Type)) pipeElementIDsByType[pipe.Type].Add(eid);
       }
-      catch (Exception ex) { LogError(pipe, ex); }
+      catch (Exception ex)
+      {
+        if (_debugPrint)
+        {
+          Console.ForegroundColor = ConsoleColor.Red;
+          Console.WriteLine($"[Error] {pipe.Type} 생성 실패! Name: {pipe.Name} / 에러: {ex.Message}");
+          Console.ResetColor();
+        }
+      }
     }
 
     private void LogError(PipeEntity pipe, Exception ex)
