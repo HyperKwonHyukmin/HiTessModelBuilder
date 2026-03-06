@@ -122,7 +122,13 @@ namespace HiTessModelBuilder.Model.Entities
           .Distinct()
           .ToList();
 
-      if (dropIfEmpty && remappedDeps.Count == 0)
+      // ★ [추가] 해당 RBE가 UBOLT인지 확인하는 로직
+      bool isUbolt = info.ExtraData != null &&
+                     info.ExtraData.TryGetValue("Type", out string? typeStr) &&
+                     typeStr == "UBOLT";
+
+      // UBOLT는 나중에 연결하기 위해 종속 노드가 0개일 수 있으므로 삭제 면제
+      if (dropIfEmpty && remappedDeps.Count == 0 && !isUbolt)
       {
         _rigids.Remove(rigidId);
         return false;
@@ -175,7 +181,7 @@ namespace HiTessModelBuilder.Model.Entities
       if (additionalDependentNodes == null || !additionalDependentNodes.Any())
         return true; // 추가할 게 없으면 정상으로 간주하고 패스
 
-      // 1. 기존 노드와 새 노드를 병합 후 정규화 (중복 제거 및 정렬)
+      // 1. 기존 노드와 새 노드를 병합 후 정규화 (복 제거 및 정렬)
       var combinedNodes = info.DependentNodeIDs
           .Concat(additionalDependentNodes)
           .Distinct()
@@ -185,7 +191,7 @@ namespace HiTessModelBuilder.Model.Entities
       // 2. 기존 ExtraData 깊은 복사
       var extraCopy = info.ExtraData.ToDictionary(k => k.Key, v => v.Value);
 
-      // 3. 동일한 ID의 딕셔너리 목을 새로운 RigidInfo 객체로 덮어쓰기 (불변성 유지)
+      // 3. 동일한 ID의 딕셔너리 항목을 새로운 RigidInfo 객체로 덮어쓰기 (불변성 유지)
       _rigids[rigidId] = new RigidInfo(info.IndependentNodeID, combinedNodes, info.Cm, extraCopy);
 
       return true;
