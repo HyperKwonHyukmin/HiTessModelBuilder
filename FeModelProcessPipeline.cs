@@ -9,7 +9,7 @@ namespace HiTessModelBuilder.Pipeline
 {
   public class FeModelProcessPipeline
   {
-    private readonly RawStructureDesignData _rawStructureDesignData;
+    private readonly RawCsvDesignData _rawStructureDesignData;
     private readonly FeModelContext _context;
     private readonly string _inputFileName;
     private readonly string _csvFolderPath;
@@ -17,7 +17,7 @@ namespace HiTessModelBuilder.Pipeline
     private readonly bool _verboseDebug;
     private readonly PipelineLogger _logger; 
 
-    public FeModelProcessPipeline(RawStructureDesignData? rawStructureDesignData, FeModelContext context,
+    public FeModelProcessPipeline(RawCsvDesignData? rawStructureDesignData, FeModelContext context,
       string CsvFolderPath, string inputFileName, bool pipelineDebug, bool verboseDebug, PipelineLogger logger)
     {
       this._rawStructureDesignData = rawStructureDesignData;
@@ -132,7 +132,7 @@ namespace HiTessModelBuilder.Pipeline
                   ElementCollinearNodeMergeRun(_pipelineDebug, currentVerbose);
 
                   // [2-2. 연장 수렴 루프 (Stage 04 재적용)] 
-                  // 그룹이 이동하면서 새롭게 연장 조건(SearchDim 이내)에 들어온 부재들을 끝까지 찾아 붙여줍니다.
+                  // 그룹이 이동하면서 새롭게 연 조건(SearchDim 이내)에 들어온 부재들을 끝까지 찾아 붙여줍니다.
                   extendedCount = 0;
                   int extendIteration = 0;
                   do
@@ -171,6 +171,13 @@ namespace HiTessModelBuilder.Pipeline
                 ElementSplitByExistingNodesRun(_pipelineDebug, currentVerbose);
               }
               break;
+
+            case 7:
+              {
+                UboltConnectionRun(_pipelineDebug, currentVerbose);
+                break;
+              }
+      
           }
 
           // 매 사이클이 끝날 때마다 상태를 점검하고 하이퍼메시 비교용 BDF를 찍어냅니다.
@@ -247,6 +254,18 @@ namespace HiTessModelBuilder.Pipeline
       var opt = new ElementRbeConnectionModifier.Options(
           ExtraMargin: 5.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
       return ElementRbeConnectionModifier.Run(_context, opt, _logger.LogDelegate);
+    }
+
+    private void UboltConnectionRun(bool pDebug, bool vDebug)
+    {
+      foreach(var ubolt in _context.Rigids)
+      {
+        if (ubolt.Value.ExtraData["Type"] == "UBOLT")
+        {
+          Console.WriteLine(ubolt);
+        }
+        
+      }
     }
   }
 }
