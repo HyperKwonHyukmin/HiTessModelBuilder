@@ -41,8 +41,9 @@ namespace HiTessModelBuilder.Services.Builders
                     { "Branch", pipeData.Branch },
                     { "Rest", pipeData.Rest },
                     { "Mass", pipeData.Mass },
-                    { "Category", "Pipe" },
-                    { "Type", pipeData.Type }
+                    { "Classification", "Pipe" },
+                    { "Type", pipeData.Type },
+                    { "Remark", pipeData.Remark }
                 };
 
         // 2. 타입별 분기 처리 (Strategy)
@@ -83,7 +84,9 @@ namespace HiTessModelBuilder.Services.Builders
             if (_debugPrint) Console.WriteLine($"[Warning] 알 수 없는 배관 타입입니다: {pipeData.Type}");
             break;
         }
+
       }
+
     }
 
     /// <summary>
@@ -194,7 +197,7 @@ namespace HiTessModelBuilder.Services.Builders
     }
 
     /// <summary>
-    /// 3방향 강체 연결 및 질량(VTWA) 모델링을 수행합니다.
+    /// 3방향 강체 연결 및 질량(VTWA) 모델링을 행합니다.
     /// </summary>
     private void BuildVtwa(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
@@ -227,12 +230,15 @@ namespace HiTessModelBuilder.Services.Builders
     {
       int indepNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
       string restStr = string.IsNullOrWhiteSpace(pipeData.Rest) ? "123456" : pipeData.Rest;
+      string remark = pipeData.Remark;
+      extraData["Remark"] = pipeData.Remark;
 
       // Dummy 노드 없이 빈 배열(Array.Empty<int>())로 깔끔하게 생성
       int rbeId = _context.Rigids.AddNew(indepNode, Array.Empty<int>(), restStr, extraData);
 
       if (_pipeElementIDsByType.ContainsKey(pipeData.Type))
         _pipeElementIDsByType[pipeData.Type].Add(rbeId);
+
     }
 
     /// <summary>
@@ -261,7 +267,7 @@ namespace HiTessModelBuilder.Services.Builders
     }
 
     /// <summary>
-    /// 요소 생성 시 예외를 캡처하여 전체 프로세스가 중단되지 않도록 보호하는 래퍼 메써드입니다.
+    /// 요소 생성 시 예외를 캡처하여 전체 프로세스가 중단되지 않도 보호하는 래퍼 메써드입니다.
     /// </summary>
     private void CreateElementSafe(int n1, int n2, int propId, double[] ori, Dictionary<string, string?> extra, PipeEntity pipe)
     {
