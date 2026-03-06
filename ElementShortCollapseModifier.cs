@@ -37,6 +37,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         if (!elements.Contains(eid)) continue;
 
         var e = elements[eid];
+
+        // ★ [추가된 방어 로직] 배관(Pipe) 요소는 구조물 힐링(붕괴) 대상에서 제외합니다.
+        if (e.ExtraData != null && e.ExtraData.TryGetValue("Category", out string? cat) && cat == "Pipe")
+          continue;
+
         if (e.NodeIDs.Count < 2) continue;
 
         int n1 = e.NodeIDs[0];
@@ -53,7 +58,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           int keep = n1;
           int remove = n2;
 
-          // ★ [추가] 노드 치환 기록 (n2가 n1로 흡수됨)
+          // ★ [추가] 노드 치환 기록 (n2가 n1으로 흡수됨)
           nodeMapping[remove] = keep;
 
           // 1. 타겟이 된 짧은 요소 자체는 삭제
