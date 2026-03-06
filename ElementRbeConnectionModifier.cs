@@ -1,6 +1,7 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
@@ -73,7 +74,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // 수선의 발(Projection Point)과 최단 거리 계산
           double dist = DistancePointToSegment(pFree, pA, pB, out Point3D projPoint, out double t);
 
-          // 허용 반경 이내이고, 가장 가까우며, 수선의 발이 선분 내부(0 <= t <= 1)에 떨어지는 경우만 채택
+          // 허용 경 이내이고, 가장 가까우며, 수선의 발이 선분 내부(0 <= t <= 1)에 떨어지는 경우만 채택
           if (dist <= allowedDist && dist < bestDist && t >= -1e-4 && t <= 1.0001)
           {
             bestDist = dist;
@@ -93,13 +94,18 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         }
       }
 
-      // 4. 예약된 RBE2 요소들을 FeModelContext에 추가
       // 4. 예약된 RBE2 요소들을 FeModelContext의 Rigids 컬렉션에 추가
       foreach (var rbe in newRbeElements)
       {
         // rbe.n2 (수선의 발, 타겟 부재 위) = Independent Node (GN)
         // rbe.n1 (기존 Free Node) = Dependent Node (GM)
-        context.Rigids.AddNew(independentNodeID: rbe.n2, dependentNodeIDs: new[] { rbe.n1 });
+        var extraData = new Dictionary<string, string>
+        {
+            { "Category", "Auto-Healing" },
+            { "Type", "RBE_BRIDGE" },
+            { "Desc", $"FreeNode N{rbe.n1} to Target E{rbe.targetEid}" }
+        };
+        context.Rigids.AddNew(independentNodeID: rbe.n2, dependentNodeIDs: new[] { rbe.n1 }, cm: "123456", extraData: extraData);
         rbeCreatedCount++;
 
         if (opt.VerboseDebug)
@@ -115,7 +121,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     }
 
     /// <summary>
-    /// 점 P에서 선분 AB에 내린 수선의 발(projPoint)과 그 매개변수 t, 그리고 최단 거리를 반환합니다.
+    /// 점 P에서 선분 AB에 내린 수선의 발(projPoint)과 그 개변수 t, 그리고 최단 거리를 반환합니다.
     /// </summary>
     private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint, out double t)
     {
