@@ -62,13 +62,15 @@ namespace HiTessModelBuilder.Parsers
           entity.Name = row.Name;
           entity.Type = type;
           entity.Branch = row.Branch;
+          entity.Pos = row.Pos;
           entity.APos = row.APos;
           entity.LPos = row.LPos;
           entity.Normal = row.Normal;
           entity.InterPos = row.InterPos;
           entity.P3Pos = row.P3Pos;
-          entity.Rest = row.Rest ?? Array.Empty<double>();
+          entity.Rest = row.Rest;
           entity.Mass = row.Mass;
+          entity.Remark = row.Remark;
 
           entity.OutDia = row.OutDia;
           entity.Thick = row.Thick;
@@ -125,10 +127,10 @@ namespace HiTessModelBuilder.Parsers
     );
 
     private readonly record struct PipeParsedRow(
-      string Name, string Type, string Branch,
+      string Name, string Type, string Branch, double[] Pos,
       double[] APos, double[] LPos, double[] Normal,
-      double[]? InterPos, double[]? P3Pos, double[]? Rest,
-      double OutDia, double Thick, double OutDia2, double Thick2, double Mass
+      double[]? InterPos, double[]? P3Pos, string Rest,
+      double OutDia, double Thick, double OutDia2, double Thick2, string Mass, string Remark
     );
 
     // -----------------------
@@ -174,9 +176,10 @@ namespace HiTessModelBuilder.Parsers
         string branch = cols[5].Trim();
 
         // 1. 필수 좌표 파싱 (없거나 3차원이 아니면 불량 행 처리)
+        var Pos = ExtractDoubles(cols[2]);
         var aPos = ExtractDoubles(cols[3]);
         var lPos = ExtractDoubles(cols[4]);
-        if (aPos.Length < 3 || lPos.Length < 3) return false;
+        if (Pos.Length < 3 || aPos.Length < 3 || lPos.Length < 3) return false;
 
         // 2. 방향 벡터 (없으면 기본값 0,0,0)
         var normal = ExtractDoubles(cols[8]);
@@ -187,20 +190,21 @@ namespace HiTessModelBuilder.Parsers
         var p3Pos = ExtractDoublesOrNull(cols[10]);
 
         // 4. 경계조건 (예: "123456" -> [1,2,3,4,5,6], 없으면 null)
-        var rest = ParseRest(cols[13]);
+        var rest = string.IsNullOrWhiteSpace(cols[13]) ? null : cols[13].Trim();
 
         // 5. 숫자형 데이터 파싱 (없으면 0.0)
         double outDia = ParseDoubleSafe(cols[6]);
         double thick = ParseDoubleSafe(cols[7]);
         double outDia2 = ParseDoubleSafe(cols[11]);
         double thick2 = ParseDoubleSafe(cols[12]);
-        double mass = ParseDoubleSafe(cols[14]);
+        string mass = string.IsNullOrWhiteSpace(cols[14]) ? null : cols[14].Trim();
+        string remark = string.IsNullOrWhiteSpace(cols[16]) ? null : cols[16].Trim();
 
         row = new PipeParsedRow(
-            name, type, branch,
+            name, type, branch, Pos,
             aPos, lPos, normal,
             interPos, p3Pos, rest,
-            outDia, thick, outDia2, thick2, mass
+            outDia, thick, outDia2, thick2, mass, remark
         );
         return true;
       }
@@ -243,7 +247,7 @@ namespace HiTessModelBuilder.Parsers
     }
 
     /// <summary>
-    /// "123456"과 같은 경계조건 문자열을 double 배열 [1, 2, 3, 4, 5, 6]로 파싱합니다.
+    /// "123456"과 같은 경계조 문자열을 double 배열 [1, 2, 3, 4, 5, 6]로 파싱합니다.
     /// </summary>
     private static double[]? ParseRest(string? s)
     {
