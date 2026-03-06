@@ -220,14 +220,19 @@ namespace HiTessModelBuilder.Services.Builders
     }
 
     /// <summary>
-    /// UBOLT 경계조건 데이터를 생성합니다. (강체 모델링)
+    /// UBOLT 데이터를 생성합니다. 
+    /// (종속 노드는 마지막 파이프라인 단계에서 구조물에 스냅하여 채워넣습니다.)
     /// </summary>
     private void BuildUBolt(PipeEntity pipeData, Dictionary<string, string?> extraData)
     {
       int indepNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
-      int rbeId = _context.Rigids.AddNew(indepNode, Array.Empty<int>(), pipeData.Rest ?? "123456", extraData);
+      string restStr = string.IsNullOrWhiteSpace(pipeData.Rest) ? "123456" : pipeData.Rest;
 
-      if (_pipeElementIDsByType.ContainsKey(pipeData.Type)) _pipeElementIDsByType[pipeData.Type].Add(rbeId);
+      // Dummy 노드 없이 빈 배열(Array.Empty<int>())로 깔끔하게 생성
+      int rbeId = _context.Rigids.AddNew(indepNode, Array.Empty<int>(), restStr, extraData);
+
+      if (_pipeElementIDsByType.ContainsKey(pipeData.Type))
+        _pipeElementIDsByType[pipeData.Type].Add(rbeId);
     }
 
     /// <summary>
