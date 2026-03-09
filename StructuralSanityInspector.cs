@@ -9,29 +9,31 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 {
   public static class StructuralSanityInspector
   {
+    // ★ 수정: 반환형을 void에서 List<int>로 변경
     public static List<int> Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
-      // 1. 위상학적 연결성 검사 (Topology)
-      // ★ 밖에서 받아온 플래그를 그대로 넘겨줍니다.
-      List<int> freeEndNodes = InspectTopology(context, pipelineDebug, verboseDebug);
-
-      // 2. 기하학적 형상 검사 (Geometry)
+      // 1. 기하학적 형상 검사 (Geometry) - 미세 요소 처리
       double shortElementDistanceThreshold = 1.0;
       InspectGeometry(context, shortElementDistanceThreshold, pipelineDebug, verboseDebug);
 
-      // 3. Equivalence 검사 (노드 중복)
+      // 2. Equivalence 검사 (노드 중복 병합)
       double EquivalenceTolerance = 0.1;
       InspectEquivalence(context, EquivalenceTolerance, pipelineDebug, verboseDebug);
 
-      // 4. Duplicate 검사 (요소 중복)
+      // 3. Duplicate 검사 (요소 중복) - 잉여 중복 요소 자동 삭제
       InspectDuplicate(context, pipelineDebug, verboseDebug);
 
-      // 5. 데이터 무결성 검사 
+      // 4. 데이터 무결성 검사 (불량 요소 삭제)
       InspectIntegrity(context, pipelineDebug, verboseDebug);
 
-      // 6. 고립 요소 검사 (Isolation)
+      // 5. 고립 요소 검사 (Isolation)
       InspectIsolation(context, pipelineDebug, verboseDebug);
 
+      // 6. 위상학적 연결성 검사 (Topology) - 맨 마지막에 최종 Free Node 산출
+      // 모든 모델 청소가 끝난 완벽한 최종 상태에서 자유단을 찾습니다.
+      List<int> freeEndNodes = InspectTopology(context, pipelineDebug, verboseDebug);
+
+      // ★ 추가: BDF Exporter로 넘겨주기 위해 값을 반환
       return freeEndNodes;
     }
 
@@ -50,39 +52,24 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
       int printLimit = verboseDebug ? int.MaxValue : 5;
 
-      // ★ [추가] RBE의 종속 노드(Dependent Node) 일괄 수집
-      // Nastran에서 Dependent Node에 SPC가 들어가면 Fatal Error가 발생하므로 이를 방지하기 위함
-      var rbeDependentNodes = new HashSet<int>();
-      foreach (var rigid in context.Rigids)
+      // ★ [수정됨] RBE 및 PointMass에서 사용 중인 노드 일괄 수집
+      // (Rigids, PointMasses 클래스 구조에 맞게 KeyValuePair 순회 방식으로 변경)
+      var usedInRbeOrMass = new HashSet<int>();
+      foreach (var kvp in context.Rigids)
       {
-        foreach (int depNodeId in rigid.Value.DependentNodeIDs)
-        {
-          rbeDependentNodes.Add(depNodeId);
-        }
+        var rbe = kvp.Value;
+        usedInRbeOrMass.Add(rbe.IndependentNodeID);
+        foreach (var dep in rbe.DependentNodeIDs) usedInRbeOrMass.Add(dep);
+      }
+      foreach (var kvp in context.PointMasses)
+      {
+        var pm = kvp.Value;
+        usedInRbeOrMass.Add(pm.NodeID);
       }
 
-      // A. 자유단 노드 (Degree = 1) -> SPC 생성 대상 (단, RBE 종속 노드는 제외)
-      var endNodes = nodeDegree
-          .Where(kv => kv.Value == 1 && !rbeDependentNodes.Contains(kv.Key))
-          .Select(kv => kv.Key)
-          .ToList();
-      if (pipelineDebug)
-      {
-        if (endNodes.Count == 0)
-        {
-          LogPass("02_A - 자유단 노드 (연결 1개) : 발견되지 않았습니다.");
-        }
-        else
-        {
-          // 자유단 노드는 SPC 대상이므로 상황을 인지할 수 있게 [주의] 혹은 [안내] 격으로 노출합니다.
-          LogWarning($"02_A - 자유단 노드 (연결 1개) : {endNodes.Count}개 발견 (SPC 자동 생성 대상)");
-          Console.WriteLine($"      IDs: {SummarizeIds(endNodes, printLimit)}");
-        }
-      }
-
-      // B. 미사용 노드 (Degree = 0)
+      // B. 미사용 드 (Degree = 0) 탐색 및 삭제 (단, RBE나 Mass에서 쓰이는 노드는 보호)
       var isolatedNodes = context.Nodes.Keys
-          .Where(id => !nodeDegree.TryGetValue(id, out var deg) || deg == 0)
+          .Where(id => (!nodeDegree.TryGetValue(id, out var deg) || deg == 0) && !usedInRbeOrMass.Contains(id))
           .ToList();
 
       if (pipelineDebug)
@@ -102,10 +89,59 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       int removedOrphans = RemoveOrphanNodes(context, isolatedNodes);
       if (pipelineDebug && removedOrphans > 0)
       {
-        Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 즉시 삭제했습니다.");
+        Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 즉시 삭제습니다.");
       }
 
-      return endNodes;
+      // A. 자유단 노드 (Degree = 1) -> SPC 대상 추출
+      var spcTargetNodes = new HashSet<int>();
+      var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
+
+      foreach (var node in endNodes)
+      {
+        bool isDependent = false;
+        int mappedIndepNode = -1;
+
+        // 해당 Free Node가 어떤 RBE의 종속(Dependent) 노드인지 확인 (수정됨)
+        foreach (var kvp in context.Rigids)
+        {
+          var rbe = kvp.Value;
+          if (rbe.DependentNodeIDs.Contains(node))
+          {
+            isDependent = true;
+            mappedIndepNode = rbe.IndependentNodeID;
+            break;
+          }
+        }
+
+        if (isDependent && mappedIndepNode != -1)
+        {
+          // ★ 핵심: 종속 노드에는 SPC 부여 시 에러가 나므로, 
+          // 대신 강체를 지휘하는 마스터 노드(Independent)를 묶어서 배관을 완벽히 고정시킵니다.
+          spcTargetNodes.Add(mappedIndepNode);
+        }
+        else
+        {
+          // 일반적인 자유단 노드라면 그대로 SPC 부여
+          spcTargetNodes.Add(node);
+        }
+      }
+
+      var finalSpcList = spcTargetNodes.ToList();
+
+      if (pipelineDebug)
+      {
+        if (finalSpcList.Count == 0)
+        {
+          LogPass("02_A - 자유단 노드 (연결 1개) : 발견되지 않았습니다.");
+        }
+        else
+        {
+          LogWarning($"02_A - 자유단 노드 (연결 1개) : {finalSpcList.Count}개 발견 (SPC 자동 생성 대상)");
+          Console.WriteLine($"      IDs: {SummarizeIds(finalSpcList, printLimit)}");
+        }
+      }
+
+      return finalSpcList;
     }
 
     private static void InspectGeometry(FeModelContext context, double threshold, bool pipelineDebug, bool verboseDebug)
@@ -122,7 +158,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         }
         else
         {
-          LogWarning($"03 - 기하 형상 : 길이가 {threshold} 미만인 짧은 요소가 {shortElements.Count}개 발견되었습다.");
+          LogWarning($"03 - 기하 형상 : 길이가 {threshold} 미만인 짧은 요소가 {shortElements.Count}개 발견되었습니다.");
 
           int printLimit = verboseDebug ? int.MaxValue : 5;
           var elementIds = shortElements.Select(t => t.eleId).ToList();
@@ -188,6 +224,23 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
     {
       // 검사는 무조건 수행합니다.
       var duplicateGroups = ElementDuplicateInspector.FindDuplicateGroups(context);
+      int deletedCount = 0;
+
+      // ★ [추가됨] 중복 요소 발견되면 첫 번째 요소만 남기고 나머지는 모델에서 영구 삭제
+      if (duplicateGroups.Count > 0)
+      {
+        foreach (var group in duplicateGroups)
+        {
+          for (int i = 1; i < group.Count; i++) // 인덱스 1부터 삭제 (0번은 보존)
+          {
+            if (context.Elements.Contains(group[i]))
+            {
+              context.Elements.Remove(group[i]);
+              deletedCount++;
+            }
+          }
+        }
+      }
 
       // ★ 출력은 pipelineDebug가 true일 때만 수행합니다.
       if (pipelineDebug)
@@ -198,9 +251,9 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
           return;
         }
 
-        LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다!");
+        LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다! (잉여 중복 부재 {deletedCount}개 자동 삭제됨)");
 
-        //  verboseDebug에 따라 출력 개수 조절
+        // verboseDebug에 따 출력 개수 조절
         int printLimit = verboseDebug ? int.MaxValue : 5;
         int count = 0;
 
