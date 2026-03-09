@@ -9,7 +9,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 {
   public static class StructuralSanityInspector
   {
-    public static void Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    public static List<int> Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
       // 1. 위상학적 연결성 검사 (Topology)
       // ★ 밖에서 받아온 플래그를 그대로 넘겨줍니다.
@@ -32,8 +32,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       // 6. 고립 요소 검사 (Isolation)
       InspectIsolation(context, pipelineDebug, verboseDebug);
 
-
-
+      return freeEndNodes;
     }
 
     private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
@@ -51,8 +50,22 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
       int printLimit = verboseDebug ? int.MaxValue : 5;
 
-      // A. 자유단 노드 (Degree = 1) -> SPC 생성 대상
-      var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
+      // ★ [추가] RBE의 종속 노드(Dependent Node) 일괄 수집
+      // Nastran에서 Dependent Node에 SPC가 들어가면 Fatal Error가 발생하므로 이를 방지하기 위함
+      var rbeDependentNodes = new HashSet<int>();
+      foreach (var rigid in context.Rigids)
+      {
+        foreach (int depNodeId in rigid.Value.DependentNodeIDs)
+        {
+          rbeDependentNodes.Add(depNodeId);
+        }
+      }
+
+      // A. 자유단 노드 (Degree = 1) -> SPC 생성 대상 (단, RBE 종속 노드는 제외)
+      var endNodes = nodeDegree
+          .Where(kv => kv.Value == 1 && !rbeDependentNodes.Contains(kv.Key))
+          .Select(kv => kv.Key)
+          .ToList();
       if (pipelineDebug)
       {
         if (endNodes.Count == 0)
@@ -109,7 +122,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         }
         else
         {
-          LogWarning($"03 - 기하 형상 : 길이가 {threshold} 미만인 짧은 요소가 {shortElements.Count}개 발견되었습니다.");
+          LogWarning($"03 - 기하 형상 : 길이가 {threshold} 미만인 짧은 요소가 {shortElements.Count}개 발견되었습다.");
 
           int printLimit = verboseDebug ? int.MaxValue : 5;
           var elementIds = shortElements.Select(t => t.eleId).ToList();
@@ -187,7 +200,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
         LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다!");
 
-        // ★ verboseDebug에 따라 출력 개수 조절
+        //  verboseDebug에 따라 출력 개수 조절
         int printLimit = verboseDebug ? int.MaxValue : 5;
         int count = 0;
 
