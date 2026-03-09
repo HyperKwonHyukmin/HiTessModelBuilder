@@ -105,8 +105,7 @@ namespace HiTessModelBuilder.Exporter
       }
 
       foreach (var element in this.feModelContext.Elements)
-      {
-        // ★ [추가] ExtraData에서 Orientation 정보 꺼내기 (기본값 설정)
+      { 
         double oriX = 0.0, oriY = 0.0, oriZ = 1.0;
 
         if (element.Value.ExtraData.TryGetValue("OriX", out string sX))
@@ -128,8 +127,7 @@ namespace HiTessModelBuilder.Exporter
       }
     }
 
-    public void 
-      PropertyMaterialSection()
+    public void PropertyMaterialSection()
     {
       foreach (var property in this.feModelContext.Properties)
       {
@@ -301,7 +299,7 @@ namespace HiTessModelBuilder.Exporter
             sb.Append(BdfFormatFields.FormatField("+")); // 필드 10: Continuation Mark
             BdfLines.Add(sb.ToString());
 
-            // StringBuilder 리셋 및 다음 줄 초기화
+            // StringBuilder 리셋 및 다음 줄 기화
             sb.Clear();
             sb.Append(BdfFormatFields.FormatField("+")); // 다음 줄 필드 1: Continuation Mark Match
             fieldsUsed = 1; // 필드 1 사용됨
