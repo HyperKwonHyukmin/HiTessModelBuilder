@@ -27,11 +27,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       int snappedCount = 0;
 
-      // 1. "UBOLT" 강체 필터링
+      // 1. "UBOLT" 강체 필터링 (단, BOX 타입은 별도로 처리하므로 제외)
       var ubolts = context.Rigids.Where(kv =>
           kv.Value.ExtraData != null &&
-          kv.Value.ExtraData.TryGetValue("Type", out var type) &&
-          type == "UBOLT").ToList();
+          kv.Value.ExtraData.TryGetValue("Type", out var type) && type == "UBOLT" &&
+          !(kv.Value.ExtraData.TryGetValue("Remark", out var remark) && remark == "BOX")
+      ).ToList();
 
       if (ubolts.Count == 0) return 0;
 
@@ -110,6 +111,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           if (info.DependentNodeIDs.Count > 0)
           {
             // 레거시 더미 노드가 있는 경우: 둘 다 치환
+
+
             context.Rigids.RemapNodes(rigidId, new Dictionary<int, int> {
                             { oldIndepNodeId, newIndepNodeId },
                             { info.DependentNodeIDs[0], newDepNodeId }
