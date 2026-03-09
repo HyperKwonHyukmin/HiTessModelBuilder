@@ -12,30 +12,33 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
     // ★ 수정: 반환형을 void에서 List<int>로 변경
     public static List<int> Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
-      // 1. 기하학적 형상 검사 (Geometry) - 미세 요소 처리
+      // 1. 기하학적 형상 검사 (Geometry)
       double shortElementDistanceThreshold = 1.0;
       InspectGeometry(context, shortElementDistanceThreshold, pipelineDebug, verboseDebug);
 
-      // 2. Equivalence 검사 (노드 중복 병합)
+      // 2. Equivalence 검사
       double EquivalenceTolerance = 0.1;
       InspectEquivalence(context, EquivalenceTolerance, pipelineDebug, verboseDebug);
 
-      // 3. Duplicate 검사 (요소 중복) - 잉여 중복 요소 자동 삭제
+      // 3. Duplicate 검사
       InspectDuplicate(context, pipelineDebug, verboseDebug);
 
-      // 4. 데이터 무결성 검사 (불량 요소 삭제)
+      // 4. 데이터 무결성 검사
       InspectIntegrity(context, pipelineDebug, verboseDebug);
 
-      // 5. 고립 요소 검사 (Isolation)
+      // 5. 고립 요소 검사
       InspectIsolation(context, pipelineDebug, verboseDebug);
 
-      // 6. 위상학적 연결성 검사 (Topology) - 맨 마지막에 최종 Free Node 산출
-      // 모든 모델 청소가 끝난 완벽한 최종 상태에서 자유단을 찾습니다.
+      // ★ [삭제됨] 매 스테이지마다 강체를 지우면 안 되므로 여기서 호출하던 부분 제거!
+
+      // 6. 위상학적 연결성 검사
       List<int> freeEndNodes = InspectTopology(context, pipelineDebug, verboseDebug);
 
-      // ★ 추가: BDF Exporter로 넘겨주기 위해 값을 반환
       return freeEndNodes;
     }
+
+    // ★ [수정됨] 외부(Pipeline)에서 파이프라인 전체 종료 후 단 1번 호출할 수 있도록 public으로 변경
+   
 
     private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
@@ -67,7 +70,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         usedInRbeOrMass.Add(pm.NodeID);
       }
 
-      // B. 미사용 드 (Degree = 0) 탐색 및 삭제 (단, RBE나 Mass에서 쓰이는 노드는 보호)
+      // B. 미사용 노드 (Degree = 0) 탐색 및 삭제 (단, RBE나 Mass에서 쓰이는 노드는 보호)
       var isolatedNodes = context.Nodes.Keys
           .Where(id => (!nodeDegree.TryGetValue(id, out var deg) || deg == 0) && !usedInRbeOrMass.Contains(id))
           .ToList();
@@ -89,7 +92,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       int removedOrphans = RemoveOrphanNodes(context, isolatedNodes);
       if (pipelineDebug && removedOrphans > 0)
       {
-        Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 즉시 삭제습니다.");
+        Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 즉시 삭제했습니다.");
       }
 
       // A. 자유단 노드 (Degree = 1) -> SPC 대상 추출
@@ -121,7 +124,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         }
         else
         {
-          // 일반적인 자유단 노드라면 그대로 SPC 부여
+          // 일반적인 자유단 노라면 그대로 SPC 부여
           spcTargetNodes.Add(node);
         }
       }
@@ -226,7 +229,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       var duplicateGroups = ElementDuplicateInspector.FindDuplicateGroups(context);
       int deletedCount = 0;
 
-      // ★ [추가됨] 중복 요소 발견되면 첫 번째 요소만 남기고 나머지는 모델에서 영구 삭제
+      // ★ [추가됨] 중복 요소가 발견되면 첫 번째 요소만 남기고 나머지는 모델에서 영구 삭제
       if (duplicateGroups.Count > 0)
       {
         foreach (var group in duplicateGroups)
@@ -253,7 +256,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
         LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다! (잉여 중복 부재 {deletedCount}개 자동 삭제됨)");
 
-        // verboseDebug에 따 출력 개수 조절
+        // verboseDebug에 따라 출력 개수 조절
         int printLimit = verboseDebug ? int.MaxValue : 5;
         int count = 0;
 
@@ -328,6 +331,49 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         // verboseDebug에 따라 출력할 Element ID 개수 조절 (상세=전부, 아니면 기본 5개)
         int printLimit = verboseDebug ? int.MaxValue : 5;
         Console.WriteLine($"      고립된 Element IDs: {SummarizeIds(isolation, printLimit)}");
+      }
+    }
+
+    /// <summary>
+    /// 종속 노드(Dependent Node)를 찾지 못해 비어있는(Count == 0) 불량 강체를
+    /// 기문으로 따로 모아서 출력하고, 프로그램이 뻗지 않도록 모델에서 삭제합니다.
+    /// </summary>
+    public static void InspectRigidIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    {
+      // (내용은 이전과 완전 동일합니다)
+      var emptyRbeIds = new List<int>();
+
+      foreach (var kvp in context.Rigids)
+      {
+        var rbe = kvp.Value;
+        if (rbe.DependentNodeIDs == null || rbe.DependentNodeIDs.Count == 0)
+        {
+          emptyRbeIds.Add(kvp.Key);
+        }
+      }
+
+      int removedCount = 0;
+      foreach (var id in emptyRbeIds)
+      {
+        context.Rigids.Remove(id);
+        removedCount++;
+      }
+
+      if (pipelineDebug)
+      {
+        if (emptyRbeIds.Count == 0)
+        {
+          LogPass("06 - 강체(RBE) 무결성 : 모든 강체가 정상적으로 연결 대상을 찾았습니다.");
+        }
+        else
+        {
+          Console.ForegroundColor = ConsoleColor.Red;
+          Console.WriteLine($"[경고/정리] 06 - 강체(RBE) 무결성 : 타겟을 찾지 못해 DEP가 비어있는 불량 강체 {removedCount}개가 발견되어 안전하게 제외되었습니다.");
+          Console.ResetColor();
+
+          int printLimit = verboseDebug ? int.MaxValue : 20;
+          Console.WriteLine($"      제외된 RBE IDs (수동 확인 필요): {SummarizeIds(emptyRbeIds, printLimit)}");
+        }
       }
     }
 
