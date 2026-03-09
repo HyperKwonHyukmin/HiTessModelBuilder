@@ -7,15 +7,16 @@ using System.Linq;
 namespace HiTessModelBuilder.Pipeline.ElementModifier
 {
   /// <summary>
-  /// [Stage 7: UBOLT 지능형 수직 스냅]
-  /// 1. UBOLT의 위치에서 수직 아래 방향으로 구조물을 탐색하여 교차점(Dependent Node)을 찾습니다.
-  /// 2. 찾은 교차점에서 다시 배관(Pipe)에 수선의 발을 내려 최적의 직교 지점을 찾습니다.
-  /// 3. UBOLT의 Independent Node를 수선의 발 위치로 이동시키고, Dependent Node를 구조물에 연결합니다.
+  /// [Stage 7: 일반 UBOLT 지능형 수직 스냅]
+  /// 1. UBOLT 위치에서 수직 아래(Down) 방향으로 구조물을 탐색합니다.
+  /// 2. 아래쪽에 없다면 수직 위(Up) 방향으로 매달린 배관을 고려해 탐색합니다.
+  /// 3. 탐색 반경(Tolerance)을 통해 기울어지거나 대각선에 위치한 부재도 포착합니다.
+  /// 4. 찾은 교차점에 노드를 찍고 UBOLT의 Dependent로 연결합니다.
   /// </summary>
   public static class UboltSnapToStructureModifier
   {
     public sealed record Options(
-        double Tolerance = 50.0,        // 레이캐스팅 허용 오차 (단면 두께 고려)
+        double Tolerance = 50.0,       // 대각선/사선 부재를 낚아채기 위한 넓은 탐색 반경(실린더 반경)
         bool PipelineDebug = true,
         bool VerboseDebug = true
     );
@@ -28,32 +29,53 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       int snappedCount = 0;
 
       // 1. "UBOLT" 강체 필터링 (단, BOX 타입은 별도로 처리하므로 제외)
-      var ubolts = context.Rigids.Where(kv =>
+      var rawUbolts = context.Rigids.Where(kv =>
           kv.Value.ExtraData != null &&
           kv.Value.ExtraData.TryGetValue("Type", out var type) && type == "UBOLT" &&
           !(kv.Value.ExtraData.TryGetValue("Remark", out var remark) && remark == "BOX")
       ).ToList();
 
-      if (ubolts.Count == 0) return 0;
+      if (rawUbolts.Count == 0) return 0;
+
+      // ★ [신규 추가] 중복 방지 방어 로직
+      // 동일한 노드(IndependentNode)에 여러 개의 UBOLT가 붙어있다면 1개만 남기고 나머지는 삭제
+      var ubolts = new List<KeyValuePair<int, RigidInfo>>();
+      var processedNodes = new HashSet<int>();
+
+      foreach (var ubolt in rawUbolts)
+      {
+        int indepNode = ubolt.Value.IndependentNodeID;
+
+        if (processedNodes.Contains(indepNode))
+        {
+          // 이미 해당 노드에 UBOLT가 등록되어 있다면, 이 녀석은 중복 찌꺼기이므로 모델에서 영구 삭제
+          context.Rigids.Remove(ubolt.Key);
+          if (opt.VerboseDebug) log($"[정리] N{indepNode}에 중복된 UBOLT(RBE {ubolt.Key})가 발견되어 삭제되었습니다.");
+          continue;
+        }
+
+        processedNodes.Add(indepNode);
+        ubolts.Add(ubolt);
+      }
+      // ubolts 컬렉션에는 이제 완벽하게 1노드 1UBOLT만 남아있습니다.
 
       if (opt.PipelineDebug)
       {
         log($"\n==================================================");
-        log($"[수정 시작] UboltSnapToStructureModifier (직교 경로 보정 기능 적용)");
-        log($" -> 탐색 대상 UBOLT 개수: {ubolts.Count}개");
+        log($"[수정 시작] UboltSnapToStructureModifier (위/아래 양방향 스냅 탐색)");
+        log($" -> 탐색 대상 일반 UBOLT 개수: {ubolts.Count}개");
         log($"==================================================\n");
       }
 
-      // 2. 구조물(Stru) 요소 및 배관(Pipe) 요소 필터링
       var struElements = context.Elements.Where(kv =>
           kv.Value.ExtraData != null && kv.Value.ExtraData.TryGetValue("Classification", out var cls) && cls == "Stru").ToList();
 
       var pipeElements = context.Elements.Where(kv =>
           kv.Value.ExtraData != null && kv.Value.ExtraData.TryGetValue("Category", out var cat) && cat == "Pipe").ToList();
 
-      Vector3D rayDir = new Vector3D(0, 0, -1);
+      Vector3D rayDown = new Vector3D(0, 0, -1);
+      Vector3D rayUp = new Vector3D(0, 0, 1);
 
-      // 3. 각 UBOLT 마다 로직 수행
       foreach (var ubolt in ubolts)
       {
         int rigidId = ubolt.Key;
@@ -61,14 +83,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         int oldIndepNodeId = info.IndependentNodeID;
         var pIndep = context.Nodes[oldIndepNodeId];
 
-        // 현재 UBOLT가 매달려 있는 배관 부재(Pipe Element) 찾기
         var ownerPipeElem = pipeElements.FirstOrDefault(kv => kv.Value.NodeIDs.Contains(oldIndepNodeId)).Value;
 
         double bestS = double.MaxValue;
         Point3D bestHitStruPoint = default;
         int bestStruTargetEid = -1;
+        string hitDir = "";
 
-        // [STEP A] 수직 아래 구조물 탐색
+        // [STEP A-1] 수직 아래(Down) 구조물 우선 탐색
         foreach (var struKv in struElements)
         {
           var elem = struKv.Value;
@@ -77,42 +99,59 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           var pA = context.Nodes[elem.NodeIDs.First()];
           var pB = context.Nodes[elem.NodeIDs.Last()];
 
-          bool isHit = TryRaySegmentIntersection(pIndep, rayDir, pA, pB, opt.Tolerance, out double s, out Point3D hitPoint);
+          // Tolerance가 원기둥 반경 역할을 하여 대각선에 있는 부재도 잡아냅니다.
+          bool isHit = TryRaySegmentIntersection(pIndep, rayDown, pA, pB, opt.Tolerance, out double s, out Point3D hitPoint);
 
           if (isHit && s > 0 && s < bestS)
           {
             bestS = s;
             bestHitStruPoint = hitPoint;
             bestStruTargetEid = struKv.Key;
+            hitDir = "아래쪽(Down)";
           }
         }
 
-        // [STEP B] 구조물 교차점을 찾았다면, 최적의 직교 경로 재계산 및 노드 업데이트
+        // [STEP A-2] 아래쪽에 없다면 수직 위(Up) 구조물 탐색 (매달린 배관 처리)
+        if (bestStruTargetEid == -1)
+        {
+          bestS = double.MaxValue; // 거리 초기화
+          foreach (var struKv in struElements)
+          {
+            var elem = struKv.Value;
+            if (elem.NodeIDs.Count < 2) continue;
+
+            var pA = context.Nodes[elem.NodeIDs.First()];
+            var pB = context.Nodes[elem.NodeIDs.Last()];
+
+            bool isHit = TryRaySegmentIntersection(pIndep, rayUp, pA, pB, opt.Tolerance, out double s, out Point3D hitPoint);
+
+            if (isHit && s > 0 && s < bestS)
+            {
+              bestS = s;
+              bestHitStruPoint = hitPoint;
+              bestStruTargetEid = struKv.Key;
+              hitDir = "윗쪽(Up)";
+            }
+          }
+        }
+
+        // [STEP B] 타겟을 찾았다면 노드 매핑 및 연결 진행
         if (bestStruTargetEid != -1)
         {
-          // 1. 구조물 위에 생성될 Dependent Node
           int newDepNodeId = context.Nodes.AddOrGet(bestHitStruPoint.X, bestHitStruPoint.Y, bestHitStruPoint.Z);
 
-          // 2. 구조물 교차점(bestHitStruPoint)에서 배관(ownerPipeElem)으로 수선의 발 내리기
-          Point3D bestProjPipePoint = pIndep; // 배관을 못 찾으면 기존 위치 유지
+          Point3D bestProjPipePoint = pIndep;
           if (ownerPipeElem != null && ownerPipeElem.NodeIDs.Count >= 2)
           {
             var pPipeA = context.Nodes[ownerPipeElem.NodeIDs.First()];
             var pPipeB = context.Nodes[ownerPipeElem.NodeIDs.Last()];
-
-            // 구조물 점 -> 배관 선분으로 수선의 발(Projection) 계산
             DistancePointToSegment(bestHitStruPoint, pPipeA, pPipeB, out bestProjPipePoint);
           }
 
-          // 3. 수선의 발 위치에 새로운 Independent Node 생성
           int newIndepNodeId = context.Nodes.AddOrGet(bestProjPipePoint.X, bestProjPipePoint.Y, bestProjPipePoint.Z);
 
-          // 4. 강체(RBE) 업데이트: 인디펜던트 노드 이동 & 디펜던트 노드 할당
           if (info.DependentNodeIDs.Count > 0)
           {
-            // 레거시 더미 노드가 있는 경우: 둘 다 치환
-
-
             context.Rigids.RemapNodes(rigidId, new Dictionary<int, int> {
                             { oldIndepNodeId, newIndepNodeId },
                             { info.DependentNodeIDs[0], newDepNodeId }
@@ -120,7 +159,6 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           }
           else
           {
-            // 빈 배열로 생성된 경우: 인디펜던트 먼저 옮기고(dropIfEmpty: false로 삭제 방지), 디펜던트 추가
             context.Rigids.RemapNodes(rigidId, new Dictionary<int, int> { { oldIndepNodeId, newIndepNodeId } }, dropIfEmpty: false);
             context.Rigids.AppendDependentNodes(rigidId, new[] { newDepNodeId });
           }
@@ -131,20 +169,24 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             double shiftDist = (pIndep - bestProjPipePoint).Magnitude();
             Console.ForegroundColor = ConsoleColor.Green;
-            log($"[UBOLT 직교 스냅 완료] RBE {rigidId} -> 수직 아래 구조물 E{bestStruTargetEid} 연결.");
+            log($"[연결 료] RBE {rigidId} -> {hitDir} 구조물 E{bestStruTargetEid} 연결.");
             Console.ResetColor();
-            log($"   - Indep 노드 재배치: N{oldIndepNodeId} -> N{newIndepNodeId} (배관 위 슬라이딩: {shiftDist:F2}mm)");
-            log($"   - 연결된 Dep 노드: N{newDepNodeId} (구조물 타겟 거리: {bestS:F1}mm)");
           }
+        }
+        else
+        {
+          // [STEP C] 위/아래 양쪽 모두 못 찾았을 경우, 치명적 오류 로깅 (Dep:[] 방지 목적)
+          Console.ForegroundColor = ConsoleColor.Red;
+          log($"[치명적 오류] RBE {rigidId} (일반 UBOLT) -> N{oldIndepNodeId} 반경 {opt.Tolerance}mm 내 위/아래로 뻗은 구조물(Stru)이 없습니다! (Dependent Node 비어있음)");
+          Console.ResetColor();
         }
       }
 
-      if (opt.PipelineDebug) log($"[수정 완료] 총 {snappedCount}개의 UBOLT가 직교 경로로 보정되어 스냅되었습니다.\n");
+      if (opt.PipelineDebug) log($"[수정 완료] 총 {snappedCount}개의 UBOLT가 위/아래 지능형 경로로 스냅되었습니다.\n");
 
       return snappedCount;
     }
 
-    // --- Helper 1: 선분으로 수선의 발 내리기 (최단 거리 및 투영점 반환) ---
     private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
     {
       var ab = b - a;
@@ -158,13 +200,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       }
 
       double t = ap.Dot(ab) / lengthSq;
-      t = Math.Max(0.0, Math.Min(1.0, t)); // 선분 밖으로 벗어나지 않게 클램핑
+      t = Math.Max(0.0, Math.Min(1.0, t));
 
       projPoint = a + (ab * t);
       return (p - projPoint).Magnitude();
     }
 
-    // --- Helper 2: Ray(직선)와 Segment(선분) 간의 교차 검사 ---
     private static bool TryRaySegmentIntersection(
         Point3D rayOrigin, Vector3D rayDir,
         Point3D segA, Point3D segB,
