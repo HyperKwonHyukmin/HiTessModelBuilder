@@ -268,14 +268,34 @@ namespace HiTessModelBuilder.Services.Builders
 
     /// <summary>
     /// 요소 생성 시 예외를 캡처하여 전체 프로세스가 중단되지 않도 보호하는 래퍼 메써드입니다.
+    /// 배관의 3D 좌표를 기반으로 기하학적으로 완벽히 직교하는 방향 벡터(Orientation)를 자동 계산하여 주입합니다.
     /// </summary>
     private void CreateElementSafe(int n1, int n2, int propId, double[] ori, Dictionary<string, string?> extra, PipeEntity pipe)
     {
       if (n1 == n2) return;
       try
       {
-        int eid = _context.Elements.AddNew(new List<int> { n1, n2 }, propId, ori, extra);
-        if (_pipeElementIDsByType.ContainsKey(pipe.Type)) _pipeElementIDsByType[pipe.Type].Add(eid);
+        // 1. 배관 선분의 실제 양 끝 노드 3D 좌표 획득
+        var p1 = _context.Nodes[n1];
+        var p2 = _context.Nodes[n2];
+
+        // 2. 구조물(Stru)과 동일한 로직으로 배관 단면에 완벽히 직교하는 벡터 계산 (Z축 평행 에러 원천 차단)
+        double[] calcOri = GeometryUtils.CalculateBarOrientation(
+            new double[] { p1.X, p1.Y, p1.Z },
+            new double[] { p2.X, p2.Y, p2.Z }
+        );
+
+        // 3. ExtraData에 계산된 OriX, OriY, OriZ 값을 강제 주입 (BdfBuilder가 읽을 수 있도록 조치)
+        var elementExtra = extra.ToDictionary(k => k.Key, v => v.Value ?? "");
+        elementExtra["OriX"] = calcOri[0].ToString(System.Globalization.CultureInfo.InvariantCulture);
+        elementExtra["OriY"] = calcOri[1].ToString(System.Globalization.CultureInfo.InvariantCulture);
+        elementExtra["OriZ"] = calcOri[2].ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        // 4. 요소 생성 (계산된 방향 벡터 calcOri와 업데이트된 elementExtra 적용)
+        int eid = _context.Elements.AddNew(new List<int> { n1, n2 }, propId, calcOri, elementExtra);
+
+        if (_pipeElementIDsByType.ContainsKey(pipe.Type))
+          _pipeElementIDsByType[pipe.Type].Add(eid);
       }
       catch (Exception ex)
       {
