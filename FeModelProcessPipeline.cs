@@ -172,12 +172,11 @@ namespace HiTessModelBuilder.Pipeline
               }
               break;
 
-            case 7:
+            case 7: // [최종 UBOLT 연결 단계]
               {
                 UboltConnectionRun(_pipelineDebug, currentVerbose);
                 break;
               }
-      
           }
 
           // 매 사이클이 끝날 때마다 상태를 점검하고 하이퍼메시 비교용 BDF를 찍어냅니다.
@@ -256,16 +255,33 @@ namespace HiTessModelBuilder.Pipeline
       return ElementRbeConnectionModifier.Run(_context, opt, _logger.LogDelegate);
     }
 
-    private void UboltConnectionRun(bool pDebug, bool vDebug)
+    /// <summary>
+    /// UBOLT의 연결을 전담하는 헬퍼 메서드입니다.
+    /// 일반 UBOLT의 수직 스냅(Snap) 연결 및 분할 힐링을 선행한 후, 
+    /// 특수 형태인 BOX 타입 UBOLT의 4점 연결 로직을 수행합니다.
+    /// </summary>
+    private int UboltConnectionRun(bool pDebug, bool vDebug)
     {
-      foreach(var ubolt in _context.Rigids)
+      int totalProcessed = 0;
+
+      // 1. 일반 UBOLT (수직 스냅) 처리
+      var snapOpt = new UboltSnapToStructureModifier.Options(Tolerance: 50.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
+      int snapCount = UboltSnapToStructureModifier.Run(_context, snapOpt, _logger.LogDelegate);
+      totalProcessed += snapCount;
+
+      // [중요] 일반 UBOLT가 구조물 부재 중간에 새로운 노드를 찍었으므로, 
+      // 해당 부재가 새 노드를 공유하여 쪼개지도록 Split을 실행합니다.
+      if (snapCount > 0)
       {
-        if (ubolt.Value.ExtraData["Type"] == "UBOLT")
-        {
-          Console.WriteLine(ubolt);
-        }
-        
+        ElementSplitByExistingNodesRun(pDebug, vDebug);
       }
+
+      // 2. BOX 타입 UBOLT 처리 (내부에서 스스로 분할까지 수행함)
+      var boxOpt = new UboltBoxConnectionModifier.Options(PipelineDebug: pDebug, VerboseDebug: vDebug);
+      int boxCount = UboltBoxConnectionModifier.Run(_context, boxOpt, _logger.LogDelegate);
+      totalProcessed += boxCount;
+
+      return totalProcessed;
     }
   }
 }
