@@ -3,6 +3,7 @@ using HiTessModelBuilder.Model.Geometry;
 using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace HiTessModelBuilder.Services.Builders
 {
@@ -176,7 +177,7 @@ namespace HiTessModelBuilder.Services.Builders
     }
 
     /// <summary>
-    /// 밸브 및 특수 부속품을 나타내는 강체(Rigid) 요소와 질량(Mass)을 생성합니다.
+    /// 밸브 및 특수 부속품을 타내는 강체(Rigid) 요소와 질량(Mass)을 생성합니다.
     /// </summary>
     private void BuildInlineEquipment(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
@@ -208,6 +209,7 @@ namespace HiTessModelBuilder.Services.Builders
                 _context.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2])
             };
 
+      // ★ 에러의 원인이었던 오타(P3PBuildUBoltos) 수정 완료
       if (pipeData.P3Pos != null && pipeData.P3Pos.Length >= 3)
       {
         depNodes.Add(_context.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]));
@@ -233,12 +235,11 @@ namespace HiTessModelBuilder.Services.Builders
       string remark = pipeData.Remark;
       extraData["Remark"] = pipeData.Remark;
 
-      // Dummy 노드 없이 빈 배열(Array.Empty<int>())로 깔끔하게 생성
-      int rbeId = _context.Rigids.AddNew(indepNode, Array.Empty<int>(), restStr, extraData);
+      // ★ [핵심] 중복 생성을 막기 위해 AddNew 대신 AddOrGet 사용
+      int rbeId = _context.Rigids.AddOrGet(indepNode, Array.Empty<int>(), restStr, extraData);
 
       if (_pipeElementIDsByType.ContainsKey(pipeData.Type))
         _pipeElementIDsByType[pipeData.Type].Add(rbeId);
-
     }
 
     /// <summary>
@@ -275,23 +276,19 @@ namespace HiTessModelBuilder.Services.Builders
       if (n1 == n2) return;
       try
       {
-        // 1. 배관 선분의 실제 양 끝 노드 3D 좌표 획득
         var p1 = _context.Nodes[n1];
         var p2 = _context.Nodes[n2];
 
-        // 2. 구조물(Stru)과 동일한 로직으로 배관 단면에 완벽히 직교하는 벡터 계산 (Z축 평행 에러 원천 차단)
         double[] calcOri = GeometryUtils.CalculateBarOrientation(
             new double[] { p1.X, p1.Y, p1.Z },
             new double[] { p2.X, p2.Y, p2.Z }
         );
 
-        // 3. ExtraData에 계산된 OriX, OriY, OriZ 값을 강제 주입 (BdfBuilder가 읽을 수 있도록 조치)
         var elementExtra = extra.ToDictionary(k => k.Key, v => v.Value ?? "");
         elementExtra["OriX"] = calcOri[0].ToString(System.Globalization.CultureInfo.InvariantCulture);
         elementExtra["OriY"] = calcOri[1].ToString(System.Globalization.CultureInfo.InvariantCulture);
         elementExtra["OriZ"] = calcOri[2].ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-        // 4. 요소 생성 (계산된 방향 벡터 calcOri와 업데이트된 elementExtra 적용)
         int eid = _context.Elements.AddNew(new List<int> { n1, n2 }, propId, calcOri, elementExtra);
 
         if (_pipeElementIDsByType.ContainsKey(pipe.Type))
