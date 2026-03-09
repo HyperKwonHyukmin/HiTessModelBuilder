@@ -172,11 +172,22 @@ namespace HiTessModelBuilder.Pipeline
               }
               break;
 
-            case 7: // [최종 UBOLT 연결 단계]
+            case 7: // [최종 UBOLT 연결 단계 및 마무리 힐링]
               {
-                UboltConnectionRun(_pipelineDebug, currentVerbose);
+                int uboltCount = UboltConnectionRun(_pipelineDebug, currentVerbose);
+
+                // UBOLT 연결 및 분할이 발생했다면, 모델 무결성을 위해 힐링 전체 과정을 수행합니다.
+                if (uboltCount > 0)
+                {
+                  ElementSplitByExistingNodesRun(_pipelineDebug, currentVerbose);
+                  ElementIntersectionSplitRun(_pipelineDebug, currentVerbose);
+                  ElementShortCollapseRun(_pipelineDebug, currentVerbose);
+                  ElementCollinearNodeMergeRun(_pipelineDebug, currentVerbose);
+                }              
+
                 break;
               }
+             
           }
 
           // 매 사이클이 끝날 때마다 상태를 점검하고 하이퍼메시 비교용 BDF를 찍어냅니다.
@@ -190,8 +201,16 @@ namespace HiTessModelBuilder.Pipeline
           _logger.LogError($"[Stage {i:D2}] 처리 중 예기치 않은 오류가 발생했습니다.", ex);
           throw; // 상위(Program.cs)로 에러를 던져서 전체 프로세스 중단
         }
-
       }
+      // ★ [신규 추가] 파이프라인 전체 사이클이 완전히 끝난 후 최종 강체 무결성 점검 수행
+      if (_pipelineDebug)
+      {
+        Console.WriteLine("\n================ FINAL CHECK =================");
+      }
+
+      // 타겟(구조물)을 끝까지 찾지 못해 DEP가 비어있는 불량 강체를 최종 색출 및 로그 출력
+      StructuralSanityInspector.InspectRigidIntegrity(_context, _pipelineDebug, this._verboseDebug);
+
     }
 
     // --- 이하 Modifier 실행 헬퍼 메서드들은 기존 코드와 동일합니다 ---
@@ -264,8 +283,8 @@ namespace HiTessModelBuilder.Pipeline
     {
       int totalProcessed = 0;
 
-      // 1. 일반 UBOLT (수직 스냅) 처리
-      var snapOpt = new UboltSnapToStructureModifier.Options(Tolerance: 50.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
+      // 1. 일반 UBOLT (수직 스냅) 처리 (탐색 반경 200mm 부여로 대각선 부재 포착)
+      var snapOpt = new UboltSnapToStructureModifier.Options(Tolerance: 200.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
       int snapCount = UboltSnapToStructureModifier.Run(_context, snapOpt, _logger.LogDelegate);
       totalProcessed += snapCount;
 
@@ -277,9 +296,14 @@ namespace HiTessModelBuilder.Pipeline
       }
 
       // 2. BOX 타입 UBOLT 처리 (내부에서 스스로 분할까지 수행함)
-      var boxOpt = new UboltBoxConnectionModifier.Options(PipelineDebug: pDebug, VerboseDebug: vDebug);
-      int boxCount = UboltBoxConnectionModifier.Run(_context, boxOpt, _logger.LogDelegate);
-      totalProcessed += boxCount;
+      //var boxOpt = new UboltBoxConnectionModifier.Options(PipelineDebug: pDebug, VerboseDebug: vDebug);
+      //int boxCount = UboltBoxConnectionModifier.Run(_context, boxOpt, _logger.LogDelegate);
+      //totalProcessed += boxCount;
+
+      foreach(var rigid in _context.Rigids)
+      {
+        Console.WriteLine(rigid);
+      }
 
       return totalProcessed;
     }
