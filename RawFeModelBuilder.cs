@@ -90,6 +90,10 @@ namespace HiTessModelBuilder.Services.Builders
         double[] barOrientation = GeometryUtils.CalculateBarOrientation(entity.Poss, entity.Pose);
         int nodeA_ID = _feModelContext.Nodes.AddOrGet(entity.Poss[0], entity.Poss[1], entity.Poss[2]);
         int nodeB_ID = _feModelContext.Nodes.AddOrGet(entity.Pose[0], entity.Pose[1], entity.Pose[2]);
+        // [신규 추가] 엔티티의 Weld 정보를 읽어 전역 컨텍스트에 용접 노드로 등록
+        string weldInfo = entity.Weld?.ToLowerInvariant() ?? "";
+        if (weldInfo == "start") _feModelContext.WeldNodes.Add(nodeA_ID);
+        if (weldInfo == "end") _feModelContext.WeldNodes.Add(nodeB_ID);
 
         string oriX = "0.0", oriY = "0.0", oriZ = "1.0"; // 기본값
         if (entity.Ori != null && entity.Ori.Length >= 3)
