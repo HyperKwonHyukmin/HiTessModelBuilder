@@ -10,8 +10,9 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
   public static class StructuralSanityInspector
   {
     // ★ 수정: 반환형을 void에서 List<int>로 변경
-    public static List<int> Inspect(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    public static List<int> Inspect(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug)
     {
+      {
       // 1. 기하학적 형상 검사 (Geometry)
       double shortElementDistanceThreshold = 1.0;
       InspectGeometry(context, shortElementDistanceThreshold, pipelineDebug, verboseDebug);
@@ -32,22 +33,21 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       // ★ [삭제됨] 매 스테이지마다 강체를 지우면 안 되므로 여기서 호출하던 부분 제거!
 
       // 6. 위상학적 연결성 검사
-      List<int> freeEndNodes = InspectTopology(context, pipelineDebug, verboseDebug);
-
+      List<int> freeEndNodes = InspectTopology(context, useExplicitWeldSpc, pipelineDebug, verboseDebug);
       return freeEndNodes;
     }
 
     // ★ [수정됨] 외부(Pipeline)에서 파이프라인 전체 종료 후 단 1번 호출할 수 있도록 public으로 변경
-   
 
-    private static List<int> InspectTopology(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+
+    private static List<int> InspectTopology(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug)
     {
       // 01. Element 그룹 연결성 확인
       var connectedGroups = ElementConnectivityInspector.FindConnectedElementGroups(context.Elements);
       if (pipelineDebug)
       {
         if (connectedGroups.Count <= 1)
-          LogPass($"01 - 위상 연결성 : 전체 모델이 {connectedGroups.Count}개의 그룹으로 잘 연결되어 있습니다.");
+          LogPass($"01 - 위상 연결성 : 체 모델이 {connectedGroups.Count}개의 그룹으로 잘 연결되어 있습니다.");
         else
           LogWarning($"01 - 위상 연결성 : 모델이 {connectedGroups.Count}개의 분리된 덩어리로 나뉘어 있습니다.");
       }
@@ -70,7 +70,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         usedInRbeOrMass.Add(pm.NodeID);
       }
 
-      // B. 미사용 노드 (Degree = 0) 탐색 및 삭제 (단, RBE나 Mass에서 쓰이는 노드는 보호)
+      // B. 미사용 노드 (Degree = 0) 탐 및 삭제 (단, RBE나 Mass에서 쓰이는 노드는 보호)
       var isolatedNodes = context.Nodes.Keys
           .Where(id => (!nodeDegree.TryGetValue(id, out var deg) || deg == 0) && !usedInRbeOrMass.Contains(id))
           .ToList();
@@ -95,38 +95,30 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         Console.WriteLine($"      [자동 정리] 사용되지 않는 고립 노드 {removedOrphans}개를 즉시 삭제했습니다.");
       }
 
-      // A. 자유단 노드 (Degree = 1) -> SPC 대상 추출
+      // A. SPC 대상 추출 (하이브리드 로직 적용)
       var spcTargetNodes = new HashSet<int>();
-      var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
 
-      foreach (var node in endNodes)
+      // ★ Auto-Fallback 결정: 옵션이 켜져 있고, 실제로 파싱된 Weld 데이터가 존재할 때만 Mode 2(명시적) 작동
+      bool effectiveUseExplicitWeldSpc = useExplicitWeldSpc && context.WeldNodes.Count > 0;
+
+      if (effectiveUseExplicitWeldSpc)
       {
-        bool isDependent = false;
-        int mappedIndepNode = -1;
-
-        // 해당 Free Node가 어떤 RBE의 종속(Dependent) 노드인지 확인 (수정됨)
-        foreach (var kvp in context.Rigids)
+        // Mode 2: 명시적 용접점(Weld) 기반 SPC 부여
+        foreach (var nid in context.WeldNodes)
         {
-          var rbe = kvp.Value;
-          if (rbe.DependentNodeIDs.Contains(node))
-          {
-            isDependent = true;
-            mappedIndepNode = rbe.IndependentNodeID;
-            break;
-          }
+          spcTargetNodes.Add(nid);
         }
-
-        if (isDependent && mappedIndepNode != -1)
+        if (pipelineDebug) LogPass($"02_A - SPC 지정 : 명시적 용접점(Weld) 기반으로 {spcTargetNodes.Count}개의 노드를 지정했습니다.");
+      }
+      else
+      {
+        // Mode 1: 자유단(Free Node) 기반 SPC 부여 (옵션이 꺼져있거나 Weld 데이터가 0개일 때 자동 발동)
+        var endNodes = nodeDegree.Where(kv => kv.Value == 1).Select(kv => kv.Key).ToList();
+        foreach (var node in endNodes)
         {
-          // ★ 핵심: 종속 노드에는 SPC 부여 시 에러가 나므로, 
-          // 대신 강체를 지휘하는 마스터 노드(Independent)를 묶어서 배관을 완벽히 고정시킵니다.
-          spcTargetNodes.Add(mappedIndepNode);
-        }
-        else
-        {
-          // 일반적인 자유단 노라면 그대로 SPC 부여
           spcTargetNodes.Add(node);
         }
+        if (pipelineDebug) LogPass($"02_A - SPC 지정 : 자유단(Free Node) 탐색 기반으로 {spcTargetNodes.Count}개의 노드를 지정했습니다.");
       }
 
       var finalSpcList = spcTargetNodes.ToList();
@@ -254,7 +246,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
           return;
         }
 
-        LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다! (잉여 중복 부재 {deletedCount}개 자동 삭제됨)");
+        LogCritical($"05 - 요소 중복 : 노드 구성이 동일한 중복 요소 세트가 {duplicateGroups.Count}개 발견되었습니다! (잉여 중복 부재 {deletedCount}개 자동 제됨)");
 
         // verboseDebug에 따라 출력 개수 조절
         int printLimit = verboseDebug ? int.MaxValue : 5;
@@ -336,7 +328,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
     /// <summary>
     /// 종속 노드(Dependent Node)를 찾지 못해 비어있는(Count == 0) 불량 강체를
-    /// 기문으로 따로 모아서 출력하고, 프로그램이 뻗지 않도록 모델에서 삭제합니다.
+    /// 분기문으로 따로 모아서 출력하고, 프로그램이 뻗지 않도록 모델에서 삭제합니다.
     /// </summary>
     public static void InspectRigidIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug)
     {
@@ -363,7 +355,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       {
         if (emptyRbeIds.Count == 0)
         {
-          LogPass("06 - 강체(RBE) 무결성 : 모든 강체가 정상적으로 연결 대상을 찾았습니다.");
+          LogPass("06 - 강체(RBE) 무결성 : 모든 강체가 정상적으 연결 대상을 찾았습니다.");
         }
         else
         {
