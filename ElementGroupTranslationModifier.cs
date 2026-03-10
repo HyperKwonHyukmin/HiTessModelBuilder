@@ -1,6 +1,7 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
@@ -9,14 +10,15 @@ using System.Linq;
 namespace HiTessModelBuilder.Pipeline.ElementModifier
 {
   /// <summary>
-  /// [Stage 6: 강체 그룹 병진 이동]
-  /// 메인 구조물(Master)과 떨어져 있는 독립된 부재 그룹(Slave)을 찾아,
-  /// 형상의 왜곡 없이 그룹 전체를 병진 이동(Translation)시켜 Master 부재에 스냅합니다.
+  /// [Stage 6: 지능형 강체 그룹 병진 이동]
+  /// Master와 떨어진 Slave 그룹들을 이동시키되, 근접도와 이동 방향의 일관성을 검사하여
+  /// 역방향 이동으로 인한 연결성 파괴를 예방하며 일괄 이동시킵니다.
   /// </summary>
   public static class ElementGroupTranslationModifier
   {
     public sealed record Options(
-        double ExtraMargin = 50.0, // 그룹 간 오프셋 탐색 허용 여유 반경
+        double ExtraMargin = 50.0,      // Master 탐색 허용 반경
+        double LocalTolerance = 40.0,   // Slave 그룹 간 사전 통합 허용 거리
         bool PipelineDebug = true,
         bool VerboseDebug = true
     );
@@ -28,163 +30,147 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       var elements = context.Elements;
       var nodes = context.Nodes;
-      var properties = context.Properties;
 
-      int translatedGroupCount = 0;
+      // 1. 물리적 연결 기반 기본 그룹 추출
+      var initialGroups = ElementConnectivityInspector.FindConnectedElementGroups(elements);
+      if (initialGroups.Count <= 1) return 0;
 
-      // 1. 위상 연결 그룹 추출 (ElementConnectivityInspector 활용)
-      var groups = ElementConnectivityInspector.FindConnectedElementGroups(elements);
+      var sorted = initialGroups.OrderByDescending(g => g.Count).ToList();
+      var masterElementIds = new HashSet<int>(sorted[0]);
+      var initialSlaves = sorted.Skip(1).ToList();
 
-      if (groups.Count <= 1)
-      {
-        if (opt.PipelineDebug) log("[통과] 모든 요소가 하나의 그룹으로 연결되어 있어 그룹 병진 이동이 필요 없습니다.");
-        return 0;
-      }
+      // 2. [핵심 예방 조치] 방향성 및 근접도 기반 사전 그룹화 실행
+      var metaSlaveGroups = PreGroupSlavesByProximityAndIntent(context, initialSlaves, masterElementIds, opt);
 
-      // 2. 가장 큰 그룹을 Master로 간주, 나머지를 Slave로 분리
-      var sortedGroups = groups.OrderByDescending(g => g.Count).ToList();
-      var masterGroup = sortedGroups.First();
-      var slaveGroups = sortedGroups.Skip(1).ToList();
-
-      if (opt.PipelineDebug)
-      {
-        log($"\n==================================================");
-        log($"[수정 시작] ElementGroupTranslationModifier (강체 그룹 병진 이동)");
-        log($" -> 전체 그룹 수: {groups.Count} (Master 1개, Slave {slaveGroups.Count}개)");
-        log($"==================================================\n");
-      }
-
-      // 전체 노드의 연결 차수 (Free Node 판별용)
+      int translatedCount = 0;
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
 
-      // 빠른 검색을 위한 Master 요소 HashSet
-      var masterElementIds = new HashSet<int>(masterGroup);
-
-      // 3. 각 Slave 그룹을 순회하며 일괄 이동 처리
-      foreach (var slaveGroup in slaveGroups)
+      // 3. 검증된 Meta-Group 단위로 이동 처리
+      foreach (var slaveGroup in metaSlaveGroups)
       {
-        // Slave 그룹에 속한 요소와 고유 노드 수집
-        var slaveNodeIds = new HashSet<int>();
-        var slaveFreeNodes = new List<int>();
+        var (vector, sourceNode, targetEid, dist) = CalculateBestMove(context, slaveGroup, masterElementIds, nodeDegree, opt);
 
-        foreach (var eid in slaveGroup)
+        if (targetEid != -1 && dist > 1e-4)
         {
-          if (!elements.Contains(eid)) continue;
-          foreach (var nid in elements[eid].NodeIDs)
-          {
-            slaveNodeIds.Add(nid);
-          }
-        }
-
-        // Slave 내부의 노드 중 전체 컨텍스트에서 Degree가 1인 노드(Free Node) 추출
-        foreach (var nid in slaveNodeIds)
-        {
-          if (nodeDegree.TryGetValue(nid, out int deg) && deg == 1)
-          {
-            slaveFreeNodes.Add(nid);
-          }
-        }
-
-        if (slaveFreeNodes.Count == 0) continue; // 붙일 기준(Free Node)이 없으면 패스
-
-        double bestDist = double.MaxValue;
-        Vector3D bestTranslationVector = default;
-        int bestSourceNode = -1;
-        int bestTargetElement = -1;
-
-        // 4. Slave의 각 Free Node에 대해 가장 가까운 Master 요소 탐색
-        foreach (var freeNodeId in slaveFreeNodes)
-        {
-          var pFree = nodes[freeNodeId];
-
-          foreach (var masterEid in masterElementIds)
-          {
-            if (!elements.Contains(masterEid)) continue;
-            var masterElem = elements[masterEid];
-            if (masterElem.NodeIDs.Count < 2) continue;
-
-            var pA = nodes[masterElem.NodeIDs.First()];
-            var pB = nodes[masterElem.NodeIDs.Last()];
-
-            var prop = properties[masterElem.PropertyID];
-            double searchDim = PropertyDimensionHelper.GetMaxCrossSectionDim(prop);
-            double allowedDist = searchDim + opt.ExtraMargin;
-
-            // 점과 선분 사이의 최단 거리 및 투영점 계산
-            double dist = DistancePointToSegment(pFree, pA, pB, out Point3D projPoint);
-
-            // 허용 거리 내에 들어오고, 기존에 찾은 것보다 더 가깝다면 갱신
-            if (dist <= allowedDist && dist < bestDist)
-            {
-              bestDist = dist;
-              bestTranslationVector = projPoint - pFree; // 이동해야 할 벡터
-              bestSourceNode = freeNodeId;
-              bestTargetElement = masterEid;
-            }
-          }
-        }
-
-        // 5. 최적의 타겟을 찾았다면 Slave 그룹 전체 노드를 일괄 이동 (형상 유지)
-        if (bestTargetElement != -1 && bestDist > 1e-4)
-        {
-          foreach (var nid in slaveNodeIds)
+          // 그룹 내 모든 노드 수집 및 일괄 이동
+          var allNodesInGroup = GetAllNodesInElements(elements, slaveGroup);
+          foreach (var nid in allNodesInGroup)
           {
             var p = nodes[nid];
-            var newP = p + bestTranslationVector; // 모든 노드에 동일 벡터 적용
-
-            // 기존 ID를 유지한 채 좌표만 덮어쓰기 (Nodes 컬렉션의 AddWithID 활용)
-            nodes.AddWithID(nid, newP.X, newP.Y, newP.Z);
+            nodes.AddWithID(nid, p.X + vector.X, p.Y + vector.Y, p.Z + vector.Z);
           }
-
-          translatedGroupCount++;
+          translatedCount++;
 
           if (opt.VerboseDebug)
-          {
-            Console.ForegroundColor = ConsoleColor.Green;
-            log($"[그룹 이동 완료] Slave 그룹(요소 {slaveGroup.Count}개)이 통째로 이동하여 Master E{bestTargetElement}에 스냅되었습니다.");
-            Console.ResetColor();
-            log($"   - 앵커(선봉) 노드: N{bestSourceNode}");
-            log($"   - 일괄 이동 벡터: ({bestTranslationVector.X:F1}, {bestTranslationVector.Y:F1}, {bestTranslationVector.Z:F1})");
-            log($"   - 병진 이동 거리: {bestDist:F2}\n");
-          }
+            log($"[이동 성공] Meta-Group(요소 {slaveGroup.Count}개) -> 벡터({vector.X:F1}, {vector.Y:F1}, {vector.Z:F1}) 적용");
         }
       }
 
-      if (opt.PipelineDebug)
-      {
-        if (translatedGroupCount > 0)
-        {
-          Console.ForegroundColor = ConsoleColor.Cyan;
-          log($"[수정 완료] 총 {translatedGroupCount}개의 Slave 그룹이 병진 이동되어 Master에 스냅되었습니다.\n");
-          Console.ResetColor();
-        }
-        else
-        {
-          log($"[수정 완료] 강체 병진 이동이 필요한 그룹이 없습니다.\n");
-        }
-      }
-
-      return translatedGroupCount;
+      return translatedCount;
     }
 
     /// <summary>
-    /// 점 P와 선분 AB 사이의 최단 거리와, 그 수선의 발(투영점)을 함께 반환합니다.
+    /// Slave 그룹들 간의 거리와 Master 방향 벡터를 비교하여, 같은 방향으로 움직여야 하는 그룹들만 하나로 묶습니다.
     /// </summary>
-    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
+    private static List<List<int>> PreGroupSlavesByProximityAndIntent(
+        FeModelContext context, List<List<int>> slaves, HashSet<int> masterIds, Options opt)
     {
-      var ab = b - a;
-      var ap = p - a;
+      if (slaves.Count <= 1) return slaves;
 
-      double lengthSq = ab.Dot(ab);
-      if (lengthSq < 1e-12)
+      // 각 Slave 그룹의 대표 이동 벡터 미리 계산
+      var slaveIntents = slaves.Select(s => new {
+        Elements = s,
+        Vector = CalculateCandidateVector(context, s, masterIds, opt)
+      }).ToList();
+
+      // Union-Find를 통한 안전한 그룹 병합
+      var uf = new UnionFind(Enumerable.Range(0, slaves.Count).ToList());
+
+      for (int i = 0; i < slaveIntents.Count; i++)
       {
-        projPoint = a;
-        return (p - a).Magnitude();
+        for (int j = i + 1; j < slaveIntents.Count; j++)
+        {
+          double dist = GetDistanceBetweenGroups(context, slaveIntents[i].Elements, slaveIntents[j].Elements);
+
+          // [예방 조치 1] 근접성 확인
+          if (dist > opt.LocalTolerance) continue;
+
+          // [예방 조치 2] 벡터 일관성 확인 (내적)
+          // 방향이 반대(내적 < 0)면 아무 가까워도 묶지 않음 (D-A-B 상황 방지)
+          double dot = slaveIntents[i].Vector.Dot(slaveIntents[j].Vector);
+          if (dot > 0)
+          {
+            uf.Union(i, j);
+          }
+        }
       }
 
-      double t = ap.Dot(ab) / lengthSq;
-      t = Math.Max(0.0, Math.Min(1.0, t));
+      // 병합된 결과 재구성
+      return uf.GetClusters().Values.Select(indices =>
+          indices.SelectMany(idx => slaveIntents[idx].Elements).ToList()
+      ).ToList();
+    }
 
+    /// <summary>
+    /// 특정 그룹이 Master에 붙기 위해 필요한 잠재적 이동 벡터를 계산합니다.
+    /// </summary>
+    private static Vector3D CalculateCandidateVector(FeModelContext context, List<int> slaveElements, HashSet<int> masterIds, Options opt)
+    {
+      // 가장 가까운 Master 지점을 찾아 방향만 도출
+      var (vec, _, target, _) = CalculateBestMove(context, slaveElements, masterIds, NodeDegreeInspector.BuildNodeDegree(context), opt);
+      return target == -1 ? new Vector3D(0, 0, 0) : vec.Normalize();
+    }
+
+    // --- 이하 보조 헬퍼 메서드 (기존 로직 유지 및 개선) ---
+
+    private static (Vector3D vec, int srcNode, int targetEid, double dist) CalculateBestMove(
+        FeModelContext context, List<int> group, HashSet<int> masters, Dictionary<int, int> degrees, Options opt)
+    {
+      double bestDist = double.MaxValue;
+      Vector3D bestVec = default;
+      int bestSrc = -1;
+      int bestTarget = -1;
+
+      var freeNodes = group.SelectMany(eid => context.Elements[eid].NodeIDs)
+                           .Distinct().Where(nid => degrees.GetValueOrDefault(nid) == 1);
+
+      foreach (var fnid in freeNodes)
+      {
+        var pFree = context.Nodes[fnid];
+        foreach (var meid in masters)
+        {
+          var masterElem = context.Elements[meid];
+          double dist = DistancePointToSegment(pFree, context.Nodes[masterElem.NodeIDs[0]], context.Nodes[masterElem.NodeIDs[1]], out Point3D proj);
+
+          if (dist < bestDist && dist <= (PropertyDimensionHelper.GetMaxCrossSectionDim(context.Properties[masterElem.PropertyID]) + opt.ExtraMargin))
+          {
+            bestDist = dist;
+            bestVec = proj - pFree;
+            bestSrc = fnid;
+            bestTarget = meid;
+          }
+        }
+      }
+      return (bestVec, bestSrc, bestTarget, bestDist);
+    }
+
+    private static HashSet<int> GetAllNodesInElements(Elements elements, List<int> eids)
+        => new HashSet<int>(eids.SelectMany(eid => elements[eid].NodeIDs));
+
+    private static double GetDistanceBetweenGroups(FeModelContext context, List<int> g1, List<int> g2)
+    {
+      // 간단한 최소 거리 측정 (성능 필요 시 바운딩 박스 사용 가능)
+      var nodes1 = g1.SelectMany(e => context.Elements[e].NodeIDs).Distinct();
+      var nodes2 = g2.SelectMany(e => context.Elements[e].NodeIDs).Distinct();
+      return nodes1.Min(n1 => nodes2.Min(n2 => (context.Nodes[n1] - context.Nodes[n2]).Magnitude()));
+    }
+
+    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
+    {
+      var ab = b - a; var ap = p - a;
+      double lenSq = ab.Dot(ab);
+      if (lenSq < 1e-12) { projPoint = a; return (p - a).Magnitude(); }
+      double t = Math.Max(0, Math.Min(1, ap.Dot(ab) / lenSq));
       projPoint = a + (ab * t);
       return (p - projPoint).Magnitude();
     }
