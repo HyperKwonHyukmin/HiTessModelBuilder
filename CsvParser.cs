@@ -22,11 +22,12 @@ namespace HiTessModelBuilder.Parsers
     public List<StructureEntity> ParsedStruEntities { get; private set; } = new List<StructureEntity>();
     public List<PipeEntity> ParsedPipeEntities { get; private set; } = new List<PipeEntity>();
 
-    public RawCsvDesignData Parse(string? struCsvPath, string? pipeCsvPath)
+    public RawCsvDesignData Parse(string? struCsvPath, string? pipeCsvPath, string? equipCsvPath)
     {
       ParsedStruEntities.Clear();
       ParsedPipeEntities.Clear();
 
+      // strucCsv 파싱
       if (struCsvPath != null && File.Exists(struCsvPath))
       {
         foreach (var line in File.ReadLines(struCsvPath).Skip(1))
@@ -50,6 +51,7 @@ namespace HiTessModelBuilder.Parsers
         }
       }
 
+      // pipeCsv 파싱
       if (pipeCsvPath != null && File.Exists(pipeCsvPath))
       {
         foreach (var line in File.ReadLines(pipeCsvPath).Skip(1))
@@ -82,10 +84,27 @@ namespace HiTessModelBuilder.Parsers
         }
       }
 
+      // equiCsv 파싱   
+      if (equipCsvPath != null && File.Exists(equipCsvPath))
+      {
+        foreach (var line in File.ReadLines(equipCsvPath).Skip(1))
+        {
+          if (string.IsNullOrWhiteSpace(line)) continue;
+
+          Console.WriteLine(line);
+          var entity = new EquipEntity();
+
+        }
+      }
+
       var finalResult = GetGroupedData();
       LastResult = finalResult;
       return finalResult;
     }
+
+    // equiCsv 파싱
+    
+
 
     private static StructureEntity CreateStruEntity(string typeUpper) => typeUpper switch
     {
@@ -134,6 +153,9 @@ namespace HiTessModelBuilder.Parsers
       double OutDia, double Thick, double OutDia2, double Thick2, string Mass, string Remark
     );
 
+    private readonly record struct EquipParsedRow(
+      string Name, double[] Pos, double[] Cog, double[] InterPos, double Mass, double Wvol);
+
     // -----------------------
     // Parsing Logic
     // -----------------------
@@ -164,7 +186,7 @@ namespace HiTessModelBuilder.Parsers
 
     /// <summary>
     /// 배관(Pipe) 데이터를 파싱합니다. 
-    /// 선택적 속성(P3Pos, InterPos)은 값이 없으면 null을 반환하여 유령 드 생성을 방지합니다.
+    /// 선택적 속성(P3Pos, InterPos)은 값이 없으면 null을 반환하여 유령 노드 생성을 방지합니다.
     /// </summary>
     private bool TryPipeParseLine(string line, out PipeParsedRow row)
     {
@@ -178,7 +200,7 @@ namespace HiTessModelBuilder.Parsers
         string type = cols[1].Trim();
         string branch = cols[5].Trim();
 
-        // 1. 필수 좌표 파싱 (없거나 3차원이 아니면 불량 행 처리)
+        // 1. 필수 좌표 파싱 (없거나 3차원이 아면 불량 행 처리)
         var Pos = ExtractDoubles(cols[2]);
         var aPos = ExtractDoubles(cols[3]);
         var lPos = ExtractDoubles(cols[4]);
@@ -213,6 +235,11 @@ namespace HiTessModelBuilder.Parsers
       }
       catch { return false; }
     }
+
+    //private void TryEquipParseLine(string line, out EquipParsedRow row)
+    //{
+
+    //}
 
     // -----------------------
     // Helper Methods
@@ -259,4 +286,7 @@ namespace HiTessModelBuilder.Parsers
       return digits.Length > 0 ? digits : null;
     }
   }
+
+
+
 }
