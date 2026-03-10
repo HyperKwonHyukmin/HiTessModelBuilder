@@ -21,6 +21,8 @@ namespace HiTessModelBuilder.Model.Entities
     public double[] Poss { get; set; } = Array.Empty<double>();
     public double[] Pose { get; set; } = Array.Empty<double>();
     public double[] Ori { get; set; } = Array.Empty<double>();
+    public string Weld { get; set; } = string.Empty;
+    public string Classification { get; set; } = "Stru";
 
     /// <summary>
     /// SizeDims를 타입별 속성(Width, Height...)에 반영
@@ -63,7 +65,7 @@ namespace HiTessModelBuilder.Model.Entities
     public double OuterThickness { get; set; }
 
     // Nastran 출력용
-    // BEAM_200x200x8x12 : +          176.0    24.0   200.0     8.00.0     
+    // BEAM_200x200x8x12 : 
     public double Dim1 => Width - (2 * OuterThickness);
     public double Dim2 => 2 * OuterThickness;
     public double Dim3 => Height;
@@ -120,6 +122,22 @@ namespace HiTessModelBuilder.Model.Entities
     }
   }
 
+  public sealed class FbarDesignData : StructureEntity
+  {
+    public double Width { get; set; }
+    public double Thickness { get; set; }
+
+    public double Dim1 => Width;
+    public double Dim2 => Thickness;
+
+    public override void ApplyDims(double[] dims)
+    {
+      if (dims == null || dims.Length < 2) return;
+      Width = dims[0];
+      Thickness = dims[1];
+    }
+  }
+
   public sealed class RbarDesignData : StructureEntity
   {
     public double Diameter { get; set; }
@@ -129,6 +147,22 @@ namespace HiTessModelBuilder.Model.Entities
     {
       if (dims == null || dims.Length < 1) return;
       Diameter = dims[0];
+    }
+  }
+
+  public sealed class TubeDesignData : StructureEntity
+  {
+    public double OuterDiameter { get; set; }
+    public double Thickness { get; set; }
+
+    public double Dim1 => Math.Round(OuterDiameter/2, 1);
+    public double Dim2 => Math.Round((OuterDiameter / 2) - Thickness, 1);
+
+    public override void ApplyDims(double[] dims)
+    {
+      if (dims == null || dims.Length < 2) return;
+      OuterDiameter = dims[0];
+      Thickness = dims[1];
     }
   }
 
