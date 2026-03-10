@@ -1,6 +1,7 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
@@ -59,8 +60,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       foreach (var freeNodeId in freeNodes)
       {
+        // ★ [안전성 강화] Free Node가 일반 부재(Element)에 속해 있는지 확인
+        // 만약 RBE나 PointMass에만 속해 있다면 딕셔너리에 없으므로 연장(Extend)하지 않고 건너뜁니다.
+        if (!freeNodeToElement.TryGetValue(freeNodeId, out int elemB_Id))
+        {
+          continue;
+        }
+
         // ElementB (FreeNode를 소유한 부재) 정보 획득
-        int elemB_Id = freeNodeToElement[freeNodeId];
         var elemB = elements[elemB_Id];
 
         // ElementB의 고정단(Anchor) 찾기
@@ -71,7 +78,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         var pFree = nodes[freeNodeId];
         var pAnchor = nodes[anchorNodeId];
 
-        // ElementB가 가지는 방향 벡터 (Anchor -> Free 방향)
+        // ElementB 가지는 방향 벡터 (Anchor -> Free 방향)
         var rayDir = (pFree - pAnchor).Normalize();
 
         double bestS = double.MaxValue;
@@ -215,7 +222,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       if (dist <= tolerance)
       {
-        hitPoint = pSeg;
+        // [수정됨] 타겟 부재(pSeg)로 억지로 끌어당기지 않고, 원래 부재의 방향성(Axis)을 
+        // 완벽히 유지하는 연장선 위의 점(pRay)을 반환합니다. 
+        // 미세한 이격 거리는 Stage 7의 RBE 강체 연결이 브릿지 역할을 수행합니다.
+        hitPoint = pRay;
         return true;
       }
 
