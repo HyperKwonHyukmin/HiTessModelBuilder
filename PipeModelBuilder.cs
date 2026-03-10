@@ -7,64 +7,60 @@ using System.Linq;
 
 namespace HiTessModelBuilder.Services.Builders
 {
-  /// <summary>
-  /// 배관(Pipe) 데이터를 기반으로 FE 모델(Nodes, Elements, Rigids, PointMasses)을 생성하는 전담 빌더 클래스입니다.
-  /// 기존 RawFeModelBuilder의 복잡도를 낮추고 배관 생성 로직의 재사용성을 높이기 위해 분리되었습니다.
-  /// </summary>
   public class PipeModelBuilder
   {
     private readonly FeModelContext _context;
     private readonly Dictionary<string, List<int>> _pipeElementIDsByType;
+    private readonly bool _useFluidDensity;
     private readonly bool _debugPrint;
 
-    public PipeModelBuilder(FeModelContext context, Dictionary<string, List<int>> pipeElementIDsByType, bool debugPrint = false)
+    // [변경됨] 생성자에 useFluidDensity 옵션 추가
+    public PipeModelBuilder(FeModelContext context, Dictionary<string, List<int>> pipeElementIDsByType, bool useFluidDensity = true, bool debugPrint = false)
     {
       _context = context ?? throw new ArgumentNullException(nameof(context));
       _pipeElementIDsByType = pipeElementIDsByType ?? throw new ArgumentNullException(nameof(pipeElementIDsByType));
+      _useFluidDensity = useFluidDensity;
       _debugPrint = debugPrint;
     }
 
-    /// <summary>
-    /// 전달받은 배관 엔티티 리스트를 순회하며 타입별로 적절한 FE 객체를 생성합니다.
-    /// </summary>
-    /// <param name="pipeList">생성할 배관 데이터 리스트</param>
     public void Build(List<PipeEntity> pipeList)
     {
       foreach (var pipeData in pipeList)
       {
-        // 1. 공통 속성 및 질량 변환
         bool isMassValid = double.TryParse(pipeData.Mass, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double massValue);
-        int materialID = _context.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
+
+        // [제거됨] 공통 Material(Steel) 일괄 생성 코드 삭제 (아래 헬퍼 메써드로 위임)
 
         var extraData = new Dictionary<string, string?>
-                {
-                    { "Name", pipeData.Name },
-                    { "Branch", pipeData.Branch },
-                    { "Rest", pipeData.Rest },
-                    { "Mass", pipeData.Mass },
-                    { "Classification", "Pipe" },
-                    { "Type", pipeData.Type },
-                    { "Remark", pipeData.Remark }
-                };
+        {
+            { "Name", pipeData.Name },
+            { "Branch", pipeData.Branch },
+            { "Rest", pipeData.Rest },
+            { "Mass", pipeData.Mass },
+            { "Classification", "Pipe" },
+            { "Type", pipeData.Type },
+            { "Remark", pipeData.Remark }
+        };
 
-        // 2. 타입별 분기 처리 (Strategy)
+        // 타입별 분기 처리 (Strategy)
+        // [변경됨] 각 하위 메서드에서 Material을 직접 찾도록 시그니처 수정
         switch (pipeData.Type)
         {
           case "TUBI":
           case "ELBO":
           case "BEND":
-            BuildMultiSegmentPipe(pipeData, extraData, materialID);
+            BuildMultiSegmentPipe(pipeData, extraData);
             break;
           case "OLET":
           case "REDU":
           case "COUP":
-            BuildSingleSegmentPipe(pipeData, extraData, materialID);
+            BuildSingleSegmentPipe(pipeData, extraData);
             break;
           case "TEE":
-            BuildTeePipe(pipeData, extraData, materialID);
+            BuildTeePipe(pipeData, extraData);
             break;
           case "FLAN":
-            BuildFlange(pipeData, extraData, materialID, isMassValid, massValue);
+            BuildFlange(pipeData, extraData, isMassValid, massValue);
             break;
           case "VALV":
           case "TRAP":
@@ -85,17 +81,38 @@ namespace HiTessModelBuilder.Services.Builders
             if (_debugPrint) Console.WriteLine($"[Warning] 알 수 없는 배관 타입입니다: {pipeData.Type}");
             break;
         }
-
       }
-
     }
 
     /// <summary>
-    /// 곡관이나 다중 분할이 필요한 일반 배관 요소를 생성합니다.
-    /// APos부터 InterPos를 거쳐 LPos까지 노드 체인을 구성합니다.
+    /// [신규 추가] 배관의 치수(외경, 내경)를 기반으로 내부 유체의 질량을 
+    /// 강철의 밀도로 환산한 '등가 밀도(Equivalent Density)' Material을 생성하거나 반환합니다.
     /// </summary>
-    private void BuildMultiSegmentPipe(PipeEntity pipeData, Dictionary<string, string?> extraData, int materialID)
+    private int GetOrCreatePipeMaterial(double rOut, double rIn)
     {
+      double steelDensity = 7.85e-09; // 강철 밀도 (ton/mm^3)
+      double waterDensity = 1.0e-09;  // 물 밀도 (ton/mm^3)
+
+      double finalDensity = steelDensity;
+      string matName = "Steel";
+
+      // 유체 밀도 보정 로직 (외경이 내경보다 크고, 내경이 0보다 클 때만 성립)
+      if (_useFluidDensity && rOut > rIn && rIn > 0)
+      {
+        double steelArea = (rOut * rOut) - (rIn * rIn); // pi 생략 (약분됨)
+        double fluidArea = (rIn * rIn);                 // pi 생략 (약분됨)
+
+        // 등가 밀도 산출 공식
+        finalDensity = ((steelArea * steelDensity) + (fluidArea * waterDensity)) / steelArea;
+        matName = $"Steel_Fluid_R{rOut:F1}x{rIn:F1}"; // 치수별 고유 Material 이름 부여
+      }
+
+      return _context.Materials.AddOrGet(matName, 206000, 0.3, finalDensity);
+    }
+
+    private void BuildMultiSegmentPipe(PipeEntity pipeData, Dictionary<string, string?> extraData)
+    {
+      int materialID = GetOrCreatePipeMaterial(pipeData.Dim1, pipeData.Dim2); // [신규]
       double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
       int propertyID = _context.Properties.AddOrGet("TUBE", propertyDim, materialID);
 
@@ -105,23 +122,17 @@ namespace HiTessModelBuilder.Services.Builders
       if (pipeData.InterPos != null && pipeData.InterPos.Length >= 3)
       {
         for (int i = 0; i < pipeData.InterPos.Length; i += 3)
-        {
           nodeChain.Add(_context.Nodes.AddOrGet(pipeData.InterPos[i], pipeData.InterPos[i + 1], pipeData.InterPos[i + 2]));
-        }
       }
       nodeChain.Add(_context.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2]));
 
       for (int i = 0; i < nodeChain.Count - 1; i++)
-      {
         CreateElementSafe(nodeChain[i], nodeChain[i + 1], propertyID, pipeData.Normal, extraData, pipeData);
-      }
     }
 
-    /// <summary>
-    /// 단일 구간으로 이루어진 배관(OLET, REDU, COUP) 요소를 생성합니다.
-    /// </summary>
-    private void BuildSingleSegmentPipe(PipeEntity pipeData, Dictionary<string, string?> extraData, int materialID)
+    private void BuildSingleSegmentPipe(PipeEntity pipeData, Dictionary<string, string?> extraData)
     {
+      int materialID = GetOrCreatePipeMaterial(pipeData.Dim1, pipeData.Dim2); // [신규]
       double[] propertyDim = new double[] { pipeData.Dim1, pipeData.Dim2 };
       int propertyID = _context.Properties.AddOrGet("TUBE", propertyDim, materialID);
       double[] barOrientation = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.LPos);
@@ -132,13 +143,14 @@ namespace HiTessModelBuilder.Services.Builders
       CreateElementSafe(startNode, endNode, propertyID, barOrientation, extraData, pipeData);
     }
 
-    /// <summary>
-    /// 3방향 분기 배관(TEE) 요소를 생성합니다. 메인 배관과 분기관의 Property를 다르게 적용합니다.
-    /// </summary>
-    private void BuildTeePipe(PipeEntity pipeData, Dictionary<string, string?> extraData, int materialID)
+    private void BuildTeePipe(PipeEntity pipeData, Dictionary<string, string?> extraData)
     {
-      int propertyID1 = _context.Properties.AddOrGet("TUBE", new double[] { pipeData.Dim1, pipeData.Dim2 }, materialID);
-      int propertyID2 = _context.Properties.AddOrGet("TUBE", new double[] { pipeData.Dim3, pipeData.Dim4 }, materialID);
+      // [핵심] TEE는 메인관과 분기관의 두께가 다를 수 있으므로 재질(등가밀도)도 각각 생성
+      int matIdMain = GetOrCreatePipeMaterial(pipeData.Dim1, pipeData.Dim2);
+      int matIdBranch = GetOrCreatePipeMaterial(pipeData.Dim3, pipeData.Dim4);
+
+      int propertyID1 = _context.Properties.AddOrGet("TUBE", new double[] { pipeData.Dim1, pipeData.Dim2 }, matIdMain);
+      int propertyID2 = _context.Properties.AddOrGet("TUBE", new double[] { pipeData.Dim3, pipeData.Dim4 }, matIdBranch);
 
       int centerNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
       int startNode = _context.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
@@ -154,10 +166,7 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    /// <summary>
-    /// 플랜지(FLAN) 데이터를 기반으로 요소와 점 질량(Point Mass)을 함께 생성합니다.
-    /// </summary>
-    private void BuildFlange(PipeEntity pipeData, Dictionary<string, string?> extraData, int materialID, bool isMassValid, double massValue)
+    private void BuildFlange(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
       if (isMassValid && massValue > 0.0)
       {
@@ -167,6 +176,7 @@ namespace HiTessModelBuilder.Services.Builders
 
       if (pipeData.OutDia > 0)
       {
+        int materialID = GetOrCreatePipeMaterial(pipeData.Dim1, pipeData.Dim2); // [신규]
         int propertyID = _context.Properties.AddOrGet("TUBE", new double[] { pipeData.Dim1, pipeData.Dim2 }, materialID);
         double[] barOrientation = GeometryUtils.CalculateBarOrientation(pipeData.APos, pipeData.LPos);
         int startNode = _context.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]);
@@ -176,9 +186,7 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    /// <summary>
-    /// 밸브 및 특수 부속품을 타내는 강체(Rigid) 요소와 질량(Mass)을 생성합니다.
-    /// </summary>
+    // ... (이하 BuildInlineEquipment, BuildVtwa, BuildUBolt, BuildAttachment, CreateElementSafe는 기존과 동일) ...
     private void BuildInlineEquipment(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
       int centerNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
@@ -197,19 +205,15 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    /// <summary>
-    /// 3방향 강체 연결 및 질량(VTWA) 모델링을 행합니다.
-    /// </summary>
     private void BuildVtwa(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
       int centerNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
       List<int> depNodes = new List<int>
-            {
-                _context.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]),
-                _context.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2])
-            };
+      {
+          _context.Nodes.AddOrGet(pipeData.APos[0], pipeData.APos[1], pipeData.APos[2]),
+          _context.Nodes.AddOrGet(pipeData.LPos[0], pipeData.LPos[1], pipeData.LPos[2])
+      };
 
-      // ★ 에러의 원인이었던 오타(P3PBuildUBoltos) 수정 완료
       if (pipeData.P3Pos != null && pipeData.P3Pos.Length >= 3)
       {
         depNodes.Add(_context.Nodes.AddOrGet(pipeData.P3Pos[0], pipeData.P3Pos[1], pipeData.P3Pos[2]));
@@ -224,27 +228,18 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    /// <summary>
-    /// UBOLT 데이터를 생성합니다. 
-    /// (종속 노드는 마지막 파이프라인 단계에서 구조물에 스냅하여 채워넣습니다.)
-    /// </summary>
     private void BuildUBolt(PipeEntity pipeData, Dictionary<string, string?> extraData)
     {
       int indepNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
       string restStr = string.IsNullOrWhiteSpace(pipeData.Rest) ? "123456" : pipeData.Rest;
-      string remark = pipeData.Remark;
       extraData["Remark"] = pipeData.Remark;
 
-      // ★ [핵심] 중복 생성을 막기 위해 AddNew 대신 AddOrGet 사용
       int rbeId = _context.Rigids.AddOrGet(indepNode, Array.Empty<int>(), restStr, extraData);
 
       if (_pipeElementIDsByType.ContainsKey(pipeData.Type))
         _pipeElementIDsByType[pipeData.Type].Add(rbeId);
     }
 
-    /// <summary>
-    /// 부착 질량(ATTA)을 배관 노드에 바인딩하여 생성합니다.
-    /// </summary>
     private void BuildAttachment(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
       if (isMassValid && massValue > 10.0)
@@ -267,10 +262,6 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    /// <summary>
-    /// 요소 생성 시 예외를 캡처하여 전체 프로세스가 중단되지 않도 보호하는 래퍼 메써드입니다.
-    /// 배관의 3D 좌표를 기반으로 기하학적으로 완벽히 직교하는 방향 벡터(Orientation)를 자동 계산하여 주입합니다.
-    /// </summary>
     private void CreateElementSafe(int n1, int n2, int propId, double[] ori, Dictionary<string, string?> extra, PipeEntity pipe)
     {
       if (n1 == n2) return;
