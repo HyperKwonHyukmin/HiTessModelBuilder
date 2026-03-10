@@ -1,0 +1,85 @@
+public void EquipParse()
+ {
+   var lines = File.ReadAllLines(this.equipCsv);
+   Regex pointsRegex = new Regex(@"-?\d+(\.\d+)?");
+
+   // 하나 열씩 가지고 오기, 인덱스 행 넘기기 
+   foreach (var line in lines.Skip(1))
+   {
+
+     string[] cols = line.Split(',');
+
+     // mass가 0이면 제낀다. continue
+     if (double.TryParse(cols[4], out double mass))
+     {
+       if (mass == 0.0) continue;        
+     }
+
+     MatchCollection cogPos = pointsRegex.Matches(cols[2]);
+     double[] cogArray = cogPos.Cast<Match>().Select(m => double.Parse(m.Value)).ToArray();   
+     // 3번 인덱스 즉 interPos가 없으면 rigid 연결이 아닌 Node에 직접 point mass를 생성하는 케이스 
+     // 이때 공중에 Point mass가 존재하면 안되니까 구조에 tolerance 안에 들어오는 Node가 있는지 찾고 있으면 거기 할당
+     if (string.IsNullOrWhiteSpace(cols[3]))
+     {
+       // 거리 10이내에 존재하는 Node 있는지 찾고 없으면 point mass 자체를 생성 안한다. 
+       int equipNodeID =
+         nodeInstance.FindNodeWithinTolerance(cogArray[0], cogArray[1], cogArray[2], tolerance: 10);
+
+       // tolerance 내에 존재하는 node가 없다면 나가기 
+       if (equipNodeID == -1) continue;
+
+       conmInstrance.AddNew(cogArray, mass*0.001);
+       
+     }
+     // interPos에 값이 있다면 cog는 independenct 나머지는 dependent로 rigid 생성 필요 
+     else
+     {
+       // cog의 node를 생성하기 
+       int cogNodeID = nodeInstance.AddOrGet(cogArray[0], cogArray[1], cogArray[2]);
+       List<int> dependentNode_list = new List<int>();
+
+       string rawInterPos = cols[3].Trim(); // 앞뒤 공백 제거
+
+       // '+' 있으면 여러 개로, 없으면 1개짜리 배열로 들어옴
+       string[] interPoses = rawInterPos.Split(new[] { '+' }, StringSplitOptions.RemoveEmptyEntries);
+       
+       // rigid의 dependent 좌표들을 모아둘 List
+       List<double[]> dependentNodes = new List<double[]>();
+
+       foreach (var pos in interPoses)
+       {
+         MatchCollection interPos = pointsRegex.Matches(pos);
+         double[] interPosArray = interPos.Cast<Match>().Select(m => double.Parse(m.Value)).ToArray();
+         dependentNodes.Add(interPosArray);
+       }
+       
+       foreach(var pos in dependentNodes)
+       {
+         //Console.WriteLine(string.Join(",", pos));
+         int dependentNodeID = nodeInstance.FindNodeWithinTolerance(pos[0], pos[1], pos[2], tolerance: 10);
+         //Console.WriteLine($"{string.Join(",", pos)}, dependentNodeID : {dependentNodeID},{(dependentNodeID == -1)}");
+
+         // 이건 rigid의 dependent 위치의 node를 못찾았기에 continue로 제낀다. 
+         if (dependentNodeID == -1)
+         {
+           continue;
+         }
+         dependentNode_list.Add(dependentNodeID);
+       }
+
+       // 만약 independent 하나도 없다면 넘기기
+       if (dependentNode_list.Count == 0)
+       {
+         continue;  
+       }
+
+       // 배열로 변경
+       int[] dependenctNode_array = dependentNode_list.ToArray();
+
+       int rbeID = rbeInstance.AddOrGet(cogNodeID, dependenctNode_array);
+       //Console.WriteLine($"{rbeID}, Nodes : {string.Join(",", dependenctNode_array)}");
+     }
+
+     //Console.WriteLine($"{string.Join(",", cols)}, 열 개수:{cols.Length}");
+   }
+ }
