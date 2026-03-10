@@ -142,15 +142,15 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    // 제외 대상 : ATTA
-    // 제외 대상 : ATTA (기존 주석 유지)
     private void PipeBuild()
     {
       // 1. 배관 전담 빌더 인스턴스 생성
-      var pipeBuilder = new PipeModelBuilder(_feModelContext, pipeElementIDsByType, _debugPrint);
+      // [수정됨] useFluidDensity 파라미터를 true로 전달하여 내부 유체 질량 보정을 활성화합니다.
+      bool useFluidDensity = true;
+      var pipeBuilder = new PipeModelBuilder(_feModelContext, pipeElementIDsByType, useFluidDensity, _debugPrint);
 
       // 2. 파싱된 배관 리스트를 전달하여 빌드 실행
       pipeBuilder.Build(_rawStructureDesignData.PipeList);
-    }   
+    }
   }
 }
