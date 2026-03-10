@@ -16,7 +16,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
   public static class UboltSnapToStructureModifier
   {
     public sealed record Options(
-        double Tolerance = 50.0,       // 대각선/사선 부재를 낚아채기 위한 넓은 탐색 반경(실린더 반경)
+        double Tolerance = 50.0,
+        double MaxDepth = 300.0,       // [신규 추가] U-bolt가 구조물을 찾기 위해 광선을 쏠 최대 거리 (이 범위를 넘으면 무시)
         bool PipelineDebug = true,
         bool VerboseDebug = true
     );
@@ -102,7 +103,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // Tolerance가 원기둥 반경 역할을 하여 대각선에 있는 부재도 잡아냅니다.
           bool isHit = TryRaySegmentIntersection(pIndep, rayDown, pA, pB, opt.Tolerance, out double s, out Point3D hitPoint);
 
-          if (isHit && s > 0 && s < bestS)
+          // [수정됨] s(거리)가 MaxDepth보다 작을 때만 채택 (엉뚱하게 멀리 있는 부재 스냅 방지)
+          if (isHit && s > 0 && s < opt.MaxDepth && s < bestS)
           {
             bestS = s;
             bestHitStruPoint = hitPoint;
@@ -125,7 +127,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
             bool isHit = TryRaySegmentIntersection(pIndep, rayUp, pA, pB, opt.Tolerance, out double s, out Point3D hitPoint);
 
-            if (isHit && s > 0 && s < bestS)
+            // [수정됨] 위쪽 탐색도 동일하게 MaxDepth 적용
+            if (isHit && s > 0 && s < opt.MaxDepth && s < bestS)
             {
               bestS = s;
               bestHitStruPoint = hitPoint;
@@ -169,16 +172,20 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             double shiftDist = (pIndep - bestProjPipePoint).Magnitude();
             Console.ForegroundColor = ConsoleColor.Green;
-            log($"[연결 료] RBE {rigidId} -> {hitDir} 구조물 E{bestStruTargetEid} 연결.");
+            log($"[연결 완료] RBE {rigidId} -> {hitDir} 구조물 E{bestStruTargetEid} 연결.");
             Console.ResetColor();
           }
         }
         else
         {
-          // [STEP C] 위/아래 양쪽 모두 못 찾았을 경우, 치명적 오류 로깅 (Dep:[] 방지 목적)
-          Console.ForegroundColor = ConsoleColor.Red;
-          log($"[치명적 오류] RBE {rigidId} (일반 UBOLT) -> N{oldIndepNodeId} 반경 {opt.Tolerance}mm 내 위/아래로 뻗은 구조물(Stru)이 없습니다! (Dependent Node 비어있음)");
-          Console.ResetColor();
+          if (opt.VerboseDebug)
+          {
+            // [STEP C] 위/아래 양쪽 모두 못 찾았을 경우, 치명적 오류 로깅 (Dep:[] 방지 목적)
+            Console.ForegroundColor = ConsoleColor.Red;
+            log($"[치명적 오류] RBE {rigidId} (일반 UBOLT) -> N{oldIndepNodeId} 반경 {opt.Tolerance}mm 내 위/아래로 뻗은 구조물(Stru)이 없습니다! (Dependent Node 비어있음)");
+            Console.ResetColor();
+          }
+
         }
       }
 
