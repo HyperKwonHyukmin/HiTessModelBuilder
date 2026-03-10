@@ -46,6 +46,7 @@ namespace HiTessModelBuilder.Parsers
 
           entity.ApplyDims(row.Dims);
           ParsedStruEntities.Add(entity);
+          entity.Weld = row.Weld;
         }
       }
 
@@ -123,7 +124,7 @@ namespace HiTessModelBuilder.Parsers
 
     private readonly record struct StruParsedRow(
       string Name, string Type, string SizeRaw, double[] Dims,
-      double[] StartPos, double[] EndPos, double[] Ori
+      double[] StartPos, double[] EndPos, double[] Ori, string Weld
     );
 
     private readonly record struct PipeParsedRow(
@@ -150,10 +151,12 @@ namespace HiTessModelBuilder.Parsers
         var startPos = ExtractDoubles(cols[3]);
         var endPos = ExtractDoubles(cols[4]);
         var ori = ExtractDoubles(cols[7]);
+        // [신규 추가] 10번째 열(인덱스 9)이 존재하면 파싱, 없으면 빈 문자열
+        string weld = cols.Length > 9 ? cols[9].Trim().ToLowerInvariant() : "";
 
         if (startPos.Length < 3 || endPos.Length < 3 || ori.Length < 3) return false;
 
-        row = new StruParsedRow(name, type, cols[5].Trim(), dims, startPos, endPos, ori);
+        row = new StruParsedRow(name, type, cols[5].Trim(), dims, startPos, endPos, ori, weld);
         return true;
       }
       catch { return false; }
@@ -161,7 +164,7 @@ namespace HiTessModelBuilder.Parsers
 
     /// <summary>
     /// 배관(Pipe) 데이터를 파싱합니다. 
-    /// 선택적 속성(P3Pos, InterPos)은 값이 없으면 null을 반환하여 유령 노드 생성을 방지합니다.
+    /// 선택적 속성(P3Pos, InterPos)은 값이 없으면 null을 반환하여 유령 드 생성을 방지합니다.
     /// </summary>
     private bool TryPipeParseLine(string line, out PipeParsedRow row)
     {
@@ -247,7 +250,7 @@ namespace HiTessModelBuilder.Parsers
     }
 
     /// <summary>
-    /// "123456"과 같은 경계조 문자열을 double 배열 [1, 2, 3, 4, 5, 6]로 파싱합니다.
+    /// "123456"과 같은 경계조건 문자열을 double 배열 [1, 2, 3, 4, 5, 6]로 파싱합니다.
     /// </summary>
     private static double[]? ParseRest(string? s)
     {
