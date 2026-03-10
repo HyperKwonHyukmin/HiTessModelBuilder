@@ -59,11 +59,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           if (Math.Abs(dir1.Dot(dir2)) < cosTol) continue;
 
           // [조건 2] 각 요소의 양 끝 노드들 간의 거리가 Tolerance 이내인가?
-          // (같은 요소 내의 노드가 아닌, 서로 다른 요소 간의 노드만 비교)
-          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs[0], p1a, p2a, opt.DistanceTolerance, mergePairs);
-          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs.Last(), p1a, p2b, opt.DistanceTolerance, mergePairs);
-          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs[0], p1b, p2a, opt.DistanceTolerance, mergePairs);
-          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs.Last(), p1b, p2b, opt.DistanceTolerance, mergePairs);
+          // 수정: 부재가 옆으로 꺾이는 것을 방지하기 위해 기준 부재의 방향 벡터(dir1)를 넘겨줍니다.
+          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs[0], p1a, p2a, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs.Last(), p1a, p2b, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs[0], p1b, p2a, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs.Last(), p1b, p2b, opt.DistanceTolerance, dir1, mergePairs);
         }
       }
 
@@ -164,7 +164,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           }
           resolvedMapping[key] = finalNode;
         }
-        // 변경된 노드 번호를 RBE와 질량에 업데이트
+        // 변경된 노드 번호를 RBE와 질량에 업데트
         context.Rigids.RemapAllNodes(resolvedMapping);
         context.PointMasses.RemapAllNodes(resolvedMapping);
       }
@@ -186,6 +186,30 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       if ((p1 - p2).Magnitude() <= tol)
       {
         mergePairs.Add((n1, n2));
+      }
+    }
+
+    /// <summary>
+    /// 두 노드가 허용 반경 내에 있으면서, 횡방향 단차(Sideways offset)가 거의 없는 
+    /// 직축(Coaxial) 상에 위치한 경우에만 안전하게 병합 후보로 추가합니다.
+    /// </summary>
+    private static void CheckAndAddMergePair(int n1, int n2, Point3D p1, Point3D p2, double tol, Vector3D elementDir, List<(int, int)> mergePairs)
+    {
+      if (n1 == n2) return;
+
+      Vector3D diff = p1 - p2;
+      double dist = diff.Magnitude();
+
+      if (dist <= tol)
+      {
+        // 횡방향(Sideways) 오프셋 계산: (전체 거리 벡터) - (축 방향 투영 벡터)
+        double sidewaysOffset = (diff - (elementDir * diff.Dot(elementDir))).Magnitude();
+
+        // 단차가 1.0mm(허용치) 미만일 때만 꿰맵니다. (크면 억지로 구부러짐)
+        if (sidewaysOffset < 1.0)
+        {
+          mergePairs.Add((n1, n2));
+        }
       }
     }
   }
