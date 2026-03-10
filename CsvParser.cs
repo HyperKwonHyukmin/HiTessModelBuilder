@@ -21,6 +21,7 @@ namespace HiTessModelBuilder.Parsers
     // Structure와 Pipe 엔티티를 각각 담을 리스트 (분리 보관)
     public List<StructureEntity> ParsedStruEntities { get; private set; } = new List<StructureEntity>();
     public List<PipeEntity> ParsedPipeEntities { get; private set; } = new List<PipeEntity>();
+    public List<EquipEntity> ParsedEquipEntities { get; private set; } = new List<EquipEntity>();
 
     public RawCsvDesignData Parse(string? struCsvPath, string? pipeCsvPath, string? equipCsvPath)
     {
@@ -90,10 +91,22 @@ namespace HiTessModelBuilder.Parsers
         foreach (var line in File.ReadLines(equipCsvPath).Skip(1))
         {
           if (string.IsNullOrWhiteSpace(line)) continue;
+          if (!TryEquipParseLine(line, out var row)) continue;
 
-          Console.WriteLine(line);
-          var entity = new EquipEntity();
+          // [핵심] 기존 예전 코드의 질량 0 스킵 로직 반영
+          if (row.Mass == 0.0 && row.Wvol == 0.0) continue;
 
+          var entity = new EquipEntity
+          {
+            Name = row.Name,
+            Pos = row.Pos,
+            Cog = row.Cog,
+            InterPos = row.InterPos,
+            Mass = row.Mass,
+            Wvol = row.Wvol
+          };
+
+          ParsedEquipEntities.Add(entity);
         }
       }
 
@@ -131,10 +144,7 @@ namespace HiTessModelBuilder.Parsers
           rbarDesignList: ParsedStruEntities.OfType<RbarDesignData>().ToList(),
           tubeDesignList: ParsedStruEntities.OfType<TubeDesignData>().ToList(),
           unknownDesignList: ParsedStruEntities.OfType<UnknownDesignData>().ToList(),
-          // [추가] 파싱 완료된 Pipe 엔티티 리스트 전달
-          pipeList: ParsedPipeEntities
-      // 여기에 pipeList: ParsedPipeEntities.ToList() 등을 추가하시면 됩니다.
-      );
+          pipeList: ParsedPipeEntities, equipList: ParsedEquipEntities);
     }
 
     // -----------------------
@@ -200,7 +210,7 @@ namespace HiTessModelBuilder.Parsers
         string type = cols[1].Trim();
         string branch = cols[5].Trim();
 
-        // 1. 필수 좌표 파싱 (없거나 3차원이 아면 불량 행 처리)
+        // 1. 필수 좌표 파싱 (없거나 3차원이 아니면 불량 행 처리)
         var Pos = ExtractDoubles(cols[2]);
         var aPos = ExtractDoubles(cols[3]);
         var lPos = ExtractDoubles(cols[4]);
@@ -231,6 +241,30 @@ namespace HiTessModelBuilder.Parsers
             interPos, p3Pos, rest,
             outDia, thick, outDia2, thick2, mass, remark
         );
+        return true;
+      }
+      catch { return false; }
+    }
+    private bool TryEquipParseLine(string line, out EquipParsedRow row)
+    {
+      row = default;
+      try
+      {
+        var cols = line.Split(',');
+        if (cols.Length < 6) return false;
+
+        string name = cols[0].Trim();
+
+        // ExtractDoubles가 '+' 기호를 만나도 정규식에 의해 양수로 인식하여 
+        // 1차원 더블 배열([x1,y1,z1, x2,y2,z2...])로 완벽하게 펴줍니다.
+        var pos = ExtractDoubles(cols[1]);
+        var cog = ExtractDoubles(cols[2]);
+        var interPos = ExtractDoubles(cols[3]);
+
+        double mass = ParseDoubleSafe(cols[4]);
+        double wvol = ParseDoubleSafe(cols[5]);
+
+        row = new EquipParsedRow(name, pos, cog, interPos, mass, wvol);
         return true;
       }
       catch { return false; }
