@@ -161,6 +161,8 @@ namespace HiTessModelBuilder.Pipeline
                 ElementShortCollapseRun(modifierDebug, currentVerbose);
                 ElementCollinearNodeMergeRun(modifierDebug, currentVerbose);
               }
+
+              RigidConsolidationRun(modifierDebug, currentVerbose);
               break;
           }
 
@@ -184,7 +186,7 @@ namespace HiTessModelBuilder.Pipeline
       StructuralSanityInspector.InspectRigidIntegrity(_context, _pipelineDebug, this._verboseDebug);
     }
 
-    // --- 이하 Modifier 실행 헬퍼 메서드들은 존 코드와 동일합니다 ---
+    // --- 이하 Modifier 실행 헬퍼 메서드들은 기존 코드와 동일합니다 ---
 
     private void ElementSplitByExistingNodesRun(bool pDebug, bool vDebug)
     {
