@@ -37,6 +37,15 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       var mergePairs = new List<(int n1, int n2)>();
       var elemList = elements.ToList(); // O(N^2) 탐색을 위해 리스트화
 
+      // ★ [신규 추가] 모델 내 모든 강체(Rigid) 관련 노드 ID 수집
+      var rigidNodeIds = new HashSet<int>();
+      foreach (var kvp in context.Rigids)
+      {
+        rigidNodeIds.Add(kvp.Value.IndependentNodeID);
+        foreach (var dep in kvp.Value.DependentNodeIDs)
+          rigidNodeIds.Add(dep);
+      }
+
       for (int i = 0; i < elemList.Count; i++)
       {
         var e1 = elemList[i].Value;
@@ -59,11 +68,24 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           if (Math.Abs(dir1.Dot(dir2)) < cosTol) continue;
 
           // [조건 2] 각 요소의 양 끝 노드들 간의 거리가 Tolerance 이내인가?
-          // 수정: 부재가 옆으로 꺾이는 것을 방지하기 위해 기준 부재의 방향 벡터(dir1)를 넘겨줍니다.
+          // 수정: 부재가 옆으로 꺾이는 것을 방지하기 위해 기준 부재의 방향 벡터(dir1)를 넘줍니다.
           CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs[0], p1a, p2a, opt.DistanceTolerance, dir1, mergePairs);
           CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs.Last(), p1a, p2b, opt.DistanceTolerance, dir1, mergePairs);
           CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs[0], p1b, p2a, opt.DistanceTolerance, dir1, mergePairs);
           CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs.Last(), p1b, p2b, opt.DistanceTolerance, dir1, mergePairs);
+        }
+
+        // ★ [신규 로직] Element vs Rigid Node 검사
+        // 해당 Element의 축 방향 선상에 Rigid 노드가 존재하면 병합 후보로 등록합니다.
+        foreach (int rNodeId in rigidNodeIds)
+        {
+          if (!nodes.Contains(rNodeId)) continue;
+          var rPos = nodes[rNodeId];
+
+          // 동일한 CheckAndAddMergePair를 사용하므로, 
+          // 횡방향 단차(Sideways Offset < 1.0)가 없는 완벽한 공선(Collinear) 상태일 때만 병합됩니다!
+          CheckAndAddMergePair(e1.NodeIDs[0], rNodeId, p1a, rPos, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs.Last(), rNodeId, p1b, rPos, opt.DistanceTolerance, dir1, mergePairs);
         }
       }
 
@@ -112,7 +134,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // ★ [추가] 삭제될 노드가 어떤 노드로 흡수되었는지 기록
           nodeMapping[removeNode] = keepNode;
 
-          // 삭제될 노드를 참조하고 있는 주변의 모든 요소 찾기
+          // 삭제될 노드를 참하고 있는 주변의 모든 요소 찾기
           var neighbors = elements.Where(kv => kv.Value.NodeIDs.Contains(removeNode)).ToList();
 
           foreach (var neighbor in neighbors)
@@ -164,9 +186,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           }
           resolvedMapping[key] = finalNode;
         }
-        // 변경된 노드 번호를 RBE와 질량에 업데트
+        // 변경된 노드 번호를 RBE와 질량에 업데이트
         context.Rigids.RemapAllNodes(resolvedMapping);
         context.PointMasses.RemapAllNodes(resolvedMapping);
+        context.RemapWeldNodes(resolvedMapping);
       }
 
       // 4. 파이프라인 디버그 로그
