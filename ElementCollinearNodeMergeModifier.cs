@@ -67,8 +67,15 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // [조건 1] 방향 벡터가 같은가? (내적의 절댓값이 Cos(오차)보다 크면 평행)
           if (Math.Abs(dir1.Dot(dir2)) < cosTol) continue;
 
+          // ★ [신규 추가] 배관(Pipe)과 구조물(Stru) 간의 노드 병합 원천 차단
+          string cat1 = e1.ExtraData.GetValueOrDefault("Classification") ?? e1.ExtraData.GetValueOrDefault("Category") ?? "";
+          string cat2 = e2.ExtraData.GetValueOrDefault("Classification") ?? e2.ExtraData.GetValueOrDefault("Category") ?? "";
+
+          // 두 요소의 분류가 다르면(예: Pipe vs Stru) 절대 병합하지 않고 건너뜀 (자유도 제어를 위한 Zero-length RBE 보존)
+          if (cat1 != cat2) continue;
+
           // [조건 2] 각 요소의 양 끝 노드들 간의 거리가 Tolerance 이내인가?
-          // 수정: 부재가 옆으로 꺾이는 것을 방지하기 위해 기준 부재의 방향 벡터(dir1)를 넘줍니다.
+          // 수정: 부재가 옆으로 꺾이는 것을 방지하기 위해 기준 부재의 방향 벡터(dir1)를 넘겨줍니다.
           CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs[0], p1a, p2a, opt.DistanceTolerance, dir1, mergePairs);
           CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs.Last(), p1a, p2b, opt.DistanceTolerance, dir1, mergePairs);
           CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs[0], p1b, p2a, opt.DistanceTolerance, dir1, mergePairs);
@@ -134,7 +141,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // ★ [추가] 삭제될 노드가 어떤 노드로 흡수되었는지 기록
           nodeMapping[removeNode] = keepNode;
 
-          // 삭제될 노드를 참하고 있는 주변의 모든 요소 찾기
+          // 삭제될 노드를 참조하고 있는 주변의 모든 요소 찾기
           var neighbors = elements.Where(kv => kv.Value.NodeIDs.Contains(removeNode)).ToList();
 
           foreach (var neighbor in neighbors)
