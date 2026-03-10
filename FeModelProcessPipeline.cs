@@ -283,27 +283,25 @@ namespace HiTessModelBuilder.Pipeline
     {
       int totalProcessed = 0;
 
-      // 1. 일반 UBOLT (수직 스냅) 처리 (탐색 반경 200mm 부여로 대각선 부재 포착)
-      var snapOpt = new UboltSnapToStructureModifier.Options(Tolerance: 200.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
+      // 1. 일반 UBOLT (수직 스냅) 처리
+      var snapOpt = new UboltSnapToStructureModifier.Options(Tolerance: 100.0, MaxDepth: 400.0, PipelineDebug: pDebug, VerboseDebug: vDebug);
       int snapCount = UboltSnapToStructureModifier.Run(_context, snapOpt, _logger.LogDelegate);
       totalProcessed += snapCount;
 
-      // [중요] 일반 UBOLT가 구조물 부재 중간에 새로운 노드를 찍었으므로, 
-      // 해당 부재가 새 노드를 공유하여 쪼개지도록 Split을 실행합니다.
+      // 일반 UBOLT가 구조물 부재 중간에 새로운 노드를 찍었으므로, 분할 힐링 실행
       if (snapCount > 0)
       {
         ElementSplitByExistingNodesRun(pDebug, vDebug);
       }
 
-      // 2. BOX 타입 UBOLT 처리 (내부에서 스스로 분할까지 수행함)
-      //var boxOpt = new UboltBoxConnectionModifier.Options(PipelineDebug: pDebug, VerboseDebug: vDebug);
-      //int boxCount = UboltBoxConnectionModifier.Run(_context, boxOpt, _logger.LogDelegate);
-      //totalProcessed += boxCount;
+      // 2. BOX 타입 UBOLT 처리
+      var boxOpt = new UboltBoxConnectionModifier.Options(PipelineDebug: pDebug, VerboseDebug: vDebug);
+      int boxCount = UboltBoxConnectionModifier.Run(_context, boxOpt, _logger.LogDelegate);
+      totalProcessed += boxCount;
 
-      foreach(var rigid in _context.Rigids)
-      {
-        Console.WriteLine(rigid);
-      }
+      // ★ [신규 추가] 3. Nastran 자유도 충돌 방지: 
+      // 동일한 종속 노드(Dependent)를 공유하는 여러 개의 강체를 마스터-슬레이브 반전하여 1개로 병합
+      RigidSharedDependentNodeMergeModifier.Run(_context, pDebug, vDebug, _logger.LogDelegate);
 
       return totalProcessed;
     }
