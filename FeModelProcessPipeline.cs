@@ -185,8 +185,6 @@ namespace HiTessModelBuilder.Pipeline
         Console.WriteLine("\n================ FINAL CHECK =================");
       }
       StructuralSanityInspector.InspectRigidIntegrity(_context, _pipelineDebug, this._verboseDebug);
-      // ★ [신규 추가] 파이프라인의 가장 마지막에 최종 생사 확인 리포트 출력
-      AuditTracker.GenerateFinalAuditReport(_rawStructureDesignData, _context, _logger);
     }
 
     // --- 이하 Modifier 실행 헬퍼 메서드들은 기존 코드와 동일합니다 ---
@@ -252,7 +250,7 @@ namespace HiTessModelBuilder.Pipeline
 
     /// <summary>
     /// UBOLT의 연결을 전담하는 헬퍼 메서드입니다.
-    /// 일 UBOLT의 수직 스냅(Snap) 연결 및 분할 힐링을 선행한 후, 
+    /// 일반 UBOLT의 수직 스냅(Snap) 연결 및 분할 힐링을 선행한 후, 
     /// 특수 형태인 BOX 타입 UBOLT의 4점 연결 로직을 수행합니다.
     /// </summary>
     private int UboltConnectionRun(bool pDebug, bool vDebug)
