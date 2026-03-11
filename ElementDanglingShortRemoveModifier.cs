@@ -1,5 +1,6 @@
 using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using System;
 using System.Collections.Generic;
 
@@ -21,7 +22,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       opt ??= new Options();
       log ??= Console.WriteLine;
 
-      // 1. 노드별 연결 개수(Degree) 계산
+      // 1. 노드 연결 개수(Degree) 계산
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
       var shortEle = new List<int>();
 
@@ -57,11 +58,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       {
         if (context.Elements.Contains(id))
         {
+          string rawName = context.Elements[id].ExtraData?.GetValueOrDefault("ID") ?? context.Elements[id].ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
           context.Elements.Remove(id);
           removedCount++;
 
           if (opt.VerboseDebug)
-            log($"   -> [삭제] E{id} (길이 미달 꼬투리 요소)");
+            log($"   -> [영구 삭제] 꼬투리 부재 '{rawName}'(E{id}) (사유: 허용 길이 {opt.LengthThreshold} 미만)");
         }
       }
 
