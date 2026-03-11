@@ -44,6 +44,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         int indepNode = ubolt.Value.IndependentNodeID;
         if (processedNodes.Contains(indepNode))
         {
+          // ★ Name 추적 및 로그 추가
+          string rawName = ubolt.Value.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+          if (opt.VerboseDebug)
+            log($"   -> [중복 UBOLT 삭제] 동일한 위치에 겹쳐 생성된 중복 UBOLT '{rawName}' 삭제됨.");
+
           context.Rigids.Remove(ubolt.Key);
           continue;
         }
@@ -54,7 +59,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       if (opt.VerboseDebug)
       {
         log($"\n==================================================");
-        log($"[수정 시작] UboltSnapToStructureModifier (동적 탐색 반경 적)");
+        log($"[수정 시작] UboltSnapToStructureModifier (동적 탐색 반경 적용)");
         log($" -> 탐색 대상 일반 UBOLT 개수: {ubolts.Count}개");
         log($"==================================================\n");
       }
@@ -62,9 +67,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       var struElements = context.Elements.Where(kv =>
           kv.Value.ExtraData != null && kv.Value.ExtraData.TryGetValue("Classification", out var cls) && cls == "Stru").ToList();
 
+      // ★ [버그 수정] Classification과 Category 둘 중 하나라도 "Pipe"이면 배관으로 인식하도록 수정
       var pipeElements = context.Elements.Where(kv =>
-          kv.Value.ExtraData != null && kv.Value.ExtraData.TryGetValue("Category", out var cat) && cat == "Pipe").ToList();
-
+          kv.Value.ExtraData != null &&
+          (
+              (kv.Value.ExtraData.TryGetValue("Classification", out var cls) && cls == "Pipe") ||
+              (kv.Value.ExtraData.TryGetValue("Category", out var cat) && cat == "Pipe")
+          )
+      ).ToList();
       foreach (var ubolt in ubolts)
       {
         int rigidId = ubolt.Key;
@@ -150,7 +160,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       if (opt.PipelineDebug && snappedCount > 0)
       {
         Console.ForegroundColor = ConsoleColor.Cyan;
-        log($"[변경] 일반 U-Bolt 스냅 : 총 {snappedCount}개의 UBOLT가 관 반경을 고려하여 구조물에 스냅되었습니다.");
+        log($"[변경] 일반 U-Bolt 스냅 : 총 {snappedCount}개의 UBOLT가 배관 반경을 고려하여 구조물에 스냅되었습니다.");
         Console.ResetColor();
       }
 
