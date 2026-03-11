@@ -61,6 +61,7 @@ namespace HiTessModelBuilder.Services.Builders
           e => new[] { e.Dim1, e.Dim2 });
 
       PipeBuild();
+      EquipBuild();
 
 
       if (_debugPrint) Console.WriteLine("[Builder] FE Model Build Completed Successfully.");
@@ -107,7 +108,11 @@ namespace HiTessModelBuilder.Services.Builders
         if (nodeA_ID == nodeB_ID)
         {
           if (_debugPrint)
-            Console.WriteLine($"[Warning] Skipped zero-length Element. ID: {entity.Name} (NodeID: {nodeA_ID})");
+          {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[생성 누락] 시작점과 끝점이 같아(길이 0) 부재 생성이 취소되었습니다. Name: '{entity.Name}'");
+            Console.ResetColor();
+          }
           continue;
         }
 
@@ -137,7 +142,7 @@ namespace HiTessModelBuilder.Services.Builders
             Console.WriteLine($"  -> 상세 에러: {ex.Message}");
             Console.ResetColor();
           }
-          continue; // 실패 시 프로그램 중단 없이 다음 부재로 넘어감
+          continue; // 실패 시 프로그램 중 없이 다음 부재로 넘어감
         }
       }
     }
@@ -151,6 +156,65 @@ namespace HiTessModelBuilder.Services.Builders
 
       // 2. 파싱된 배관 리스트를 전달하여 빌드 실행
       pipeBuilder.Build(_rawStructureDesignData.PipeList);
+    }
+
+    private void EquipBuild()
+    {
+      if (_rawStructureDesignData.EquipList == null || _rawStructureDesignData.EquipList.Count == 0) return;
+
+      // 장비가 허공에 매달리지 않도록, 현재 구조물 및 배관에 사용 중인 '유효한 노드' 목록을 가져옵니다.
+      var validNodes = _feModelContext.GetNodesUsedInElements();
+      int equipCount = 0;
+
+      foreach (var eq in _rawStructureDesignData.EquipList)
+      {
+        if (eq.Cog == null || eq.Cog.Length < 3) continue;
+
+        var extraData = new Dictionary<string, string> { { "Name", eq.Name }, { "Classification", "Equip" } };
+        var cogPos = new Point3D(eq.Cog[0], eq.Cog[1], eq.Cog[2]);
+
+        // [Case 1] InterPos가 없는 경우: 장비 COG 위치에 직접 Point Mass만 생성 (equip_example 라인 40 참조)
+        if (eq.InterPos == null || eq.InterPos.Length == 0)
+        {
+          // 10mm 이내의 기존 노드 탐색
+          int targetNode = _feModelContext.Nodes.FindClosestValidNode(cogPos, validNodes, tolerance: 10.0);
+          if (targetNode != -1)
+          {
+            _feModelContext.PointMasses.AddNew(targetNode, eq.OperatingMass, extraData);
+            equipCount++;
+          }
+        }
+        // [Case 2] InterPos가 있는 경우: COG 노드를 만들고 주변 다리(Dependent)를 찾아 RBE2로 연결
+        else
+        {
+          var dependentNodes = new HashSet<int>();
+
+          // 다(Mounting Points)들을 순회하며 10mm 이내 노드 찾기
+          for (int i = 0; i <= eq.InterPos.Length - 3; i += 3)
+          {
+            var mntPos = new Point3D(eq.InterPos[i], eq.InterPos[i + 1], eq.InterPos[i + 2]);
+            int depNode = _feModelContext.Nodes.FindClosestValidNode(mntPos, validNodes, tolerance: 10.0);
+
+            if (depNode != -1)
+            {
+              dependentNodes.Add(depNode);
+            }
+          }
+
+          // 연결할 다리가 1개라도 있다면 RBE와 Mass 생성
+          if (dependentNodes.Count > 0)
+          {
+            int cogNodeId = _feModelContext.Nodes.AddOrGet(cogPos.X, cogPos.Y, cogPos.Z);
+
+            _feModelContext.PointMasses.AddNew(cogNodeId, eq.OperatingMass, extraData);
+            _feModelContext.Rigids.AddNew(cogNodeId, dependentNodes, "123456", extraData);
+            equipCount++;
+          }
+        }
+      }
+
+      if (_debugPrint)
+        Console.WriteLine($"[Build] 장비(Equipment) {equipCount}개 연결 및 생성 완료.");
     }
   }
 }
