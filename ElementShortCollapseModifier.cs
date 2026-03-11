@@ -65,9 +65,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           string rawName = e.ExtraData?.GetValueOrDefault("ID") ?? e.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
           elements.Remove(eid);
           collapsedCount++;
-
-          if (opt.VerboseDebug)
-            log($"   -> [병합/삭제] 미세 부재 '{rawName}'(E{eid})가 주변으로 통폐합되어 영구 삭제되었습니다.");
+       
+          log($"   -> [병합/삭제] 미세 부재 '{rawName}'(E{eid})가 주변으로 통폐합되어 영구 삭제되었습니다.");
 
           // 2. 삭제될 노드(remove)를 참조하고 있던 이웃 요소들 찾기
           var neighbors = elements.Where(kv => kv.Value.NodeIDs.Contains(remove)).ToList();
@@ -82,10 +81,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
                 .Select(id => id == remove ? keep : id)
                 .ToList();
 
-            // [중요 방어 로직] 노드 교체 후 요소의 양 끝 노드가 같아진다면? (길이 0 요소됨)
             if (newNodeIds.Distinct().Count() < 2)
             {
-              // 찌그러진(Degenerate) 요소가 되므로 삭제
+              // ★ 숨겨진 암살자 검거: 찌그러진 부재 삭제 로그 추가
+              string rawName = neighborEle.ExtraData?.GetValueOrDefault("ID") ?? neighborEle.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+              Console.ForegroundColor = ConsoleColor.Yellow;
+              Console.WriteLine($"   -> [영구 삭제] 노드 통폐합으로 인해 부재 '{rawName}'(E{neighborEid})가 찌그러져(길이 0) 삭제되었습니다.");
+              Console.ResetColor();
+
               elements.Remove(neighborEid);
               removedDegenerateCount++;
               continue;
