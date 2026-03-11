@@ -264,7 +264,13 @@ namespace HiTessModelBuilder.Services.Builders
 
     private void CreateElementSafe(int n1, int n2, int propId, double[] ori, Dictionary<string, string?> extra, PipeEntity pipe)
     {
-      if (n1 == n2) return;
+      if (n1 == n2)
+      {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"[생성 누락] 시작점과 끝점이 같아(길이 0) 배관 요소 생성이 취소되었습니다. Name: '{pipe.Name}'");
+        Console.ResetColor();
+        return;
+      }
       try
       {
         var p1 = _context.Nodes[n1];
