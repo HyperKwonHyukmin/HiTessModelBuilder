@@ -12,15 +12,20 @@ namespace HiTessModelBuilder.Services.Builders
     private readonly FeModelContext _context;
     private readonly Dictionary<string, List<int>> _pipeElementIDsByType;
     private readonly bool _useFluidDensity;
+    private readonly bool _forceUboltRigid; // ★ 추가
     private readonly bool _debugPrint;
 
     // [변경됨] 생성자에 useFluidDensity 옵션 추가
-    public PipeModelBuilder(FeModelContext context, Dictionary<string, List<int>> pipeElementIDsByType, bool useFluidDensity = true, bool debugPrint = false)
+    public PipeModelBuilder(FeModelContext context, Dictionary<string, List<int>> pipeElementIDsByType, bool useFluidDensity = true,
+      bool forceUboltRigid = false, bool debugPrint = false)
     {
-      _context = context ?? throw new ArgumentNullException(nameof(context));
-      _pipeElementIDsByType = pipeElementIDsByType ?? throw new ArgumentNullException(nameof(pipeElementIDsByType));
-      _useFluidDensity = useFluidDensity;
-      _debugPrint = debugPrint;
+      {
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _pipeElementIDsByType = pipeElementIDsByType ?? throw new ArgumentNullException(nameof(pipeElementIDsByType));
+        _useFluidDensity = useFluidDensity;
+        _forceUboltRigid = forceUboltRigid;
+        _debugPrint = debugPrint;
+      }
     }
 
     public void Build(List<PipeEntity> pipeList)
@@ -78,7 +83,7 @@ namespace HiTessModelBuilder.Services.Builders
             BuildAttachment(pipeData, extraData, isMassValid, massValue);
             break;
           default:
-            // ★ [사각지대 4] 알 수 없는 배관 누락 로그 가
+            // ★ [사각지대 4] 알 수 없는 배관 누락 로그 추가
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine($"[생성 누락] 알 수 없는 배관 타입({pipeData.Type})으로 생성이 취소되었습니다. Name: '{pipeData.Name}'");
             Console.ResetColor();
@@ -189,7 +194,7 @@ namespace HiTessModelBuilder.Services.Builders
       }
     }
 
-    // ... (이하 BuildInlineEquipment, BuildVtwa, BuildUBolt, BuildAttachment, CreateElementSafe는 기존과 동일) ...
+    // ... (이하 BuildInlineEquipment, BuildVtwa, BuildUBolt, BuildAttachment, CreateElementSafe는 기존 동일) ...
     private void BuildInlineEquipment(PipeEntity pipeData, Dictionary<string, string?> extraData, bool isMassValid, double massValue)
     {
       int centerNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
@@ -240,7 +245,10 @@ namespace HiTessModelBuilder.Services.Builders
     private void BuildUBolt(PipeEntity pipeData, Dictionary<string, string?> extraData)
     {
       int indepNode = _context.Nodes.AddOrGet(pipeData.Pos[0], pipeData.Pos[1], pipeData.Pos[2]);
-      string restStr = string.IsNullOrWhiteSpace(pipeData.Rest) ? "123456" : pipeData.Rest;
+      // ★ [핵심 로직] 스위치가 켜져 있으면 "123456" 강제 적용, 꺼져 있으면 원본 Rest 적용
+      string restStr = _forceUboltRigid
+                       ? "123456"
+                       : (string.IsNullOrWhiteSpace(pipeData.Rest) ? "123456" : pipeData.Rest);
       extraData["Remark"] = pipeData.Remark;
 
       int rbeId = _context.Rigids.AddOrGet(indepNode, Array.Empty<int>(), restStr, extraData);
@@ -276,7 +284,8 @@ namespace HiTessModelBuilder.Services.Builders
       if (n1 == n2)
       {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"[생성 누락] 시작점과 끝점이 같아(길이 0) 배관 요소 생성이 취소되었습니다. Name: '{pipe.Name}'");
+        if (_debugPrint)
+          Console.WriteLine($"[생성 누락] 시작점과 끝점이 같아(길이 0) 배관 요소 생성이 취소되었습니다. Name: '{pipe.Name}'");
         Console.ResetColor();
         return;
       }
@@ -304,6 +313,7 @@ namespace HiTessModelBuilder.Services.Builders
       {
 
         Console.ForegroundColor = ConsoleColor.Red;
+        if(_debugPrint)
         Console.WriteLine($"[Error] {pipe.Type} 생성 실패! Name: {pipe.Name} / 에러: {ex.Message}");
         Console.ResetColor();
         
