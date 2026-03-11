@@ -34,7 +34,17 @@ namespace HiTessModelBuilder.Parsers
         foreach (var line in File.ReadLines(struCsvPath).Skip(1))
         {
           if (string.IsNullOrWhiteSpace(line)) continue;
-          if (!TryStruParseLine(line, out var row)) continue;
+
+          // ★ Name을 먼저 추출하여 파싱 실패 시 로그에 사용
+          string rawName = line.Split(',').FirstOrDefault()?.Trim() ?? "Unknown";
+
+          if (!TryStruParseLine(line, out var row))
+          {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[파싱 누락] 구조물 데이터 폼 오류로 제외됨: '{rawName}'");
+            Console.ResetColor();
+            continue;
+          }
 
           var type = row.Type.Trim().ToUpperInvariant();
           var entity = CreateStruEntity(type);
@@ -58,7 +68,16 @@ namespace HiTessModelBuilder.Parsers
         foreach (var line in File.ReadLines(pipeCsvPath).Skip(1))
         {
           if (string.IsNullOrWhiteSpace(line)) continue;
-          if (!TryPipeParseLine(line, out var row)) continue;
+
+          string rawName = line.Split(',').FirstOrDefault()?.Trim() ?? "Unknown";
+
+          if (!TryPipeParseLine(line, out var row))
+          {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[파싱 누락] 구조물 데이터 폼 오류로 제외됨: '{rawName}'");
+            Console.ResetColor();
+            continue;
+          }
 
           var type = row.Type.Trim().ToUpperInvariant();
           var entity = new PipeEntity();
@@ -91,10 +110,18 @@ namespace HiTessModelBuilder.Parsers
         foreach (var line in File.ReadLines(equipCsvPath).Skip(1))
         {
           if (string.IsNullOrWhiteSpace(line)) continue;
-          if (!TryEquipParseLine(line, out var row)) continue;
+
+          string rawName = line.Split(',').FirstOrDefault()?.Trim() ?? "Unknown";
+          if (!TryEquipParseLine(line, out var row))
+          {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[파싱 누락] 구조물 데이터 폼 오류로 제외됨: '{rawName}'");
+            Console.ResetColor();
+            continue;
+          }
 
           // [핵심] 기존 예전 코드의 질량 0 스킵 로직 반영
-          if (row.Mass == 0.0 && row.Wvol == 0.0) continue;
+          if (row.Mass == 0.0 && row.Wvol == 0.0) Console.WriteLine($"[파싱 제외] 장비 중량 0으로 제외됨: '{row.Name}'"); ;
 
           var entity = new EquipEntity
           {
