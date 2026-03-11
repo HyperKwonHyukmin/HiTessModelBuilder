@@ -65,7 +65,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       // 2) 분할 후보 탐색 (log 파라미터 전달)
       var (scanned, candidates) = FindSplitCandidates(context, grid, opt, log);
 
-      // 3) 분할 적용 (log 파라미터 전달)
+      // 3) 분할 적용 (log 파라터 전달)
       var (splitCount, removed, added) = ApplySplit(context, candidates, opt, log);
 
       // 4) PipelineDebug 출력 (Sanity Inspector 스타일)
@@ -89,7 +89,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     // =================================================================
     // Internal Logic
     // =================================================================
-
+    /// <summary>
+    /// 요소(Element) 경 주변을 탐색하여 선분 위에 존재하는 내부 노드들을 찾고, 분할 후보로 등록합니다.
+    /// </summary>
+    /// <param name="context">FE 모델의 전체 노드 및 요소 데이터</param>
+    /// <param name="grid">노드 검색 속도를 높이는 공간 해시 구조체</param>
+    /// <param name="opt">사용자 정의 거리 허용오차 및 디버그 설정</param>
+    /// <param name="log">로그 메시지 출력을 위한 델리게이트</param>
+    /// <returns>검사한 총 요소 수와, 분할이 필요한 요소ID 및 대상 노드ID 리스트 딕셔너리</returns>
     private static (int scanned, Dictionary<int, List<int>> candidates) FindSplitCandidates(
         FeModelContext context, SpatialHash grid, Options opt, Action<string> log)
     {
@@ -98,7 +105,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       int scanned = 0;
       var candidates = new Dictionary<int, List<int>>();
 
-      // 변경 중 컬렉션 오류 방지를 위해 ID 리스트 스냅샷 생성
+      // 변경 중 컬렉션 오류 방지를 해 ID 리스트 스냅샷 생성
       var elementIds = elements.Keys.ToList();
 
       foreach (var eid in elementIds)
@@ -174,9 +181,20 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           candidates[eid] = internalNodeIds;
       }
 
+      // [추가] 상세 디버그 모드 켜져있을 경우 후보 리스트 출력
+      if (opt.VerboseDebug && candidates.Count > 0)
+      {
+        PrintCandidatesSummary(candidates, opt, log);
+      }
+
       return (scanned, candidates);
     }
 
+    /// <summary>
+    /// 발견된 분할 후보 노드들을 매개변(u) 순서대로 정렬하여, 요소를 실제로 여러 개의 세그먼트로 쪼갭니다.
+    /// 기존 요소는 (옵션에 따라) 첫 번째 조각으로 재활용되거나 삭제되며, 나머지 조각들은 신규 요소로 생성됩니다.
+    /// </summary>
+    /// <returns>실제 분할된 요소 수, 삭제된 원본 수, 신규 추가된 요소 수</returns>
     private static (int splitCount, int removed, int added) ApplySplit(
         FeModelContext context, Dictionary<int, List<int>> candidates, Options opt, Action<string> log)
     {
@@ -235,9 +253,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           segs.Add((n1, n2));
         }
 
-        // 생성된 세그먼트가 없으면 원본 삭제만 수행
         if (segs.Count == 0)
         {
+          // ★ 숨겨진 암살자 검거: 분할 후 소실된 부재 로그 추가
+          string rawName = e.ExtraData?.GetValueOrDefault("ID") ?? e.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          Console.WriteLine($"   -> [영구 삭제] 분할 후 유효한 길이가 나오지 않아 쪼개진 부재 '{rawName}'(E{eid})가 완전 삭제되었습니다.");
+          Console.ResetColor();
+
           elements.Remove(eid);
           removed++;
           continue;
@@ -249,12 +272,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         if (ReuseOriginalIdForFirst)
         {
           // 첫 번째 조각은 기존 ID 재사용 (덮어쓰기)
-          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, extra);
+          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, e.Orientation, extra);
 
           // 나머지 조각은 신규 생성
           for (int i = 1; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, extra);
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, extra);
             added++;
             if (opt.VerboseDebug)
               log($"   -> [추가] E{newId} 생성 (노드: {segs[i].n1}-{segs[i].n2})");
@@ -269,7 +292,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           removed++;
           for (int i = 0; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, extra);
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, extra);
             added++;
             if (opt.VerboseDebug)
               log($"   -> [신규] E{newId} 생성 (노드: {segs[i].n1}-{segs[i].n2})");
