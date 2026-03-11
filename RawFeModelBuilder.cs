@@ -16,11 +16,13 @@ namespace HiTessModelBuilder.Services.Builders
     private readonly RawCsvDesignData _rawStructureDesignData;
     private readonly FeModelContext _feModelContext;
     public Dictionary<string, List<int>> pipeElementIDsByType = new();
+    private readonly bool _forceUboltRigid;
     private readonly bool _debugPrint;
 
     public RawFeModelBuilder(
         RawCsvDesignData? StructureData,
         FeModelContext feModelContext,
+        bool forceUboltRigid = false,
         bool debugPrint = false)
     {
       _rawStructureDesignData = StructureData ?? throw new ArgumentNullException(nameof(StructureData));
@@ -63,6 +65,16 @@ namespace HiTessModelBuilder.Services.Builders
       PipeBuild();
       EquipBuild();
 
+      // ★ [사각지대 1] 파싱은 되었으나 지원하지 않는 타입이라 생성에서 누락된 부재 로그 출력
+      if (_rawStructureDesignData.UnknownDesignList != null)
+      {
+        foreach (var unknown in _rawStructureDesignData.UnknownDesignList)
+        {
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          Console.WriteLine($"[생성 누락] 지원하지 않는 형상 타입({unknown.Type})으로 생성이 취소되었습니다. Name: '{unknown.Name}'");
+          Console.ResetColor();
+        }
+      }
 
       if (_debugPrint) Console.WriteLine("[Builder] FE Model Build Completed Successfully.");
     }
@@ -86,7 +98,13 @@ namespace HiTessModelBuilder.Services.Builders
 
         // 2. Node 생성 (방어적 코드: 인덱스 범위 확인)
         if (entity.Poss == null || entity.Poss.Length < 3 || entity.Pose == null || entity.Pose.Length < 3)
+        {
+          // ★ [사각지대 3] 좌표 데이터 불량 누락 로그 추가
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          Console.WriteLine($"[생성 누락] 시작/끝 좌표 데이터 불량으로 생성이 취소되었습니다. Name: '{entity.Name}'");
+          Console.ResetColor();
           continue;
+        }
 
         double[] barOrientation = GeometryUtils.CalculateBarOrientation(entity.Poss, entity.Pose);
         int nodeA_ID = _feModelContext.Nodes.AddOrGet(entity.Poss[0], entity.Poss[1], entity.Poss[2]);
@@ -104,15 +122,12 @@ namespace HiTessModelBuilder.Services.Builders
           oriZ = entity.Ori[2].ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        // ★ [추가된 방어 코드] 시작 노드와 끝 노드가 같으면 (길이가 0이면) 생성 스킵
         if (nodeA_ID == nodeB_ID)
         {
+          Console.ForegroundColor = ConsoleColor.Yellow;
           if (_debugPrint)
-          {
-            Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine($"[생성 누락] 시작점과 끝점이 같아(길이 0) 부재 생성이 취소되었습니다. Name: '{entity.Name}'");
-            Console.ResetColor();
-          }
+          Console.ResetColor();
           continue;
         }
 
@@ -135,14 +150,11 @@ namespace HiTessModelBuilder.Services.Builders
         }
         catch (Exception ex)
         {
-          if (_debugPrint)
-          {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"[Error] 구조 부재 생성 실패! Entity ID: {entity.Name}");
-            Console.WriteLine($"  -> 상세 에러: {ex.Message}");
-            Console.ResetColor();
-          }
-          continue; // 실패 시 프로그램 중 없이 다음 부재로 넘어감
+          // ★ _debugPrint 조건 제거! 실패 원인 무조건 출력
+          Console.ForegroundColor = ConsoleColor.Red;
+          Console.WriteLine($"[생성 실패] 구조 부재 생성 중 예외 발생! Name: '{entity.Name}' (사유: {ex.Message})");
+          Console.ResetColor();
+          continue;
         }
       }
     }
@@ -150,9 +162,9 @@ namespace HiTessModelBuilder.Services.Builders
     private void PipeBuild()
     {
       // 1. 배관 전담 빌더 인스턴스 생성
-      // [수정됨] useFluidDensity 파라미터를 true로 전달하여 내부 유체 질량 보정을 활성화합니다.
+      // [수정됨] useFluidDensity 파라미터를 true로 전달하여 내부 유체 질량 보정을 성화합니다.
       bool useFluidDensity = true;
-      var pipeBuilder = new PipeModelBuilder(_feModelContext, pipeElementIDsByType, useFluidDensity, _debugPrint);
+      var pipeBuilder = new PipeModelBuilder(_feModelContext, pipeElementIDsByType, useFluidDensity, _forceUboltRigid, _debugPrint);
 
       // 2. 파싱된 배관 리스트를 전달하여 빌드 실행
       pipeBuilder.Build(_rawStructureDesignData.PipeList);
@@ -189,7 +201,7 @@ namespace HiTessModelBuilder.Services.Builders
         {
           var dependentNodes = new HashSet<int>();
 
-          // 다(Mounting Points)들을 순회하며 10mm 이내 노드 찾기
+          // 다리(Mounting Points)들을 순회하며 10mm 이내 노드 찾기
           for (int i = 0; i <= eq.InterPos.Length - 3; i += 3)
           {
             var mntPos = new Point3D(eq.InterPos[i], eq.InterPos[i + 1], eq.InterPos[i + 2]);
