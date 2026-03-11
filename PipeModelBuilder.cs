@@ -78,7 +78,10 @@ namespace HiTessModelBuilder.Services.Builders
             BuildAttachment(pipeData, extraData, isMassValid, massValue);
             break;
           default:
-            if (_debugPrint) Console.WriteLine($"[Warning] 알 수 없는 배관 타입입니다: {pipeData.Type}");
+            // ★ [사각지대 4] 알 수 없는 배관 누락 로그 가
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[생성 누락] 알 수 없는 배관 타입({pipeData.Type})으로 생성이 취소되었습니다. Name: '{pipeData.Name}'");
+            Console.ResetColor();
             break;
         }
       }
@@ -299,12 +302,11 @@ namespace HiTessModelBuilder.Services.Builders
       }
       catch (Exception ex)
       {
-        if (_debugPrint)
-        {
-          Console.ForegroundColor = ConsoleColor.Red;
-          Console.WriteLine($"[Error] {pipe.Type} 생성 실패! Name: {pipe.Name} / 에러: {ex.Message}");
-          Console.ResetColor();
-        }
+
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"[Error] {pipe.Type} 생성 실패! Name: {pipe.Name} / 에러: {ex.Message}");
+        Console.ResetColor();
+        
       }
     }
   }
