@@ -65,8 +65,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           string rawName = e.ExtraData?.GetValueOrDefault("ID") ?? e.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
           elements.Remove(eid);
           collapsedCount++;
-       
-          log($"   -> [병합/삭제] 미세 부재 '{rawName}'(E{eid})가 주변으로 통폐합되어 영구 삭제되었습니다.");
+
+          if (opt.VerboseDebug)
+            log($"   -> [병합/삭제] 미세 부재 '{rawName}'(E{eid})가 주변으로 통폐합되어 영구 삭제되었습니다.");
 
           // 2. 삭제될 노드(remove)를 참조하고 있던 이웃 요소들 찾기
           var neighbors = elements.Where(kv => kv.Value.NodeIDs.Contains(remove)).ToList();
@@ -98,7 +99,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             elements.AddWithID(neighborEid, newNodeIds, propId, neighborEle.Orientation, extraData);
           }
 
-          // 3. 더 이상 이지 않는 노드 삭제
+          // 3. 더 이상 쓰이지 않는 노드 삭제
           if (nodes.Contains(remove))
             nodes.Remove(remove);
 
