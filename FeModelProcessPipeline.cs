@@ -257,7 +257,13 @@ namespace HiTessModelBuilder.Pipeline
       int totalProcessed = 0;
 
       // 1. 일반 UBOLT (수직 스냅) 처리
-      var snapOpt = new UboltSnapToStructureModifier.Options(PipelineDebug: pDebug, VerboseDebug: vDebug);
+      // 1. 일반 UBOLT (수직 스냅) 처리
+      // ★ [수정] 대구경 배관과 서포트 사이의 갭(Gap)을 고려하여 여유 마진을 150.0mm로 늘림
+      var snapOpt = new UboltSnapToStructureModifier.Options(
+          ExtraMargin: 200.0,
+          PipelineDebug: pDebug,
+          VerboseDebug: vDebug
+      );
       int snapCount = UboltSnapToStructureModifier.Run(_context, snapOpt, _logger.LogDelegate);
       totalProcessed += snapCount;
 
