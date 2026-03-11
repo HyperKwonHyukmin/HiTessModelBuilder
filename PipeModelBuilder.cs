@@ -198,6 +198,12 @@ namespace HiTessModelBuilder.Services.Builders
         int rbeId = _context.Rigids.AddNew(centerNode, new List<int> { startNode, endNode }, "123456", extraData);
         if (_pipeElementIDsByType.ContainsKey(pipeData.Type)) _pipeElementIDsByType[pipeData.Type].Add(rbeId);
       }
+      else
+      {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"[생성 누락] 시작점과 끝점이 같아 밸브/장비(RBE) 생성이 취소되었습니다. Name: '{pipeData.Name}'");
+        Console.ResetColor();
+      }
 
       if (isMassValid && massValue > 0.0)
       {
