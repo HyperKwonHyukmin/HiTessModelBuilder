@@ -154,9 +154,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
                 .Select(id => id == removeNode ? keepNode : id)
                 .ToList();
 
-            // 만약 병합 결과로 요소의 양 끝 노드가 같아졌다면(길이 0), 요소 통째로 삭제
             if (newNodeIds.Distinct().Count() < 2)
             {
+              // ★ 숨겨진 암살자 검거: 찌그러진 부재 삭제 로그 추가
+              string rawName = neighborEle.ExtraData?.GetValueOrDefault("ID") ?? neighborEle.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+              Console.ForegroundColor = ConsoleColor.Yellow;
+              Console.WriteLine($"   -> [영구 삭제] 노드 통폐합으로 인해 부재 '{rawName}'(E{neighborEid})가 찌그러져(길이 0) 삭제되었습니다.");
+              Console.ResetColor();
+
               elements.Remove(neighborEid);
               removedDegenerateCount++;
               continue;
