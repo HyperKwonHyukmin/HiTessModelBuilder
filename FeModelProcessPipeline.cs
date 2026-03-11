@@ -2,6 +2,7 @@ using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Pipeline.ElementInspector;
 using HiTessModelBuilder.Pipeline.ElementModifier;
 using HiTessModelBuilder.Pipeline.Preprocess;
+using HiTessModelBuilder.Services.Debugging;
 using HiTessModelBuilder.Services.Logging;
 using System;
 
@@ -184,6 +185,8 @@ namespace HiTessModelBuilder.Pipeline
         Console.WriteLine("\n================ FINAL CHECK =================");
       }
       StructuralSanityInspector.InspectRigidIntegrity(_context, _pipelineDebug, this._verboseDebug);
+      // ★ [신규 추가] 파이프라인의 가장 마지막에 최종 생사 확인 리포트 출력
+      AuditTracker.GenerateFinalAuditReport(_rawStructureDesignData, _context, _logger);
     }
 
     // --- 이하 Modifier 실행 헬퍼 메서드들은 기존 코드와 동일합니다 ---
@@ -249,7 +252,7 @@ namespace HiTessModelBuilder.Pipeline
 
     /// <summary>
     /// UBOLT의 연결을 전담하는 헬퍼 메서드입니다.
-    /// 일반 UBOLT의 수직 스냅(Snap) 연결 및 분할 힐링을 선행한 후, 
+    /// 일 UBOLT의 수직 스냅(Snap) 연결 및 분할 힐링을 선행한 후, 
     /// 특수 형태인 BOX 타입 UBOLT의 4점 연결 로직을 수행합니다.
     /// </summary>
     private int UboltConnectionRun(bool pDebug, bool vDebug)
@@ -260,7 +263,7 @@ namespace HiTessModelBuilder.Pipeline
       // 1. 일반 UBOLT (수직 스냅) 처리
       // ★ [수정] 대구경 배관과 서포트 사이의 갭(Gap)을 고려하여 여유 마진을 150.0mm로 늘림
       var snapOpt = new UboltSnapToStructureModifier.Options(
-          ExtraMargin: 200.0,
+          ExtraMargin: 150.0,
           PipelineDebug: pDebug,
           VerboseDebug: vDebug
       );
