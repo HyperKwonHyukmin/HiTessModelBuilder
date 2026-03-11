@@ -102,7 +102,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           pairTested++;
 
           // [중요] 거의 평행한 경우(Overlap 성격)는 Stage 01에서 처리하므로 여기선 건너뜀
-          // 이를 통해 중복 요소끼리 서로를 난도질하는 것을 방지함
+          // 이를 통 중복 요소끼리 서로를 난도질하는 것을 방지함
           if (IsNearlyParallel(A0, A1, B0, B1))
             continue;
 
@@ -158,7 +158,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         if (splitCount > 0)
         {
           Console.ForegroundColor = ConsoleColor.Cyan;
-          Console.WriteLine($"[변경] 교차 요소 분할 : 대상 요소 {needSplit}개 중 {splitCount}개 분할됨 (기존 요소 {removed}개 삭제, 신규 요소 {added}개 생성, 신규 노드 {nodesCreated}개 생성)");
+          Console.WriteLine($"[변경] 교차 요소 분할 : 대상 요소 {needSplit}개 중 {splitCount}개 분할 (기존 요소 {removed}개 삭제, 신규 요소 {added}개 생성, 신규 노드 {nodesCreated}개 생성)");
           Console.ResetColor();
         }
         else
@@ -260,6 +260,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
         if (segs.Count == 0)
         {
+          // ★ 숨겨진 암살자 검거: 분할 후 소실된 부재 로그 추가
+          string rawName = e.ExtraData?.GetValueOrDefault("ID") ?? e.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          Console.WriteLine($"   -> [영구 삭제] 분할 후 유효한 길이가 나오지 않아 쪼개진 부재 '{rawName}'(E{eid})가 완전 삭제되었습니다.");
+          Console.ResetColor();
+
           elements.Remove(eid);
           removed++;
           continue;
@@ -276,11 +282,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         {
           // 기존 ID 덮어쓰기
           elements.Remove(eid);
-          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, CopyExtra());
+          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, e.Orientation, CopyExtra());
 
           for (int i = 1; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, CopyExtra());
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, CopyExtra());
             added++;
             if (opt.VerboseDebug)
               log($"   -> [추가 생성] E{newId} (노드: {segs[i].n1}-{segs[i].n2})");
@@ -296,7 +302,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           for (int i = 0; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, CopyExtra());
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, CopyExtra());
             added++;
             if (opt.VerboseDebug)
               log($"   -> [신규 생성] E{newId} (노드: {segs[i].n1}-{segs[i].n2})");
@@ -382,7 +388,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     }
 
     /// <summary>
-    /// [수정됨] 두 3D 선분 간의 교차 여부 및 파라미터(s, t)를 계산합니다.
+    /// [수정됨] 두 3D 선분 간 교차 여부 및 파라미터(s, t)를 계산합니다.
     /// (구문 오류를 방지하기 위해 if-else 블록을 명확히 분리함)
     /// </summary>
     private static bool TrySegmentSegmentIntersection(
