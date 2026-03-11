@@ -17,6 +17,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
   {
     public sealed record Options(
         double MaxSearchDistance = 2000.0, // 너무 멀리 있는 부재가 엉뚱하게 잡히는 것을 방지
+        double ExtraMargin = 100.0,
         bool PipelineDebug = true,
         bool VerboseDebug = true
     );
@@ -70,6 +71,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
         // [Step 2] 배관 1개를 골라 방향 벡터(vX) 도출
         var pipeElem = connectedPipes.First().Value;
+        // ★ [신규 핵심 로직] BOX UBOLT에서도 배관 크기에 비례한 동적 탐색 반경 보장
+        double pipeRadius = pipeElem.GetReferencedPropertyDim(context.Properties);
+        double dynamicSearchDist = Math.Max(opt.MaxSearchDistance, pipeRadius + opt.ExtraMargin);
+
         var pPipeA = context.Nodes[pipeElem.NodeIDs.First()];
         var pPipeB = context.Nodes[pipeElem.NodeIDs.Last()];
         var vX = (pPipeB - pPipeA).Normalize();
@@ -104,7 +109,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           // 수선의 발과 거리 계산
           double dist = DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
-          if (dist > opt.MaxSearchDistance) continue; // 너무 먼 부재는 걸러냄
+          // ★ 고정 옵션 대신 동적 탐색 반경(dynamicSearchDist) 적용
+          if (dist > dynamicSearchDist) continue;
 
           Vector3D diff = projPoint - pIndep;
           if (diff.Magnitude() < 1e-3) continue;
@@ -154,7 +160,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             int propId = targetElem.PropertyID;
             var barOrientation = targetElem.Orientation; // 방향성 유지
 
-            // 분할: 기존 요소 수정 및 신규 요소 추가
+            // 분할: 기존 요소 수정 및 신규 요 추가
             context.Elements.Remove(target.Eid);
             context.Elements.AddWithID(target.Eid, new List<int> { nA, depNodeId }, propId, barOrientation, extraCopy);
             context.Elements.AddNew(new List<int> { depNodeId, nB }, propId, barOrientation, extraCopy);
@@ -176,6 +182,13 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             log($"[연결 완료] RBE {rigidId} -> {newDependentNodes.Count}곳(상/하/좌/우) 연결 완료.");
             Console.ResetColor();
           }
+        }
+        else
+        {
+          // ★ [추가/수정] 타겟을 찾지 못한 경우 빨간색 에러 로그를 띄우고 스킵(Pass)
+          Console.ForegroundColor = ConsoleColor.Red;
+          log($"[연결 실패/스킵] RBE {rigidId} (BOX UBOLT) 주위에 연결할 타겟 부재를 찾지 못했습니다. Dependent Node가 빈 상태로 건너뜁니다.");
+          Console.ResetColor();
         }
       }
 
