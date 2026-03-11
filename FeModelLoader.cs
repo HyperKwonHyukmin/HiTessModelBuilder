@@ -10,7 +10,7 @@ namespace HiTessModelBuilder.Services.Initialization
   public static class FeModelLoader
   {
     public static (RawCsvDesignData? rawStructureDesignData, FeModelContext context)
-      LoadAndBuild(string StrucCsv, string PipeCsv, string EquipCsv, 
+      LoadAndBuild(string StrucCsv, string PipeCsv, string EquipCsv, bool forceUboltRigid = false,
       bool csvDebug = false, bool FeModelDebug = false)
     {
 
@@ -24,7 +24,7 @@ namespace HiTessModelBuilder.Services.Initialization
       var context = FeModelContext.CreateEmpty();
 
       // FE 인스턴스 생성 시작
-      var builder = new RawFeModelBuilder(rawCsvDesignData, context, debugPrint: FeModelDebug);
+      var builder = new RawFeModelBuilder(rawCsvDesignData, context, forceUboltRigid: forceUboltRigid, debugPrint: FeModelDebug);
       builder.Build();
 
       if (FeModelDebug)
