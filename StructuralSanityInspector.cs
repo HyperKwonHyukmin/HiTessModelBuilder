@@ -260,12 +260,18 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       {
         foreach (var group in duplicateGroups)
         {
-          for (int i = 1; i < group.Count; i++) // 인덱스 1부터 삭제 (0번은 보존)
+          for (int i = 1; i < group.Count; i++) // 인덱스 1부터 삭제
           {
             if (context.Elements.Contains(group[i]))
             {
+              // ★ Name 추적 및 로그 추가
+              string rawName = context.Elements[group[i]].ExtraData?.GetValueOrDefault("ID") ?? context.Elements[group[i]].ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+
               context.Elements.Remove(group[i]);
               deletedCount++;
+
+              if (verboseDebug)
+                Console.WriteLine($"      -> [중복 삭제] 완전히 동일한 위치의 중복 부재 '{rawName}'(E{group[i]}) 삭제됨.");
             }
           }
         }
@@ -312,8 +318,14 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         {
           if (context.Elements.Contains(eid))
           {
+            // ★ Name 추적 및 로그 추가
+            string rawName = context.Elements[eid].ExtraData?.GetValueOrDefault("ID") ?? context.Elements[eid].ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+
             context.Elements.Remove(eid);
             deletedCount++;
+
+            if (verboseDebug)
+              Console.WriteLine($"      -> [불량 삭제] 유효하지 않은 노드/속성을 참조하는 부재 '{rawName}'(E{eid}) 삭제됨.");
           }
         }
       }
@@ -380,8 +392,17 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       int removedCount = 0;
       foreach (var info in emptyRbeInfos)
       {
-        context.Rigids.Remove(info.RbeId);
+        string rawName = "Unknown";
+        if (context.Rigids.Contains(info.RbeId))
+        {
+          var rbe = context.Rigids[info.RbeId];
+          rawName = rbe.ExtraData?.GetValueOrDefault("Name") ?? rbe.ExtraData?.GetValueOrDefault("ID") ?? "Unknown";
+          context.Rigids.Remove(info.RbeId);
+        }
         removedCount++;
+
+        if (verboseDebug)
+          Console.WriteLine($"      -> [연결 실패 삭제] 지지할 구조물을 찾지 못한 강체(U-Bolt/Valve 등) '{rawName}' 삭제됨.");
       }
 
       if (pipelineDebug)
@@ -455,7 +476,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       var doubleDeps = depNodeToRbes.Where(kv => kv.Value.Count > 1).ToList();
       if (doubleDeps.Count > 0)
       {
-        LogCritical($"[치명적 오류 탐지] 다중 종속(Double Dependency) 발생! 노드가 여러 마스터에게 지배받고 습니다.");
+        LogCritical($"[치명적 오류 탐지] 다중 종속(Double Dependency) 발생! 노드가 여러 마스터에게 지배받고 있습니다.");
         foreach (var kvp in doubleDeps.Take(10))
         {
           Console.WriteLine($"      -> Node {kvp.Key}번은 다음 RBE들의 슬레이브로 겹쳐있습니다: {string.Join(", ", kvp.Value)}");
