@@ -83,14 +83,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
             if (newNodeIds.Distinct().Count() < 2)
             {
-              // ★ 숨겨진 암살자 검거: 찌그러진 부재 삭제 로그 추가
-              string rawName = neighborEle.ExtraData?.GetValueOrDefault("ID") ?? neighborEle.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
-              Console.ForegroundColor = ConsoleColor.Yellow;
-              Console.WriteLine($"   -> [영구 삭제] 노드 통폐합으로 인해 부재 '{rawName}'(E{neighborEid})가 찌그러져(길이 0) 삭제되었습니다.");
-              Console.ResetColor();
-
               elements.Remove(neighborEid);
               removedDegenerateCount++;
+              if (opt.VerboseDebug)
+                log($"   -> [삭제] 노드 병합으로 찌그러진 부재(E{neighborEid}) 삭제");
               continue;
             }
 
@@ -102,7 +98,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
             elements.AddWithID(neighborEid, newNodeIds, propId, neighborEle.Orientation, extraData);
           }
 
-          // 3. 더 이상 쓰이지 않는 노드 삭제
+          // 3. 더 이상 이지 않는 노드 삭제
           if (nodes.Contains(remove))
             nodes.Remove(remove);
 
