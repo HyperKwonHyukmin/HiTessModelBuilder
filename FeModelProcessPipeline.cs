@@ -169,7 +169,8 @@ namespace HiTessModelBuilder.Pipeline
 
           // ★ [핵심 분리 2] Sanity 검사는 모델의 상태를 보여주는 핵심 지표이므로, 
           // 과거 스테이지라 하더라도 this._pipelineDebug가 켜져 있으면 무조건 출력합니다.
-          var freeEndNodes = StructuralSanityInspector.Inspect(_context, true, this._pipelineDebug, currentVerbose);
+          // (추가: 현재 루프가 마지막 STAGE인지 판별하는 isTarget을 isFinalStage 파라미터로 넘겨줍니다)
+          var freeEndNodes = StructuralSanityInspector.Inspect(_context, true, this._pipelineDebug, currentVerbose, isTarget);
 
           BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
         }
