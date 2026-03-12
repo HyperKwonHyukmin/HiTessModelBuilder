@@ -9,7 +9,6 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 {
   public static class StructuralSanityInspector
   {
-    // ★ 신규 추가: isFinalStage 파라미터 (기본값 false)
     public static List<int> Inspect(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage = false)
     {
       double shortElementDistanceThreshold = 1.0;
@@ -22,8 +21,9 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       InspectIntegrity(context, pipelineDebug, verboseDebug);
       InspectIsolation(context, pipelineDebug, verboseDebug);
 
-      // ★ isFinalStage 파라미터 전달
+      // 위상 연결성 및 경계조건(SPC) 산출
       List<int> freeEndNodes = InspectTopology(context, useExplicitWeldSpc, pipelineDebug, verboseDebug, isFinalStage);
+
       InspectRigidDependencies(context, pipelineDebug);
 
       return freeEndNodes;
@@ -31,13 +31,15 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
     private static List<int> InspectTopology(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage)
     {
-      var connectedGroups = ElementConnectivityInspector.FindConnectedElementGroups(context.Elements);
+      // [수정됨] Element뿐만 아니라 Rigid, PointMass까지 통합된 ConnectedComponent 검색 로직 적용
+      var connectedComponents = ElementConnectivityInspector.FindConnectedComponents(context);
+
       if (pipelineDebug)
       {
-        if (connectedGroups.Count <= 1)
-          LogPass($"01 - 위상 연결성 : 전체 모델이 {connectedGroups.Count}개의 그룹으로 잘 연결되어 있습니다.");
+        if (connectedComponents.Count <= 1)
+          LogPass($"01 - 위상 연결성 : 전체 모델이 {connectedComponents.Count}개의 그룹으로 잘 연결되어 있습니다.");
         else
-          LogWarning($"01 - 위상 연결성 : 모델이 {connectedGroups.Count}개의 분리된 덩어리로 나뉘어 있습니다.");
+          LogWarning($"01 - 위상 연결성 : 모델이 {connectedComponents.Count}개의 분리된 덩어리로 나뉘어 있습니다.");
       }
 
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
@@ -75,7 +77,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       RemoveOrphanNodes(context, isolatedNodes);
 
       // ===================================================================================
-      // A. SPC 대상 추출 및 충돌 방지 로직
+      // A. SPC 대상 추출 및 강체(Rigid) 충돌 완벽 방지 로직 (수정됨)
       // ===================================================================================
       var rawSpcTargets = new HashSet<int>();
       bool effectiveUseExplicitWeldSpc = useExplicitWeldSpc && context.WeldNodes.Count > 0;
@@ -91,45 +93,53 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         foreach (var node in endNodes) rawSpcTargets.Add(node);
       }
 
-      // [Step 2] 종속 노드 충돌 방지 역추적
+      // [Step 2] 모델 내의 모든 Rigid 관련 노드(Independent + Dependent) 수집
+      var allRigidNodes = new HashSet<int>();
+      foreach (var kvp in context.Rigids)
+      {
+        var rigid = kvp.Value;
+        allRigidNodes.Add(rigid.IndependentNodeID);
+        foreach (var dep in rigid.DependentNodeIDs) allRigidNodes.Add(dep);
+      }
+
+      // [Step 3] RBE 관련 노드에 배정된 SPC는 무조건 파기(제거)
       var finalSpcList = new HashSet<int>();
       foreach (int targetNode in rawSpcTargets)
       {
-        int currentNode = targetNode;
-        bool isDependent;
-        int loopGuard = 0;
-        do
+        if (!allRigidNodes.Contains(targetNode))
         {
-          isDependent = false;
-          foreach (var kvp in context.Rigids)
-          {
-            if (kvp.Value.DependentNodeIDs.Contains(currentNode))
-            {
-              isDependent = true;
-              currentNode = kvp.Value.IndependentNodeID;
-              break;
-            }
-          }
-          loopGuard++;
-        } while (isDependent && loopGuard < 100);
-
-        if (loopGuard < 100) finalSpcList.Add(currentNode);
+          finalSpcList.Add(targetNode);
+        }
+        else if (verboseDebug)
+        {
+          Console.WriteLine($"      -> [SPC 제거] 노드 N{targetNode}는 강체(RBE)에 포함되어 있어 경계조건이 삭제되었습니다.");
+        }
       }
 
-      // ★ [Step 3] 그룹별 경계조건 누락 방지 (최하단 Z축 자동 할당)
-      // 변경점: 모드(Weld/Free)에 상관없이 무조건 실행하며, 오직 '마지막 STAGE(isFinalStage)' 일 때만 1회 실행!
+      // [Step 4] 그룹별 경계조건 누락 방지 (최하단 Z축 자동 할당)
       if (isFinalStage)
       {
         double zTolerance = 10.0;
 
-        foreach (var group in connectedGroups)
+        foreach (var comp in connectedComponents)
         {
           var groupNodes = new HashSet<int>();
-          foreach (int eid in group)
-          {
+
+          // 해당 컴포넌트 내부의 모든 노드 수집
+          foreach (int eid in comp.ElementIDs)
             if (context.Elements.Contains(eid))
               foreach (int nid in context.Elements[eid].NodeIDs) groupNodes.Add(nid);
-          }
+
+          foreach (int rid in comp.RigidIDs)
+            if (context.Rigids.Contains(rid))
+            {
+              groupNodes.Add(context.Rigids[rid].IndependentNodeID);
+              foreach (int nid in context.Rigids[rid].DependentNodeIDs) groupNodes.Add(nid);
+            }
+
+          foreach (int mid in comp.PointMassIDs)
+            if (context.PointMasses.Contains(mid))
+              groupNodes.Add(context.PointMasses[mid].NodeID);
 
           // 해당 덩어리 내에 경계조건(SPC)이 단 하나라도 들어갔는지 검사
           bool hasSpc = groupNodes.Any(nid => finalSpcList.Contains(nid));
@@ -143,34 +153,21 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
             double minZ = validNodes.Min(n => context.Nodes[n].Z);
             var bottomNodes = validNodes.Where(n => context.Nodes[n].Z <= minZ + zTolerance).ToList();
 
-            // RBE 충돌 방지 마스터 역추적
+            int addedSpcCount = 0;
+            // 강체(RBE) 노드를 제외한 바닥면 노드에 SPC 할당
             foreach (int targetNode in bottomNodes)
             {
-              int currentNode = targetNode;
-              bool isDependent;
-              int loopGuard = 0;
-              do
+              if (!allRigidNodes.Contains(targetNode))
               {
-                isDependent = false;
-                foreach (var kvp in context.Rigids)
-                {
-                  if (kvp.Value.DependentNodeIDs.Contains(currentNode))
-                  {
-                    isDependent = true;
-                    currentNode = kvp.Value.IndependentNodeID;
-                    break;
-                  }
-                }
-                loopGuard++;
-              } while (isDependent && loopGuard < 100);
-
-              if (loopGuard < 100) finalSpcList.Add(currentNode);
+                finalSpcList.Add(targetNode);
+                addedSpcCount++;
+              }
             }
 
-            if (pipelineDebug)
+            if (pipelineDebug && addedSpcCount > 0)
             {
               Console.ForegroundColor = ConsoleColor.Magenta;
-              Console.WriteLine($"      -> [안전망 작동] 경계조건이 누락된 독립 그룹 발견! 해당 그룹 최하단(Z={minZ:F1}) 노드 {bottomNodes.Count}개에 SPC 강제 할당 완료.");
+              Console.WriteLine($"      -> [안전망 작동] 경계조건이 누락된 독립 그룹 발견! 해당 그룹 최하단(Z={minZ:F1}) 유효 노드 {addedSpcCount}개에 SPC 강제 할당 완료.");
               Console.ResetColor();
             }
           }
@@ -365,6 +362,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
     private static void LogPass(string msg) => Console.WriteLine($"[통과] {msg}");
     private static void LogWarning(string msg) { Console.ForegroundColor = ConsoleColor.Yellow; Console.WriteLine($"[주의] {msg}"); Console.ResetColor(); }
     private static void LogCritical(string msg) { Console.ForegroundColor = ConsoleColor.Red; Console.WriteLine($"[실패] {msg}"); Console.ResetColor(); }
+
     private static string SummarizeIds(List<int> ids, int limit)
     {
       if (ids == null || ids.Count == 0) return "";
