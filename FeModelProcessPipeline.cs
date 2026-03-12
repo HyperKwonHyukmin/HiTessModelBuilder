@@ -165,17 +165,19 @@ namespace HiTessModelBuilder.Pipeline
 
               RigidConsolidationRun(modifierDebug, currentVerbose);
 
-              // ==========================================
-              // [신규 추가] 사용자가 제안한 고립 강체(Free RBE Node) 강제 스냅 적용
-              // ==========================================
+              // 1. 가까운 거리에 있는 Rigid들 끼리 통폐합하여 하나의 덩어리로 만듭니다.
+              var proxMergeOpt = new RigidProximityMergeModifier.Options(Tolerance: 50.0, PipelineDebug: modifierDebug, VerboseDebug: currentVerbose);
+              RigidProximityMergeModifier.Run(_context, proxMergeOpt, _logger.LogDelegate);
+
+              // 2. 그리고도 연결되지 못한 채 허공에 떠 있는 고립 Rigid를 Element에 억지로 붙이거나 영구 삭제합니다.
               var snapOpt = new RigidFreeNodeSnapModifier.Options(Tolerance: 100.0, PipelineDebug: modifierDebug, VerboseDebug: currentVerbose);
               RigidFreeNodeSnapModifier.Run(_context, snapOpt, _logger.LogDelegate);
               break;
           }
 
-          // ★ [핵심 분리 2] Sanity 검사는 모델의 상태를 보여주는 핵심 지표이므로, 
+          // ★ [핵심 분리 2] Sanity 검사 모델의 상태를 보여주는 핵심 지표이므로, 
           // 과거 스테이지라 하더라도 this._pipelineDebug가 켜져 있으면 무조건 출력합니다.
-          // (추가: 현재 루프가 마지막 STAGE인지 판별하는 isTarget을 isFinalStage 파라미로 넘겨줍니다)
+          // (추가: 현재 루프가 마지막 STAGE인지 판별하는 isTarget을 isFinalStage 파라미터로 넘겨줍니다)
           var freeEndNodes = StructuralSanityInspector.Inspect(_context, true, this._pipelineDebug, currentVerbose, isTarget);
 
           BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
