@@ -7,11 +7,6 @@ using System.Linq;
 
 namespace HiTessModelBuilder.Pipeline.ElementModifier
 {
-  /// <summary>
-  /// Rigid(RBE)의 노드 중 Element(일반 부재)에 전혀 연결되지 않은 허공의 노드(FreeNode)를 찾아,
-  /// 지정된 허용 오차(Tolerance) 내에 있는 "1번만 사용된 Element의 FreeNode"로 강제 스냅(병합)합니다.
-  /// 이후 다른 부재(Element, Rigid)에 전혀 사용되지 않고 방치된 찌꺼기 PointMass를 찾아 삭제합니다.
-  /// </summary>
   public static class RigidFreeNodeSnapModifier
   {
     public sealed record Options(
@@ -26,9 +21,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       log ??= Console.WriteLine;
 
       int snappedCount = 0;
-      int removedMassCount = 0;
 
-      // 1. Element 노드의 사용 횟수(Degree) 계산 및 유효 구조물 노드 수집
+      // =========================================================================
+      // [STEP 1] 허공에 뜬 Rigid 노드를 찾아 Element 끝단에 스냅 (이전 로직 유지)
+      // =========================================================================
       var validStructureNodes = new HashSet<int>();
       var elementNodeDegree = new Dictionary<int, int>();
 
@@ -37,37 +33,28 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         foreach (int nid in kvp.Value.NodeIDs)
         {
           validStructureNodes.Add(nid);
-          if (!elementNodeDegree.ContainsKey(nid))
-            elementNodeDegree[nid] = 0;
+          if (!elementNodeDegree.ContainsKey(nid)) elementNodeDegree[nid] = 0;
           elementNodeDegree[nid]++;
         }
       }
 
-      // 2. Rigid 노드 중 validStructureNodes에 속하지 않는 '완전 고립된 노드(FreeNode)' 추출
       var isolatedRigidNodes = new HashSet<int>();
       foreach (var kvp in context.Rigids)
       {
         var r = kvp.Value;
-        if (!validStructureNodes.Contains(r.IndependentNodeID))
-          isolatedRigidNodes.Add(r.IndependentNodeID);
-
+        if (!validStructureNodes.Contains(r.IndependentNodeID)) isolatedRigidNodes.Add(r.IndependentNodeID);
         foreach (var dep in r.DependentNodeIDs)
-        {
-          if (!validStructureNodes.Contains(dep))
-            isolatedRigidNodes.Add(dep);
-        }
+          if (!validStructureNodes.Contains(dep)) isolatedRigidNodes.Add(dep);
       }
 
       if (isolatedRigidNodes.Count > 0)
       {
-        // 3. 고립된 Rigid 노드에서 가장 가까운 "Element의 FreeNode" 탐색
         var grid = new SpatialHash(context.Nodes, opt.Tolerance * 2.0);
         var oldToRep = new Dictionary<int, int>();
 
         foreach (int isoNodeId in isolatedRigidNodes)
         {
           if (!context.Nodes.Contains(isoNodeId)) continue;
-
           var p = context.Nodes[isoNodeId];
           var bbox = new BoundingBox(
               new Point3D(p.X - opt.Tolerance, p.Y - opt.Tolerance, p.Z - opt.Tolerance),
@@ -75,36 +62,22 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           );
 
           var candidates = grid.Query(bbox);
-
           double minDist = opt.Tolerance;
           int bestTargetNode = -1;
 
           foreach (int candId in candidates)
           {
             if (candId == isoNodeId) continue;
-
-            // [추가 조건 1] 타겟 노드는 반드시 Element에 속해야 함
             if (!validStructureNodes.Contains(candId)) continue;
-
-            // [추가 조건 2] 타겟 노드 역시 Element 구성에 단 1번만 사용된 FreeNode여야 함
             if (elementNodeDegree.GetValueOrDefault(candId, 0) != 1) continue;
 
             double dist = (context.Nodes[candId] - p).Magnitude();
-            if (dist <= minDist)
-            {
-              minDist = dist;
-              bestTargetNode = candId;
-            }
+            if (dist <= minDist) { minDist = dist; bestTargetNode = candId; }
           }
 
-          // 조건을 만족하는 가장 가까운 FreeNode를 찾았다면 치환 예약
-          if (bestTargetNode != -1)
-          {
-            oldToRep[isoNodeId] = bestTargetNode;
-          }
+          if (bestTargetNode != -1) oldToRep[isoNodeId] = bestTargetNode;
         }
 
-        // 4. Rigid 노드 치환(병합) 적용 및 기존 허공 노드 삭제
         if (oldToRep.Count > 0)
         {
           context.Rigids.RemapAllNodes(oldToRep);
@@ -113,74 +86,76 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           foreach (var kvp in oldToRep)
           {
-            int removeNode = kvp.Key;
-            int keepNode = kvp.Value;
-
-            if (opt.VerboseDebug && context.Nodes.Contains(removeNode) && context.Nodes.Contains(keepNode))
-            {
-              double dist = (context.Nodes[keepNode] - context.Nodes[removeNode]).Magnitude();
-              log($"   -> [고립 강체 스냅] 허공의 Rigid 노드 N{removeNode}가 부재의 FreeNode N{keepNode}(으)로 스냅(병합)되었습니다. (거리: {dist:F1}mm)");
-            }
-
-            // 고립 노드는 삭제
-            if (context.Nodes.Contains(removeNode))
-              context.Nodes.Remove(removeNode);
-
+            if (context.Nodes.Contains(kvp.Key)) context.Nodes.Remove(kvp.Key);
             snappedCount++;
           }
         }
       }
 
       // =========================================================================
-      // 5. [추가 조건 3] 쓸모없는 PointMass 영구 삭제 정리
+      // [STEP 2] 스냅되지 못하고 남은 "고립된 찌꺼기 그룹(PointMass + Rigid)" 영구 삭제
       // =========================================================================
+      int deletedMassCount = 0;
+      int deletedRigidCount = 0;
 
-      // 삭제 검사를 위해 (방금 스냅된 결과를 포함하여) Element와 Rigid에 사용 중인 모든 노드 재수집
-      var allPhysicallyUsedNodes = new HashSet<int>();
+      // 모든 노드의 물리적 연결망(Graph) 생성
+      var allUsedNodes = new HashSet<int>();
+
+      // [에러 수정] .Values 대신 KeyValuePair 순회 후 .Value 참조
       foreach (var kvp in context.Elements)
-        foreach (int nid in kvp.Value.NodeIDs) allPhysicallyUsedNodes.Add(nid);
+        foreach (var n in kvp.Value.NodeIDs) allUsedNodes.Add(n);
 
       foreach (var kvp in context.Rigids)
       {
-        allPhysicallyUsedNodes.Add(kvp.Value.IndependentNodeID);
-        foreach (var dep in kvp.Value.DependentNodeIDs) allPhysicallyUsedNodes.Add(dep);
+        allUsedNodes.Add(kvp.Value.IndependentNodeID);
+        foreach (var n in kvp.Value.DependentNodeIDs) allUsedNodes.Add(n);
       }
-
-      var massKeysToRemove = new List<int>();
 
       foreach (var kvp in context.PointMasses)
+        allUsedNodes.Add(kvp.Value.NodeID);
+
+      if (allUsedNodes.Count > 0)
       {
-        int nid = kvp.Value.NodeID;
-        // PointMass가 할당된 노드가 Element나 Rigid 생성에 단 한 번도 사용되지 않았다면 완전 고립(찌꺼기)으로 판정
-        if (!allPhysicallyUsedNodes.Contains(nid))
+        var uf = new UnionFind(allUsedNodes.ToList());
+
+        // 뼈대 연결
+        foreach (var kvp in context.Elements)
+          for (int i = 1; i < kvp.Value.NodeIDs.Count; i++) uf.Union(kvp.Value.NodeIDs[0], kvp.Value.NodeIDs[i]);
+
+        // 강체 연결
+        foreach (var kvp in context.Rigids)
+          foreach (int dep in kvp.Value.DependentNodeIDs) uf.Union(kvp.Value.IndependentNodeID, dep);
+
+        // Element가 하나라도 포함된 Root 덩어리 판별
+        var rootsWithElements = new HashSet<int>();
+        foreach (var kvp in context.Elements)
+          rootsWithElements.Add(uf.Find(kvp.Value.NodeIDs[0]));
+
+        // Element와 전혀 연결되지 않은 유령 PointMass 삭제
+        var massesToRemove = new List<int>();
+        foreach (var kvp in context.PointMasses)
         {
-          massKeysToRemove.Add(kvp.Key);
+          int root = uf.Find(kvp.Value.NodeID);
+          if (!rootsWithElements.Contains(root)) massesToRemove.Add(kvp.Key);
         }
+        foreach (int id in massesToRemove) { context.PointMasses.Remove(id); deletedMassCount++; }
+
+        // Element와 전혀 연결되지 않은 유령 Rigid 삭제
+        var rigidsToRemove = new List<int>();
+        foreach (var kvp in context.Rigids)
+        {
+          int root = uf.Find(kvp.Value.IndependentNodeID);
+          if (!rootsWithElements.Contains(root)) rigidsToRemove.Add(kvp.Key);
+        }
+        foreach (int id in rigidsToRemove) { context.Rigids.Remove(id); deletedRigidCount++; }
       }
 
-      foreach (int key in massKeysToRemove)
+      if (opt.PipelineDebug && (snappedCount > 0 || deletedMassCount > 0 || deletedRigidCount > 0))
       {
-        string rawName = context.PointMasses[key].ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
-        context.PointMasses.Remove(key);
-        removedMassCount++;
-
-        if (opt.VerboseDebug)
-          log($"   -> [질량 삭제] 어떠한 부재(Element/Rigid)와도 연결되지 않은 허공의 PointMass '{rawName}'(ID:{key})가 영구 삭제되었습니다.");
-      }
-
-      // =========================================================================
-      // 6. 결과 로그 출력
-      // =========================================================================
-      if (opt.PipelineDebug)
-      {
-        if (snappedCount > 0 || removedMassCount > 0)
-        {
-          Console.ForegroundColor = ConsoleColor.Cyan;
-          log($"[복구/정리] 고립 강체 스냅 및 질량 정리 : " +
-              $"허공의 Rigid 노드 {snappedCount}개를 Element의 FreeNode에 연결하고, " +
-              $"연결점이 없는 찌꺼기 질량 {removedMassCount}개를 삭제했습니다.");
-          Console.ResetColor();
-        }
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        log($"[복구/정리] 고립 노드 스냅 및 찌꺼기 제거 : {snappedCount}개 스냅 완료 / " +
+            $"구조물과 단절된 허공 PointMass {deletedMassCount}개, Rigid {deletedRigidCount}개 영구 삭제");
+        Console.ResetColor();
       }
 
       return snappedCount;
