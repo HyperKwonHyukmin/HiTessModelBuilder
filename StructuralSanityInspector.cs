@@ -26,12 +26,63 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
       InspectRigidDependencies(context, pipelineDebug);
 
+      // ===================================================================================
+      // ★ [신규 추가] 실패한 UBOLT 구제 및 Nastran 해석 에러 방지 로직
+      // 연결 타겟을 찾지 못해 비어있는 UBOLT RBE는 BDF 출력 시 누락되어 Singularity를 유발합니다.
+      // 마지막 Stage에서 이를 찾아내어 해당 노드를 강제로 SPC(경계조건) 리스트에 추가하고 보고합니다.
+      // ===================================================================================
+      if (isFinalStage)
+      {
+        var failedUboltNodes = new List<int>();
+        foreach (var kvp in context.Rigids)
+        {
+          var rbe = kvp.Value;
+          // 종속 노드가 없는 깡통 강체인지 확인
+          if (rbe.DependentNodeIDs == null || rbe.DependentNodeIDs.Count == 0)
+          {
+            // 그 중에서도 생성 의도가 UBOLT였던 것만 추출
+            if (rbe.ExtraData != null && rbe.ExtraData.TryGetValue("Type", out string typeStr) && typeStr == "UBOLT")
+            {
+              failedUboltNodes.Add(rbe.IndependentNodeID);
+            }
+          }
+        }
+
+        if (failedUboltNodes.Count > 0)
+        {
+          if (pipelineDebug)
+          {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"\n[긴급 조치 / 해석 에러 방지]");
+            Console.WriteLine($" -> 타겟 구조물을 찾지 못해 연결에 실패한 UBOLT {failedUboltNodes.Count}개가 발견되었습니다.");
+            Console.WriteLine($" -> Nastran Fatal Error(Singularity) 방지를 위해 아래 배관 노드들에 SPC(고정 경계조건)를 강제 할당합니다.");
+
+            // 노드 리스트를 보기 좋게 출력 (Verbose가 아니면 20개까지만 요약)
+            int limit = verboseDebug ? int.MaxValue : 20;
+            var displayNodes = failedUboltNodes.Take(limit).Select(n => $"{n}");
+            string nodeStr = string.Join(", ", displayNodes);
+            if (failedUboltNodes.Count > limit) nodeStr += " ...";
+            Console.WriteLine($" -> 실패한 UBOLT 대상 노드: {nodeStr}\n");
+
+            Console.ResetColor();
+          }
+
+          // 기존에 산출된 경계조건(SPC) 리스트에 실패한 UBOLT 노드들을 병합
+          var combinedSpc = new HashSet<int>(freeEndNodes);
+          foreach (var fn in failedUboltNodes)
+          {
+            combinedSpc.Add(fn);
+          }
+          freeEndNodes = combinedSpc.ToList();
+        }
+      }
+
       return freeEndNodes;
     }
 
     private static List<int> InspectTopology(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage)
     {
-      // [수정됨] Element뿐만 아니라 Rigid, PointMass까지 통합된 ConnectedComponent 검색 로직 적용
+      // Element뿐만 아니라 Rigid, PointMass까지 통합된 ConnectedComponent 검색 로직 적용
       var connectedComponents = ElementConnectivityInspector.FindConnectedComponents(context);
 
       if (pipelineDebug)
@@ -77,7 +128,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       RemoveOrphanNodes(context, isolatedNodes);
 
       // ===================================================================================
-      // A. SPC 대상 추출 및 강체(Rigid) 충돌 완벽 방지 로직 (수정됨)
+      // A. SPC 대상 추출 및 강체(Rigid) 충돌 완벽 방지 로직
       // ===================================================================================
       var rawSpcTargets = new HashSet<int>();
       bool effectiveUseExplicitWeldSpc = useExplicitWeldSpc && context.WeldNodes.Count > 0;
@@ -182,7 +233,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         if (resultList.Count == 0)
           LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 지정할 노드가 없습니다.");
         else
-          LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 {resultList.Count}개의 노드를 지정했습니다.");
+          LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 {resultList.Count}개의 드를 지정했습니다.");
       }
 
       return resultList;
@@ -228,7 +279,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       if (pipelineDebug)
       {
         if (duplicateGroups.Count == 0) LogPass("05 - 요소 중복 : 완전히 겹치는 요소가 없습니다.");
-        else LogWarning($"05 - 요소 중복 : 중복 요소 세트 {duplicateGroups.Count}개 삭제 완료.");
+        else LogWarning($"05 - 요소 중복 : 중복 요소 세 {duplicateGroups.Count}개 삭제 완료.");
       }
     }
 
