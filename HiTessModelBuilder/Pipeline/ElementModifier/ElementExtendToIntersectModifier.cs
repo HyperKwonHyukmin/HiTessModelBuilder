@@ -1,6 +1,7 @@
 ﻿using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
@@ -15,8 +16,8 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
   public static class ElementExtendToIntersectModifier
   {
     public sealed record Options(
-        double ExtraMargin = 10.0,      // SearchDim에 추가할 여유 거리 마진
-        double CoplanarTolerance = 1.0, // 3D 공간상의 교차(Hit)를 인정할 선분 간 최소 단차 오차
+        double ExtraMargin = 50.0,      // SearchDim에 추가할 여유 거리 마진
+        double CoplanarTolerance = 10.0, // 3D 공간상의 교차(Hit)를 인정할 선분 간 최소 단차 오차
         bool PipelineDebug = true,
         bool VerboseDebug = true
     );
@@ -49,7 +50,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       int movedNodesCount = 0;
 
-      if (opt.PipelineDebug)
+      if (opt.VerboseDebug)
       {
         log($"\n==================================================");
         log($"[수정 시작] ElementExtendToIntersectModifier (4가지 조건 엄격 매핑)");
@@ -59,9 +60,22 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       foreach (var freeNodeId in freeNodes)
       {
+        // ★ [안전성 강화] Free Node가 일반 부재(Element)에 속해 있는지 확인
+        // 만약 RBE나 PointMass에만 속해 있다면 딕셔너리에 없으므로 연장(Extend)하지 않고 건너뜁니다.
+        if (!freeNodeToElement.TryGetValue(freeNodeId, out int elemB_Id))
+        {
+          continue;
+        }
+
         // ElementB (FreeNode를 소유한 부재) 정보 획득
-        int elemB_Id = freeNodeToElement[freeNodeId];
         var elemB = elements[elemB_Id];
+
+        // ★ [신규 추가] 배관(Pipe) 부재는 임의로 길이를 연장(Stretch)하지 않고 원본 설계 치수를 엄격히 보존
+        string catB = elemB.ExtraData?.GetValueOrDefault("Classification") ?? elemB.ExtraData?.GetValueOrDefault("Category") ?? "";
+        if (catB == "Pipe")
+        {
+          continue; // 연장 프로세스를 건너뜀
+        }
 
         // ElementB의 고정단(Anchor) 찾기
         int anchorNodeId = elemB.NodeIDs.First() == freeNodeId
@@ -94,19 +108,42 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // ElementA의 SearchDim 계산
           var propertyA = properties[elemA.PropertyID];
           double searchDimA = PropertyDimensionHelper.GetMaxCrossSectionDim(propertyA);
+
+          // ★ [신규 추가] 비대칭 단면(L형강)에 대한 탐색 반경 강제 확장 로직
+          if (propertyA.Type == "L" || propertyA.Type == "ANGLE")
+          {
+            // L형강은 노드가 모서리(Heel)에 위치하므로, 단면의 반대쪽 표면까지 닿으려면 
+            // 절반이 아닌 전체 폭(Width)이나 높이(Height)만큼의 반경이 확보되어야 합니다.
+            if (propertyA.Dim != null && propertyA.Dim.Count >= 2)
+            {
+              double maxDim = Math.Max(propertyA.Dim[0], propertyA.Dim[1]);
+
+              // 기존 계산된 값이 전체 폭보다 작다면 전체 폭으로 덮어씌움
+              if (searchDimA < maxDim)
+              {
+                searchDimA = maxDim;
+              }
+            }
+          }
+
+          // 여기에 약간의 여유(ExtraMargin)를 더해 최종 탐색 반경 확정
           double totalSearchRadiusA = searchDimA + opt.ExtraMargin;
 
           // [Condition 1] ElementA의 SearchDim 영역 이내에 해당 Node가 물리적으로 존재하는가?
           double distNodeToElementA = DistancePointToSegment(pFree, pA1, pA2);
-          if (distNodeToElementA > totalSearchRadiusA) 
+          if (distNodeToElementA > totalSearchRadiusA)
           {
-              continue; // 영역 밖이면 아예 연장(교차) 검사를 하지 않음
+            continue; // 영역 밖이면 아예 연장(교차) 검사를 하지 않음
           }
 
+          // ★ [신규 추가] 3D 공간상 꼬인 위치(단차) 허용치 동적 확장
+          // 타겟 부재(Element A)의 단면 크기(searchDimA)만큼은 X, Y축으로 빗겨가도 
+          // 물리적으로 표면에 닿는 것으로 간주하여 교차(Hit) 판정을 내립니다.
+          double dynamicCoplanarTolerance = Math.Max(opt.CoplanarTolerance, searchDimA + opt.ExtraMargin);
+
           // [Condition 3] ElementB의 방향벡터로 연장하여 ElementA와 만나서 교점을 이루는가?
-          // (병렬 강제 이동 방지: 점이 자기 축을 이탈하여 이동하지 않고 오직 rayDir로만 이동함)
           bool isHit = TryRaySegmentIntersection(
-              pFree, rayDir, pA1, pA2, opt.CoplanarTolerance,
+              pFree, rayDir, pA1, pA2, dynamicCoplanarTolerance,
               out double s, out double t, out double distRayToSeg, out Point3D hitPoint);
 
           // 교차가 성공했고, 연장 거리가 앞으로 향하며(s > 1e-4), 다른 부재보다 더 가깝다면 갱신
@@ -215,7 +252,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       if (dist <= tolerance)
       {
-        hitPoint = pSeg;
+        // [수정됨] 타겟 부재(pSeg)로 억지로 끌어당기지 않고, 원래 부재의 방향성(Axis)을 
+        // 완벽히 유지하는 연장선 위의 점(pRay)을 반환합니다. 
+        // 미세한 이격 거리는 Stage 7의 RBE 강체 연결이 브릿지 역할을 수행합니다.
+        hitPoint = pRay;
         return true;
       }
 

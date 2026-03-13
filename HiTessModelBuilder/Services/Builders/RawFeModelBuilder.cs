@@ -1,40 +1,47 @@
-ï»¿using HiTessModelBuilder.Model.Entities;
+using HiTessModelBuilder.Model.Entities;
+using HiTessModelBuilder.Model.Entities;
+using HiTessModelBuilder.Pipeline.Utils;
+using HiTessModelBuilder.Model.Geometry;
 using System;
 using System.Collections.Generic;
 
 namespace HiTessModelBuilder.Services.Builders
 {
   /// <summary>
-  /// íŒŒì‹±ëœ ì›ì‹œ êµ¬ì¡°ë¬¼ ë°ì´í„°ë¥¼ ë°”íƒ•ìœ¼ë¡œ FE ëª¨ë¸(Nodes, Properties, Elements)ì„ ìƒì„±í•©ë‹ˆë‹¤.
+  /// ÆÄ½ÌµÈ ¿ø½Ã ±¸Á¶¹° µ¥ÀÌÅÍ¸¦ ¹ÙÅÁÀ¸·Î FE ¸ğµ¨(Nodes, Properties, Elements)À» »ı¼ºÇÕ´Ï´Ù.
   /// </summary>
   public class RawFeModelBuilder
   {
-    // ì•„í‚¤í…íŠ¸ ì¡°ì–¸: ì™¸ë¶€ ì¡°ì‘ì„ ë§‰ê¸° ìœ„í•´ private readonly ì‚¬ìš©
+    // ¾ÆÅ°ÅØÆ® Á¶¾ğ: ¿ÜºÎ Á¶ÀÛÀ» ¸·±â À§ÇØ private readonly »ç¿ë
     private readonly RawCsvDesignData _rawStructureDesignData;
     private readonly FeModelContext _feModelContext;
+    public Dictionary<string, List<int>> pipeElementIDsByType = new();
+    private readonly bool _forceUboltRigid;
     private readonly bool _debugPrint;
 
     public RawFeModelBuilder(
         RawCsvDesignData? StructureData,
         FeModelContext feModelContext,
+        bool forceUboltRigid = false,
         bool debugPrint = false)
     {
       _rawStructureDesignData = StructureData ?? throw new ArgumentNullException(nameof(StructureData));
       _feModelContext = feModelContext ?? throw new ArgumentNullException(nameof(feModelContext));
+      _forceUboltRigid = forceUboltRigid;
       _debugPrint = debugPrint;
     }
 
     /// <summary>
-    /// ì „ì²´ FE ëª¨ë¸ ìƒì„±ì„ ì‹¤í–‰í•©ë‹ˆë‹¤.
+    /// ÀüÃ¼ FE ¸ğµ¨ »ı¼ºÀ» ½ÇÇàÇÕ´Ï´Ù.
     /// </summary>
     public void Build()
     {
       if (_debugPrint) Console.WriteLine("\n[Builder] Starting FE Model Build...");
 
-      // 1. ê³µí†µ Material ìƒì„± (Steel)
+      // 1. °øÅë Material »ı¼º (Steel)
       int materialID = _feModelContext.Materials.AddOrGet("Steel", 206000, 0.3, 7.85e-09);
 
-      // 2. ê° íƒ€ì…ë³„ Element ì¼ê´„ ìƒì„± (í•¨ìˆ˜í˜• ì ‘ê·¼)
+      // 2. °¢ Å¸ÀÔº° Element ÀÏ°ı »ı¼º (ÇÔ¼öÇü Á¢±Ù)
       BuildStruElements(_rawStructureDesignData.AngDesignList, materialID, "L", "ANGLE", "L",
           e => new[] { e.Dim1, e.Dim2, e.Dim3, e.Dim3 });
 
@@ -54,11 +61,20 @@ namespace HiTessModelBuilder.Services.Builders
           e => new[] { e.Dim1 });
 
       BuildStruElements(_rawStructureDesignData.TubeDesignList, materialID, "TUBE", "TUBE", "TUBE",
-          e => new[] { e.Dim1 , e.Dim2});
+          e => new[] { e.Dim1, e.Dim2 });
 
-      foreach(var list in _rawStructureDesignData.PipeList)
+      PipeBuild();
+      EquipBuild();
+
+      // ¡Ú [»ç°¢Áö´ë 1] ÆÄ½ÌÀº µÇ¾úÀ¸³ª Áö¿øÇÏÁö ¾Ê´Â Å¸ÀÔÀÌ¶ó »ı¼º¿¡¼­ ´©¶ôµÈ ºÎÀç ·Î±× Ãâ·Â
+      if (_rawStructureDesignData.UnknownDesignList != null)
       {
-        Console.WriteLine(list);
+        foreach (var unknown in _rawStructureDesignData.UnknownDesignList)
+        {
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          Console.WriteLine($"[»ı¼º ´©¶ô] Áö¿øÇÏÁö ¾Ê´Â Çü»ó Å¸ÀÔ({unknown.Type})À¸·Î »ı¼ºÀÌ Ãë¼ÒµÇ¾ú½À´Ï´Ù. Name: '{unknown.Name}'");
+          Console.ResetColor();
+        }
       }
 
       if (_debugPrint) Console.WriteLine("[Builder] FE Model Build Completed Successfully.");
@@ -77,18 +93,29 @@ namespace HiTessModelBuilder.Services.Builders
 
       foreach (var entity in designList)
       {
-        // 1. Property ì¹˜ìˆ˜ ì¶”ì¶œ ë° ìƒì„±
+        // 1. Property Ä¡¼ö ÃßÃâ ¹× »ı¼º
         double[] inputDim = dimSelector(entity);
         int propertyID = _feModelContext.Properties.AddOrGet(propertyShape, inputDim, materialID);
 
-        // 2. Node ìƒì„± (ë°©ì–´ì  ì½”ë“œ: ì¸ë±ìŠ¤ ë²”ìœ„ í™•ì¸)
+        // 2. Node »ı¼º (¹æ¾îÀû ÄÚµå: ÀÎµ¦½º ¹üÀ§ È®ÀÎ)
         if (entity.Poss == null || entity.Poss.Length < 3 || entity.Pose == null || entity.Pose.Length < 3)
+        {
+          // ¡Ú [»ç°¢Áö´ë 3] ÁÂÇ¥ µ¥ÀÌÅÍ ºÒ·® ´©¶ô ·Î±× Ãß°¡
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          Console.WriteLine($"[»ı¼º ´©¶ô] ½ÃÀÛ/³¡ ÁÂÇ¥ µ¥ÀÌÅÍ ºÒ·®À¸·Î »ı¼ºÀÌ Ãë¼ÒµÇ¾ú½À´Ï´Ù. Name: '{entity.Name}'");
+          Console.ResetColor();
           continue;
+        }
 
+        double[] barOrientation = GeometryUtils.CalculateBarOrientation(entity.Poss, entity.Pose);
         int nodeA_ID = _feModelContext.Nodes.AddOrGet(entity.Poss[0], entity.Poss[1], entity.Poss[2]);
         int nodeB_ID = _feModelContext.Nodes.AddOrGet(entity.Pose[0], entity.Pose[1], entity.Pose[2]);
+        // [½Å±Ô Ãß°¡] ¿£Æ¼Æ¼ÀÇ Weld Á¤º¸¸¦ ÀĞ¾î Àü¿ª ÄÁÅØ½ºÆ®¿¡ ¿ëÁ¢ ³ëµå·Î µî·Ï
+        string weldInfo = entity.Weld?.ToLowerInvariant() ?? "";
+        if (weldInfo == "start") _feModelContext.WeldNodes.Add(nodeA_ID);
+        if (weldInfo == "end") _feModelContext.WeldNodes.Add(nodeB_ID);
 
-        string oriX = "0.0", oriY = "0.0", oriZ = "1.0"; // ê¸°ë³¸ê°’
+        string oriX = "0.0", oriY = "0.0", oriZ = "1.0"; // ±âº»°ª
         if (entity.Ori != null && entity.Ori.Length >= 3)
         {
           oriX = entity.Ori[0].ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -96,15 +123,16 @@ namespace HiTessModelBuilder.Services.Builders
           oriZ = entity.Ori[2].ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        // â˜… [ì¶”ê°€ëœ ë°©ì–´ ì½”ë“œ] ì‹œì‘ ë…¸ë“œì™€ ë ë…¸ë“œê°€ ê°™ìœ¼ë©´ (ê¸¸ì´ê°€ 0ì´ë©´) ìƒì„± ìŠ¤í‚µ
         if (nodeA_ID == nodeB_ID)
         {
+          Console.ForegroundColor = ConsoleColor.Yellow;
           if (_debugPrint)
-            Console.WriteLine($"[Warning] Skipped zero-length Element. ID: {entity.Name} (NodeID: {nodeA_ID})");
+            Console.WriteLine($"[»ı¼º ´©¶ô] ½ÃÀÛÁ¡°ú ³¡Á¡ÀÌ °°¾Æ(±æÀÌ 0) ºÎÀç »ı¼ºÀÌ Ãë¼ÒµÇ¾ú½À´Ï´Ù. Name: '{entity.Name}'");
+          Console.ResetColor();
           continue;
         }
 
-        // 3. ì¶”ê°€ ì •ë³´(ExtraData) ë§¤í•‘
+        // 3. Ãß°¡ Á¤º¸(ExtraData) ¸ÅÇÎ
         var extraData = new Dictionary<string, string>
                 {
                     { "RawType", rawType },
@@ -116,9 +144,92 @@ namespace HiTessModelBuilder.Services.Builders
                     { "Classification", "Stru" }
                 };
 
-        // 4. Element ìƒì„±
-        _feModelContext.Elements.AddNew(new List<int> { nodeA_ID, nodeB_ID }, propertyID, extraData);
+        // 4. Element »ı¼º
+        try
+        {
+          _feModelContext.Elements.AddNew(new List<int> { nodeA_ID, nodeB_ID }, propertyID, barOrientation, extraData);
+        }
+        catch (Exception ex)
+        {
+          // ¡Ú _debugPrint Á¶°Ç Á¦°Å! ½ÇÆĞ ¿øÀÎ ¹«Á¶°Ç Ãâ·Â
+          Console.ForegroundColor = ConsoleColor.Red;
+          Console.WriteLine($"[»ı¼º ½ÇÆĞ] ±¸Á¶ ºÎÀç »ı¼º Áß ¿¹¿Ü ¹ß»ı! Name: '{entity.Name}' (»çÀ¯: {ex.Message})");
+          Console.ResetColor();
+          continue;
+        }
       }
+    }
+
+    private void PipeBuild()
+    {
+      // 1. ¹è°ü Àü´ã ºô´õ ÀÎ½ºÅÏ½º »ı¼º
+      // [¼öÁ¤µÊ] useFluidDensity ÆÄ¶ó¹ÌÅÍ¸¦ true·Î Àü´ŞÇÏ¿© ³»ºÎ À¯Ã¼ Áú·® º¸Á¤À» È°¼ºÈ­ÇÕ´Ï´Ù.
+      bool useFluidDensity = true;
+      var pipeBuilder = new PipeModelBuilder(_feModelContext, pipeElementIDsByType, useFluidDensity, _forceUboltRigid, _debugPrint);
+
+      // 2. ÆÄ½ÌµÈ ¹è°ü ¸®½ºÆ®¸¦ Àü´ŞÇÏ¿© ºôµå ½ÇÇà
+      pipeBuilder.Build(_rawStructureDesignData.PipeList);
+    }
+
+    private void EquipBuild()
+    {
+      if (_rawStructureDesignData.EquipList == null || _rawStructureDesignData.EquipList.Count == 0) return;
+
+      // Àåºñ°¡ Çã°ø¿¡ ¸Å´Ş¸®Áö ¾Êµµ·Ï, ÇöÀç ±¸Á¶¹° ¹× ¹è°ü¿¡ »ç¿ë ÁßÀÎ 'À¯È¿ÇÑ ³ëµå' ¸ñ·ÏÀ» °¡Á®¿É´Ï´Ù.
+      var validNodes = _feModelContext.GetNodesUsedInElements();
+      int equipCount = 0;
+
+      foreach (var eq in _rawStructureDesignData.EquipList)
+      {
+        if (eq.Cog == null || eq.Cog.Length < 3) continue;
+
+        var extraData = new Dictionary<string, string> { { "Name", eq.Name }, { "Classification", "Equip" } };
+        var cogPos = new Point3D(eq.Cog[0], eq.Cog[1], eq.Cog[2]);
+
+        // [Case 1] InterPos°¡ ¾ø´Â °æ¿ì: Àåºñ COG À§Ä¡¿¡ Á÷Á¢ Point Mass¸¸ »ı¼º (equip_example ¶óÀÎ 40 ÂüÁ¶)
+        if (eq.InterPos == null || eq.InterPos.Length == 0)
+        {
+          // 10mm ÀÌ³»ÀÇ ±âÁ¸ ³ëµå Å½»ö
+          int targetNode = _feModelContext.Nodes.FindClosestValidNode(cogPos, validNodes, tolerance: 10.0);
+          if (targetNode != -1)
+          {
+            double massInTon = eq.OperatingMass * 0.001; // [¼öÁ¤µÊ] kg -> ton º¯È¯
+            _feModelContext.PointMasses.AddNew(targetNode, massInTon, extraData);
+            equipCount++;
+          }
+        }
+        // [Case 2] InterPos°¡ ÀÖ´Â °æ¿ì: COG ³ëµå¸¦ ¸¸µé°í ÁÖº¯ ´Ù¸®(Dependent)¸¦ Ã£¾Æ RBE2·Î ¿¬°á
+        else
+        {
+          var dependentNodes = new HashSet<int>();
+
+          // ´Ù¸®(Mounting Points)µéÀ» ¼øÈ¸ÇÏ¸ç 10mm ÀÌ³» ³ëµå Ã£±â
+          for (int i = 0; i <= eq.InterPos.Length - 3; i += 3)
+          {
+            var mntPos = new Point3D(eq.InterPos[i], eq.InterPos[i + 1], eq.InterPos[i + 2]);
+            int depNode = _feModelContext.Nodes.FindClosestValidNode(mntPos, validNodes, tolerance: 10.0);
+
+            if (depNode != -1)
+            {
+              dependentNodes.Add(depNode);
+            }
+          }
+
+          // ¿¬°áÇÒ ´Ù¸®°¡ 1°³¶óµµ ÀÖ´Ù¸é RBE¿Í Mass »ı¼º
+          if (dependentNodes.Count > 0)
+          {
+            int cogNodeId = _feModelContext.Nodes.AddOrGet(cogPos.X, cogPos.Y, cogPos.Z);
+
+            double massInTon = eq.OperatingMass * 0.001; // [¼öÁ¤µÊ] kg -> ton º¯È¯
+            _feModelContext.PointMasses.AddNew(cogNodeId, massInTon, extraData);
+            _feModelContext.Rigids.AddNew(cogNodeId, dependentNodes, "123456", extraData);
+            equipCount++;
+          }
+        }
+      }
+
+      if (_debugPrint)
+        Console.WriteLine($"[Build] Àåºñ(Equipment) {equipCount}°³ ¿¬°á ¹× »ı¼º ¿Ï·á.");
     }
   }
 }

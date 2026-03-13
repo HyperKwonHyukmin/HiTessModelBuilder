@@ -56,7 +56,8 @@ namespace HiTessModelBuilder.Services.Logging
     }
 
     /// <summary>
-    /// 치명적 오류 및 Exception 로그 (콘솔 빨간색)
+    /// 
+    /// 및 Exception 로그 (콘솔 빨간색)
     /// </summary>
     public void LogError(string message, Exception ex = null)
     {

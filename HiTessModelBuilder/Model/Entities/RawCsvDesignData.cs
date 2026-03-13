@@ -32,6 +32,7 @@ namespace HiTessModelBuilder.Model.Entities
     public List<UnknownDesignData> UnknownDesignList { get; init; }
 
     public List<PipeEntity> PipeList { get; init; } = new();
+    public List<EquipEntity> EquipList { get; init; } = new();
 
     public RawCsvDesignData(
         List<AngDesignData> angDesignList,
@@ -42,7 +43,8 @@ namespace HiTessModelBuilder.Model.Entities
         List<RbarDesignData> rbarDesignList,
         List<TubeDesignData> tubeDesignList,
         List<UnknownDesignData> unknownDesignList,
-        List<PipeEntity> pipeList = null)
+        List<PipeEntity> pipeList = null,
+        List<EquipEntity> equipList = null)
     {
       AngDesignList = angDesignList;
       BeamDesignList = beamDesignList;
@@ -52,7 +54,8 @@ namespace HiTessModelBuilder.Model.Entities
       RbarDesignList = rbarDesignList;
       TubeDesignList = tubeDesignList;
       UnknownDesignList = unknownDesignList;
-      PipeList = pipeList ?? new List<PipeEntity>(); // [추가]
+      PipeList = pipeList ?? new List<PipeEntity>();
+      EquipList = equipList ?? new List<EquipEntity>();
     }
   }
 }

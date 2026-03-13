@@ -21,6 +21,7 @@
     public double[] Poss { get; set; } = Array.Empty<double>();
     public double[] Pose { get; set; } = Array.Empty<double>();
     public double[] Ori { get; set; } = Array.Empty<double>();
+    public string Weld { get; set; } = string.Empty;
     public string Classification { get; set; } = "Stru";
 
     /// <summary>

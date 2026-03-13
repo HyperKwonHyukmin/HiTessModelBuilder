@@ -260,6 +260,13 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
         if (segs.Count == 0)
         {
+          // ★ 숨겨진 암살자 검거: 분할 후 소실된 부재 로그 추가
+          string rawName = e.ExtraData?.GetValueOrDefault("ID") ?? e.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          if (opt.VerboseDebug)
+            Console.WriteLine($"   -> [영구 삭제] 분할 후 유효한 길이가 나오지 않아 쪼개진 부재 '{rawName}'(E{eid})가 완전 삭제되었습니다.");
+          Console.ResetColor();
+
           elements.Remove(eid);
           removed++;
           continue;
@@ -276,11 +283,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         {
           // 기존 ID 덮어쓰기
           elements.Remove(eid);
-          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, CopyExtra());
+          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, e.Orientation, CopyExtra());
 
           for (int i = 1; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, CopyExtra());
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, CopyExtra());
             added++;
             if (opt.VerboseDebug)
               log($"   -> [추가 생성] E{newId} (노드: {segs[i].n1}-{segs[i].n2})");
@@ -296,7 +303,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           for (int i = 0; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, CopyExtra());
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, CopyExtra());
             added++;
             if (opt.VerboseDebug)
               log($"   -> [신규 생성] E{newId} (노드: {segs[i].n1}-{segs[i].n2})");

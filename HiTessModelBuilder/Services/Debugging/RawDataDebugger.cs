@@ -29,7 +29,8 @@ namespace HiTessModelBuilder.Services.Debugging
       Console.WriteLine($" - RBar  (라운드)   : {data.RbarDesignList?.Count ?? 0}");
       Console.WriteLine($" - Tube  (튜브)   : {data.TubeDesignList?.Count ?? 0}");
       Console.WriteLine($" - Unknown        : {data.UnknownDesignList?.Count ?? 0}");
-      Console.WriteLine($" - Pipe  (배관 데이터) : {data.PipeList?.Count ?? 0}"); // [추가]
+      Console.WriteLine($" - Pipe  (배관 데이터) : {data.PipeList?.Count ?? 0}"); 
+      Console.WriteLine($" - Equip (장비 데이터) : {data.EquipList?.Count ?? 0}");
       Console.WriteLine("--------------------------------------------------------");
 
       // 2. 각 타입별 상세 데이터 검증 (상위 5개만 출력)
@@ -58,6 +59,7 @@ namespace HiTessModelBuilder.Services.Debugging
       PrintUnknownList(data.UnknownDesignList);
       // 3. [추가] Pipe 상세 데이터 출력 (상위 10개)
       PrintPipeList(data.PipeList);
+      PrintEquipList(data.EquipList);
 
       Console.WriteLine("========================================================\n");
     }
@@ -150,6 +152,34 @@ namespace HiTessModelBuilder.Services.Debugging
 
         // 행(Row) 출력
         Console.WriteLine($"| {item.Name,-12} | {item.Type,-5} | {item.Branch,-8} | {dimInfo,-32} | {aPosStr,-26} | {lPosStr,-26} | {normStr,-20} | {item.Mass,-6:F1} | {restStr,-6} | {extraStr,-26} |");
+      }
+    }
+
+    // ★ [신규 메써드 추가] 클래스 하단에 아래 메써드를 통째로 추가해 주세요.
+    private static void PrintEquipList(List<EquipEntity> list)
+    {
+      if (list == null || list.Count == 0) return;
+
+      int printLimit = Math.Min(list.Count, 10);
+      Console.WriteLine($"\n>> Checking EQUIP Data (First {printLimit} items):");
+
+      string header = $"| {"Name",-12} | {"COG (X, Y, Z)",-25} | {"Op. Mass",-10} | {"Mounting Points",-30} |";
+      Console.WriteLine(header);
+      Console.WriteLine(new string('-', header.Length));
+
+      foreach (var item in list.Take(printLimit))
+      {
+        string cogStr = item.Cog != null && item.Cog.Length >= 3
+            ? $"{item.Cog[0]:F1}, {item.Cog[1]:F1}, {item.Cog[2]:F1}" : "N/A";
+
+        string massStr = $"{item.OperatingMass:F3}";
+
+        int mountCount = 0;
+        if (item.Pos != null) mountCount += item.Pos.Length / 3;
+        if (item.InterPos != null) mountCount += item.InterPos.Length / 3;
+        string mountStr = $"{mountCount} points";
+
+        Console.WriteLine($"| {item.Name,-12} | {cogStr,-25} | {massStr,-10} | {mountStr,-30} |");
       }
     }
   }

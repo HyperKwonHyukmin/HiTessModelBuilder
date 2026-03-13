@@ -37,6 +37,15 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       var mergePairs = new List<(int n1, int n2)>();
       var elemList = elements.ToList(); // O(N^2) 탐색을 위해 리스트화
 
+      // ★ [신규 추가] 모델 내 모든 강체(Rigid) 관련 노드 ID 수집
+      var rigidNodeIds = new HashSet<int>();
+      foreach (var kvp in context.Rigids)
+      {
+        rigidNodeIds.Add(kvp.Value.IndependentNodeID);
+        foreach (var dep in kvp.Value.DependentNodeIDs)
+          rigidNodeIds.Add(dep);
+      }
+
       for (int i = 0; i < elemList.Count; i++)
       {
         var e1 = elemList[i].Value;
@@ -58,12 +67,32 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           // [조건 1] 방향 벡터가 같은가? (내적의 절댓값이 Cos(오차)보다 크면 평행)
           if (Math.Abs(dir1.Dot(dir2)) < cosTol) continue;
 
+          // ★ [신규 추가] 배관(Pipe)과 구조물(Stru) 간의 노드 병합 원천 차단
+          string cat1 = e1.ExtraData.GetValueOrDefault("Classification") ?? e1.ExtraData.GetValueOrDefault("Category") ?? "";
+          string cat2 = e2.ExtraData.GetValueOrDefault("Classification") ?? e2.ExtraData.GetValueOrDefault("Category") ?? "";
+
+          // 두 요소의 분류가 다르면(예: Pipe vs Stru) 절대 병합하지 않고 건너뜀 (자유도 제어를 위한 Zero-length RBE 보존)
+          if (cat1 != cat2) continue;
+
           // [조건 2] 각 요소의 양 끝 노드들 간의 거리가 Tolerance 이내인가?
-          // (같은 요소 내의 노드가 아닌, 서로 다른 요소 간의 노드만 비교)
-          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs[0], p1a, p2a, opt.DistanceTolerance, mergePairs);
-          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs.Last(), p1a, p2b, opt.DistanceTolerance, mergePairs);
-          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs[0], p1b, p2a, opt.DistanceTolerance, mergePairs);
-          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs.Last(), p1b, p2b, opt.DistanceTolerance, mergePairs);
+          // 수정: 부재가 옆으로 꺾이는 것을 방지하기 위해 기준 부재의 방향 벡터(dir1)를 넘겨줍니다.
+          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs[0], p1a, p2a, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs[0], e2.NodeIDs.Last(), p1a, p2b, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs[0], p1b, p2a, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs.Last(), e2.NodeIDs.Last(), p1b, p2b, opt.DistanceTolerance, dir1, mergePairs);
+        }
+
+        // ★ [신규 로직] Element vs Rigid Node 검사
+        // 해당 Element의 축 방향 선상에 Rigid 노드가 존재하면 병합 후보로 등록합니다.
+        foreach (int rNodeId in rigidNodeIds)
+        {
+          if (!nodes.Contains(rNodeId)) continue;
+          var rPos = nodes[rNodeId];
+
+          // 동일한 CheckAndAddMergePair를 사용하므로, 
+          // 횡방향 단차(Sideways Offset < 1.0)가 없는 완벽한 공선(Collinear) 상태일 때만 병합됩니다!
+          CheckAndAddMergePair(e1.NodeIDs[0], rNodeId, p1a, rPos, opt.DistanceTolerance, dir1, mergePairs);
+          CheckAndAddMergePair(e1.NodeIDs.Last(), rNodeId, p1b, rPos, opt.DistanceTolerance, dir1, mergePairs);
         }
       }
 
@@ -93,6 +122,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       int mergedNodesCount = 0;
       int removedDegenerateCount = 0;
 
+      // ★ [추가] 병합 이력을 추적할 딕셔너리 생성 (삭제된 노드 ID -> 살릴 노드 ID)
+      var nodeMapping = new Dictionary<int, int>();
+
       foreach (var group in mergeGroups.Values)
       {
         if (group.Count < 2) continue;
@@ -105,6 +137,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         foreach (int removeNode in removeNodes)
         {
           if (!nodes.Contains(removeNode)) continue;
+
+          // ★ [추가] 삭제될 노드가 어떤 노드로 흡수되었는지 기록
+          nodeMapping[removeNode] = keepNode;
 
           // 삭제될 노드를 참조하고 있는 주변의 모든 요소 찾기
           var neighbors = elements.Where(kv => kv.Value.NodeIDs.Contains(removeNode)).ToList();
@@ -119,9 +154,15 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
                 .Select(id => id == removeNode ? keepNode : id)
                 .ToList();
 
-            // 만약 병합 결과로 요소의 양 끝 노드가 같아졌다면(길이 0), 요소 통째로 삭제
             if (newNodeIds.Distinct().Count() < 2)
             {
+              // ★ 숨겨진 암살자 검거: 찌그러진 부재 삭제 로그 추가
+              string rawName = neighborEle.ExtraData?.GetValueOrDefault("ID") ?? neighborEle.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+              Console.ForegroundColor = ConsoleColor.Yellow;
+              if (opt.VerboseDebug)
+                Console.WriteLine($"   -> [영구 삭제] 노드 통폐합으로 인해 부재 '{rawName}'(E{neighborEid})가 찌그러져(길이 0) 삭제되었습니다.");
+              Console.ResetColor();
+
               elements.Remove(neighborEid);
               removedDegenerateCount++;
               continue;
@@ -129,10 +170,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
             // 요소 업데이트 (기존 ID 유지, 노드만 교체)
             var extraData = neighborEle.ExtraData?.ToDictionary(k => k.Key, v => v.Value);
+            var barOrientation = neighborEle.Orientation;
             int propId = neighborEle.PropertyID;
 
             elements.Remove(neighborEid);
-            elements.AddWithID(neighborEid, newNodeIds, propId, extraData);
+            elements.AddWithID(neighborEid, newNodeIds, propId, barOrientation, extraData);
           }
 
           // 요소들의 이사가 끝났으니 노드 영구 삭제
@@ -142,6 +184,25 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           if (opt.VerboseDebug)
             log($"   -> [병합] 노드 N{removeNode}가 N{keepNode}(으)로 통폐합되었습니다.");
         }
+      }
+
+      // ★ [추가] 연쇄 병합(A->B, B->C)을 추적하여 RBE와 PointMass에 최종 번호 전파
+      if (nodeMapping.Count > 0)
+      {
+        var resolvedMapping = new Dictionary<int, int>();
+        foreach (var key in nodeMapping.Keys)
+        {
+          int finalNode = key;
+          while (nodeMapping.TryGetValue(finalNode, out int nextNode))
+          {
+            finalNode = nextNode;
+          }
+          resolvedMapping[key] = finalNode;
+        }
+        // 변경된 노드 번호를 RBE와 질량에 업데이트
+        context.Rigids.RemapAllNodes(resolvedMapping);
+        context.PointMasses.RemapAllNodes(resolvedMapping);
+        context.RemapWeldNodes(resolvedMapping);
       }
 
       // 4. 파이프라인 디버그 로그
@@ -161,6 +222,30 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       if ((p1 - p2).Magnitude() <= tol)
       {
         mergePairs.Add((n1, n2));
+      }
+    }
+
+    /// <summary>
+    /// 두 노드가 허용 반경 내에 있으면서, 횡방향 단차(Sideways offset)가 거의 없는 
+    /// 직축(Coaxial) 상에 위치한 경우에만 안전하게 병합 후보로 추가합니다.
+    /// </summary>
+    private static void CheckAndAddMergePair(int n1, int n2, Point3D p1, Point3D p2, double tol, Vector3D elementDir, List<(int, int)> mergePairs)
+    {
+      if (n1 == n2) return;
+
+      Vector3D diff = p1 - p2;
+      double dist = diff.Magnitude();
+
+      if (dist <= tol)
+      {
+        // 횡방향(Sideways) 오프셋 계산: (전체 거리 벡터) - (축 방향 투영 벡터)
+        double sidewaysOffset = (diff - (elementDir * diff.Dot(elementDir))).Magnitude();
+
+        // 단차가 1.0mm(허용치) 미만일 때만 꿰맵니다. (크면 억지로 구부러짐)
+        if (sidewaysOffset < 1.0)
+        {
+          mergePairs.Add((n1, n2));
+        }
       }
     }
   }

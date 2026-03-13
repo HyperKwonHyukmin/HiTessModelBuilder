@@ -55,6 +55,8 @@ namespace HiTessModelBuilder.Exporter
       // RBE 연결
       RigidElementSection();
 
+      PointMassSection();
+
       // 경계 조건 데이터 입력
       BoundaryConditionSection();
 
@@ -89,6 +91,7 @@ namespace HiTessModelBuilder.Exporter
       BdfLines.Add("ANALYSIS = STATICS");
       BdfLines.Add("BEGIN BULK");
       BdfLines.Add("PARAM,POST,-1");
+      BdfLines.Add("PARAM,AUTOMPC,YES");
     }      
 
     public void NodeElementSection()
@@ -127,8 +130,7 @@ namespace HiTessModelBuilder.Exporter
       }
     }
 
-    public void 
-      PropertyMaterialSection()
+    public void PropertyMaterialSection()
     {
       foreach (var property in this.feModelContext.Properties)
       {
@@ -316,6 +318,31 @@ namespace HiTessModelBuilder.Exporter
         {
           BdfLines.Add(sb.ToString());
         }
+      }
+    }
+
+    // ★ [신규 추가] 클래스 하단에 메써드 추가
+    public void PointMassSection()
+    {
+      if (this.feModelContext.PointMasses == null || this.feModelContext.PointMasses.Count == 0) return;
+
+      foreach (var pm in this.feModelContext.PointMasses)
+      {
+        // ---------------------------------------------------------
+        // Nastran CONM2 Card Format (Small Field)
+        // 1. Keyword : "CONM2"
+        // 2. EID     : Element ID (Mass ID)
+        // 3. G       : Grid ID (Node ID)
+        // 4. CID     : Coordinate System (0 고정)
+        // 5. M       : Mass Value (질량)
+        // ---------------------------------------------------------
+        string massLine = $"{BdfFormatFields.FormatField("CONM2")}"
+                        + $"{BdfFormatFields.FormatField(pm.Key, "right")}"
+                        + $"{BdfFormatFields.FormatField(pm.Value.NodeID, "right")}"
+                        + $"{BdfFormatFields.FormatField(0, "right")}"
+                        + $"{BdfFormatFields.FormatField(pm.Value.Mass.ToString("F3"), "right")}";
+
+        BdfLines.Add(massLine);
       }
     }
 

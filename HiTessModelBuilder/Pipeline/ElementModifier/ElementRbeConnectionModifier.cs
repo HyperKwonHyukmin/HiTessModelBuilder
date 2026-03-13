@@ -1,6 +1,7 @@
 ﻿using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
 using HiTessModelBuilder.Pipeline.ElementInspector;
+using HiTessModelBuilder.Pipeline.NodeInspector;
 using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
@@ -36,7 +37,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       if (freeNodes.Count == 0) return 0;
 
-      if (opt.PipelineDebug)
+      if (opt.VerboseDebug)
       {
         log($"\n==================================================");
         log($"[수정 시작] ElementRbeConnectionModifier (RBE2 강체 브릿지 생성)");
@@ -93,13 +94,19 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         }
       }
 
-      // 4. 예약된 RBE2 요소들을 FeModelContext에 추가
       // 4. 예약된 RBE2 요소들을 FeModelContext의 Rigids 컬렉션에 추가
       foreach (var rbe in newRbeElements)
       {
         // rbe.n2 (수선의 발, 타겟 부재 위) = Independent Node (GN)
         // rbe.n1 (기존 Free Node) = Dependent Node (GM)
-        context.Rigids.AddNew(independentNodeID: rbe.n2, dependentNodeIDs: new[] { rbe.n1 });
+        var extraData = new Dictionary<string, string>
+        {
+            { "Category", "Auto-Healing" },
+            { "Type", "RBE_BRIDGE" },
+            { "Desc", $"FreeNode N{rbe.n1} to Target E{rbe.targetEid}" },
+            { "Classification", "Bridge"}
+        };
+        context.Rigids.AddNew(independentNodeID: rbe.n2, dependentNodeIDs: new[] { rbe.n1 }, cm: "123456", extraData: extraData);
         rbeCreatedCount++;
 
         if (opt.VerboseDebug)

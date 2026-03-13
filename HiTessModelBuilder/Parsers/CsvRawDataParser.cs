@@ -23,26 +23,21 @@ namespace HiTessModelBuilder.Parsers
 
     public RawCsvDesignData? Run()
     {
-      // 1. Structure 파싱
+      
       if (_debugPrint) Console.WriteLine($"[Parser] Reading Structure CSV: {_strucCsv}");
 
-      // 주의: StructureCsvParser 클래스가 실제로 구현되어 있어야 합니다.
       var csvParser = new CsvParser();
 
       try
-      {
-        // StructureCsvParser 내부에 Parse 메서드와 ParsedEntities 속성이 있다고 가정
-        var rawStructureDesignData = csvParser.Parse(_strucCsv, _pipeCsv);
+      {       
+        var rawCsvDesignData = csvParser.Parse(_strucCsv, _pipeCsv, _equipCsv);
         
-
-        // 2. 디버그 모드일 경우 검증 출력
         if (_debugPrint)
         {
-          // ParsedEntities가 List<StructureEntity>를 반환한다고 가정
-          RawDataDebugger.Verify(rawStructureDesignData);
+          RawDataDebugger.Verify(rawCsvDesignData);
         }
 
-        return rawStructureDesignData;
+        return rawCsvDesignData;
       }
       catch (Exception ex)
       {

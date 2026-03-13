@@ -27,8 +27,8 @@ namespace HiTessModelBuilder.Model.Entities
           ? e.ExtraData.ToDictionary(kv => kv.Key, kv => kv.Value)
           : new Dictionary<string, string>();
 
-      // Element 생성자 호출
-      return new Element(newNodeIDs.ToList(), e.PropertyID, extra);
+      // Element 생성자 호출 (수정: e.Orientation을 3번째 인자로 전달)
+      return new Element(newNodeIDs.ToList(), e.PropertyID, e.Orientation, extra);
     }
 
     public static bool TryReplaceNode(this Element e, int oldNodeId, int newNodeId, out Element replaced)

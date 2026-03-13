@@ -253,9 +253,15 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           segs.Add((n1, n2));
         }
 
-        // 생성된 세그먼트가 없으면 원본 삭제만 수행
         if (segs.Count == 0)
         {
+          // ★ 숨겨진 암살자 검거: 분할 후 소실된 부재 로그 추가
+          string rawName = e.ExtraData?.GetValueOrDefault("ID") ?? e.ExtraData?.GetValueOrDefault("Name") ?? "Unknown";
+          Console.ForegroundColor = ConsoleColor.Yellow;
+          if (opt.VerboseDebug)
+            Console.WriteLine($"   -> [영구 삭제] 분할 후 유효한 길이가 나오지 않아 쪼개진 부재 '{rawName}'(E{eid})가 완전 삭제되었습니다.");
+          Console.ResetColor();
+
           elements.Remove(eid);
           removed++;
           continue;
@@ -267,12 +273,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         if (ReuseOriginalIdForFirst)
         {
           // 첫 번째 조각은 기존 ID 재사용 (덮어쓰기)
-          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, extra);
+          elements.AddWithID(eid, new List<int> { segs[0].n1, segs[0].n2 }, e.PropertyID, e.Orientation, extra);
 
           // 나머지 조각은 신규 생성
           for (int i = 1; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, extra);
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, extra);
             added++;
             if (opt.VerboseDebug)
               log($"   -> [추가] E{newId} 생성 (노드: {segs[i].n1}-{segs[i].n2})");
@@ -287,7 +293,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           removed++;
           for (int i = 0; i < segs.Count; i++)
           {
-            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, extra);
+            int newId = elements.AddNew(new List<int> { segs[i].n1, segs[i].n2 }, e.PropertyID, e.Orientation, extra);
             added++;
             if (opt.VerboseDebug)
               log($"   -> [신규] E{newId} 생성 (노드: {segs[i].n1}-{segs[i].n2})");

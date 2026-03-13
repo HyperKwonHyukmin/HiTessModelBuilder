@@ -9,6 +9,7 @@ namespace HiTessModelBuilder.Model.Entities
   {
     public string Name { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
+    public double[] Pos { get; set; } = Array.Empty<double>();
     public double[] APos { get; set; } = Array.Empty<double>();
     public double[] LPos { get; set; } = Array.Empty<double>();
     public string Branch { get; set; } = string.Empty;
@@ -19,8 +20,9 @@ namespace HiTessModelBuilder.Model.Entities
     public double[]? P3Pos { get; set; }
     public double OutDia2 { get; set; }
     public double Thick2 { get; set; }
-    public double[] Rest { get; set; } = Array.Empty<double>();
-    public double Mass { get; set; }
+    public string? Rest { get; set; } 
+    public string? Mass { get; set; }
+    public string Remark { get; set; } = string.Empty;
 
     // ==========================================
     // FE 모델 생성을 위한 편의 프로퍼티 (선택적 사용)
