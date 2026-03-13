@@ -12,19 +12,25 @@ namespace HiTessModelBuilder.Services.Logging
   {
     private readonly StreamWriter _fileWriter;
     private readonly string _logFilePath;
+    private readonly TextWriter _originalConsoleOut;
 
     public PipelineLogger(string outputDirectory, string baseFileName)
     {
-      // 로그 파일명 예시: 3515-35020-struData_ProcessLog_20231024_153000.txt
       string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
       string logFileName = $"{GetFileNameWithoutWhitespace(baseFileName)}_ProcessLog_{timestamp}.txt";
-      _logFilePath = Path.Combine(outputDirectory, logFileName);
 
-      // 파일 스트림 열기 (프로그램 종료 시 닫기 위해 IDisposable 구현)
+      // [핵심 방어 코드] outputDirectory가 null이면, 현재 실행 프로그램의 디렉토리를 사용
+      string safeDir = string.IsNullOrWhiteSpace(outputDirectory) ? Environment.CurrentDirectory : outputDirectory;
+
+      _logFilePath = Path.Combine(safeDir, logFileName);
+
       _fileWriter = new StreamWriter(_logFilePath, append: false, Encoding.UTF8)
       {
-        AutoFlush = true // 즉시 파일에 쓰기
+        AutoFlush = true
       };
+
+      _originalConsoleOut = Console.Out;
+      Console.SetOut(new DualTextWriter(_originalConsoleOut, _fileWriter));
 
       LogInfo($"[System] 로그 기록 시작: {_logFilePath}");
     }
@@ -54,7 +60,8 @@ namespace HiTessModelBuilder.Services.Logging
     }
 
     /// <summary>
-    /// 치명적 오류 및 Exception 로그 (콘솔 빨간색)
+    /// 
+    /// 및 Exception 그 (콘솔 빨간색)
     /// </summary>
     public void LogError(string message, Exception ex = null)
     {
@@ -82,7 +89,7 @@ namespace HiTessModelBuilder.Services.Logging
       string fullMessage = timePrefix + message;
 
       // 1. 파일 쓰기
-      _fileWriter.WriteLine(fullMessage);
+      //_fileWriter.WriteLine(fullMessage);
 
       // 2. 콘솔 쓰기
       Console.ForegroundColor = color;
@@ -91,12 +98,19 @@ namespace HiTessModelBuilder.Services.Logging
     }
 
     // 파일명 공백 제거 유틸리티
+    // 파일명 공백 제거 유틸리티 (Null 방어 로직 추가)
     private static string GetFileNameWithoutWhitespace(string fileName)
-        => Path.GetFileNameWithoutExtension(fileName).Replace(" ", "_");
+    {
+      if (string.IsNullOrWhiteSpace(fileName))
+        return "Default_Model"; // 파일명이 null일 경우 기본 이름 부여
+
+      return Path.GetFileNameWithoutExtension(fileName).Replace(" ", "_");
+    }
 
     public void Dispose()
     {
       LogInfo("[System] 로그 기록 종료.");
+      Console.SetOut(_originalConsoleOut);
       _fileWriter?.Dispose();
     }
   }
