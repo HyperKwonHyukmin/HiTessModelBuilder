@@ -59,7 +59,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
             // 노드 리스트를 보기 좋게 출력 (Verbose가 아니면 20개까지만 요약)
             int limit = verboseDebug ? int.MaxValue : 20;
-            var displayNodes = failedUboltNodes.Take(limit).Select(n => $"{n}");
+            var displayNodes = failedUboltNodes.Take(limit).Select(n => $"N{n}");
             string nodeStr = string.Join(", ", displayNodes);
             if (failedUboltNodes.Count > limit) nodeStr += " ...";
             Console.WriteLine($" -> 실패한 UBOLT 대상 노드: {nodeStr}\n");
@@ -74,6 +74,16 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
             combinedSpc.Add(fn);
           }
           freeEndNodes = combinedSpc.ToList();
+        }
+        else
+        {
+          // ★ [추가됨] 실패한 UBOLT가 없을 경우(완벽 성공) 출력되는 로그
+          if (pipelineDebug)
+          {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"\n[최종 점검] UBOLT 무결성 검사 : 실패한 항 없이 모든 UBOLT가 구조물에 성공적으로 연결되었습니다.\n");
+            Console.ResetColor();
+          }
         }
       }
 
@@ -176,7 +186,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         {
           var groupNodes = new HashSet<int>();
 
-          // 해당 컴포넌트 내부의 모든 노드 수집
+          // 해당 컴포넌트 내부의 든 노드 수집
           foreach (int eid in comp.ElementIDs)
             if (context.Elements.Contains(eid))
               foreach (int nid in context.Elements[eid].NodeIDs) groupNodes.Add(nid);
@@ -233,7 +243,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         if (resultList.Count == 0)
           LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 지정할 노드가 없습니다.");
         else
-          LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 {resultList.Count}개의 드를 지정했습니다.");
+          LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 {resultList.Count}개의 노드를 지정했습니다.");
       }
 
       return resultList;
@@ -279,7 +289,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       if (pipelineDebug)
       {
         if (duplicateGroups.Count == 0) LogPass("05 - 요소 중복 : 완전히 겹치는 요소가 없습니다.");
-        else LogWarning($"05 - 요소 중복 : 중복 요소 세 {duplicateGroups.Count}개 삭제 완료.");
+        else LogWarning($"05 - 요소 중복 : 중복 요소 세트 {duplicateGroups.Count}개 삭제 완료.");
       }
     }
 
@@ -293,7 +303,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
           if (context.Elements.Contains(eid))
           {
             context.Elements.Remove(eid);
-            if (verboseDebug) Console.WriteLine($"      -> [불량 삭제] 유효하지 않은 속성 참조 부재(E{eid}) 삭제됨.");
+            if (verboseDebug) Console.WriteLine($"      -> [불량 삭제] 유효지 않은 속성 참조 부재(E{eid}) 삭제됨.");
           }
         }
       }
