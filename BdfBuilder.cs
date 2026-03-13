@@ -14,7 +14,7 @@ namespace HiTessModelBuilder.Exporter
     public FeModelContext feModelContext;
     int LoadCase;
     public List<int> SpcList = new List<int>();
-    //public List<ForceLoad> ForceLoads = new List<ForceLoad>();
+    public bool ForceRigid123456 { get; set; }
 
     // BDF에 입력된 텍스트 라인모음 리스트
     public List<String> BdfLines = new List<String>();
