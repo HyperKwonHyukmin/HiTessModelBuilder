@@ -175,12 +175,11 @@ namespace HiTessModelBuilder.Pipeline
               break;
           }
 
-          // ★ [핵심 분리 2] Sanity 검사 모델의 상태를 보여주는 핵심 지표이므로, 
-          // 과거 스테이지라 하더라도 this._pipelineDebug가 켜져 있으면 무조건 출력합니다.
-          // (추가: 현재 루프가 마지막 STAGE인지 판별하는 isTarget을 isFinalStage 파라미터로 넘겨줍니다)
+          // ★ [핵심 분리 2] Sanity 검사
           var freeEndNodes = StructuralSanityInspector.Inspect(_context, true, this._pipelineDebug, currentVerbose, isTarget);
 
-          BdfExporter.Export(_context, _csvFolderPath, stageName, freeEndNodes);
+          // ★ [수정] stageName 뒤에 명시적으로 ".bdf" 확장자를 붙여서 넘겨줍니다.
+          BdfExporter.Export(_context, _csvFolderPath, $"{stageName}.bdf", freeEndNodes);
         }
         catch (Exception ex)
         {
@@ -267,10 +266,9 @@ namespace HiTessModelBuilder.Pipeline
       int totalProcessed = 0;
 
       // 1. 일반 UBOLT (수직 스냅) 처리
-      // 1. 일반 UBOLT (수직 스냅) 처리
       // ★ [수정] 대구경 배관과 서포트 사이의 갭(Gap)을 고려하여 여유 마진을 150.0mm로 늘림
       var snapOpt = new UboltSnapToStructureModifier.Options(
-          ExtraMargin: 150.0,
+          ExtraMargin: 100.0,
           PipelineDebug: pDebug,
           VerboseDebug: vDebug
       );
