@@ -7,27 +7,34 @@ using System.Linq;
 
 namespace HiTessModelBuilder.Pipeline.Preprocess
 {
+  /// <summary>
+  /// FE 모델의 기하학적, 위상학적 건전성을 검사하고 치명적 에러를 사전 방지하는 클래스입니다.
+  /// (모든 출력은 주입된 Action<string> 델리게이트를 통해 중앙 로거로 전달됩니다.)
+  /// </summary>
   public static class StructuralSanityInspector
   {
-    public static List<int> Inspect(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage = false)
+    public static List<int> Inspect(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage = false, Action<string>? log = null)
     {
+      // 델리게이트가 주입되지 않았을 경우 기본 콘솔 출력으로 Fallback
+      log ??= Console.WriteLine;
+
       double shortElementDistanceThreshold = 1.0;
-      InspectGeometry(context, shortElementDistanceThreshold, pipelineDebug, verboseDebug);
+      InspectGeometry(context, shortElementDistanceThreshold, pipelineDebug, verboseDebug, log);
 
       double EquivalenceTolerance = 0.1;
-      InspectEquivalence(context, EquivalenceTolerance, pipelineDebug, verboseDebug);
+      InspectEquivalence(context, EquivalenceTolerance, pipelineDebug, verboseDebug, log);
 
-      InspectDuplicate(context, pipelineDebug, verboseDebug);
-      InspectIntegrity(context, pipelineDebug, verboseDebug);
-      InspectIsolation(context, pipelineDebug, verboseDebug);
+      InspectDuplicate(context, pipelineDebug, verboseDebug, log);
+      InspectIntegrity(context, pipelineDebug, verboseDebug, log);
+      InspectIsolation(context, pipelineDebug, verboseDebug, log);
 
       // 위상 연결성 및 경계조건(SPC) 산출
-      List<int> freeEndNodes = InspectTopology(context, useExplicitWeldSpc, pipelineDebug, verboseDebug, isFinalStage);
+      List<int> freeEndNodes = InspectTopology(context, useExplicitWeldSpc, pipelineDebug, verboseDebug, isFinalStage, log);
 
-      InspectRigidDependencies(context, pipelineDebug);
+      InspectRigidDependencies(context, pipelineDebug, log);
 
       // ===================================================================================
-      // ★ [신규 추가] 실패한 UBOLT 구제 및 Nastran 해석 에러 방지 로직
+      // ★ 실패한 UBOLT 구제 및 Nastran 해석 에러 방지 로직
       // 연결 타겟을 찾지 못해 비어있는 UBOLT RBE는 BDF 출력 시 누락되어 Singularity를 유발합니다.
       // 마지막 Stage에서 이를 찾아내어 해당 노드를 강제로 SPC(경계조건) 리스트에 추가하고 보고합니다.
       // ===================================================================================
@@ -52,19 +59,17 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         {
           if (pipelineDebug)
           {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\n[긴급 조치 / 해석 에러 방지]");
-            Console.WriteLine($" -> 타겟 구조물을 찾지 못해 연결에 실패한 UBOLT {failedUboltNodes.Count}개가 발견되었습니다.");
-            Console.WriteLine($" -> Nastran Fatal Error(Singularity) 방지를 위해 아래 배관 노드들에 SPC(고정 경계조건)를 강제 할당합니다.");
+            // PipelineLogger.LogDelegate가 [경고] 태그를 감지하여 노란색으로 포맷팅합니다.
+            log("\n[경고] 긴급 조치 / 해석 에러 방지");
+            log($" -> 타겟 구조물을 찾지 못해 연결에 실패한 UBOLT {failedUboltNodes.Count}개가 발견되었습니다.");
+            log($" -> Nastran Fatal Error(Singularity) 방지를 위해 아래 배관 노드들에 SPC(고정 경계조건)를 강제 할당합니다.");
 
             // 노드 리스트를 보기 좋게 출력 (Verbose가 아니면 20개까지만 요약)
             int limit = verboseDebug ? int.MaxValue : 20;
             var displayNodes = failedUboltNodes.Take(limit).Select(n => $"N{n}");
             string nodeStr = string.Join(", ", displayNodes);
             if (failedUboltNodes.Count > limit) nodeStr += " ...";
-            Console.WriteLine($" -> 실패한 UBOLT 대상 노드: {nodeStr}\n");
-
-            Console.ResetColor();
+            log($" -> 실패한 UBOLT 대상 노드: {nodeStr}\n");
           }
 
           // 기존에 산출된 경계조건(SPC) 리스트에 실패한 UBOLT 노드들을 병합
@@ -75,22 +80,12 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
           }
           freeEndNodes = combinedSpc.ToList();
         }
-        else
-        {
-          // ★ [추가됨] 실패한 UBOLT가 없을 경우(완벽 성공) 출력되는 로그
-          if (pipelineDebug)
-          {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine($"\n[최종 점검] UBOLT 무결성 검사 : 실패한 항 없이 모든 UBOLT가 구조물에 성공적으로 연결되었습니다.\n");
-            Console.ResetColor();
-          }
-        }
       }
 
       return freeEndNodes;
     }
 
-    private static List<int> InspectTopology(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage)
+    private static List<int> InspectTopology(FeModelContext context, bool useExplicitWeldSpc, bool pipelineDebug, bool verboseDebug, bool isFinalStage, Action<string> log)
     {
       // Element뿐만 아니라 Rigid, PointMass까지 통합된 ConnectedComponent 검색 로직 적용
       var connectedComponents = ElementConnectivityInspector.FindConnectedComponents(context);
@@ -98,9 +93,9 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       if (pipelineDebug)
       {
         if (connectedComponents.Count <= 1)
-          LogPass($"01 - 위상 연결성 : 전체 모델이 {connectedComponents.Count}개의 그룹으로 잘 연결되어 있습니다.");
+          LogPass(log, $"01 - 위상 연결성 : 전체 모델이 {connectedComponents.Count}개의 그룹으로 잘 연결되어 있습니다.");
         else
-          LogWarning($"01 - 위상 연결성 : 모델이 {connectedComponents.Count}개의 분리된 덩어리로 나뉘어 있습니다.");
+          LogWarning(log, $"01 - 위상 연결성 : 모델이 {connectedComponents.Count}개의 분리된 덩어리로 나뉘어 있습니다.");
       }
 
       var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
@@ -126,12 +121,12 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       {
         if (isolatedNodes.Count == 0)
         {
-          LogPass("02_B - 고립된 노드 (연결 0개) : 없습니다.");
+          LogPass(log, "02_B - 고립된 노드 (연결 0개) : 없습니다.");
         }
         else
         {
-          LogWarning($"02_B - 고립된 노드 (연결 0개) : {isolatedNodes.Count}개 발견 (자동 삭제됨)");
-          if (verboseDebug) Console.WriteLine($"      IDs: {SummarizeIds(isolatedNodes, printLimit)}");
+          LogWarning(log, $"02_B - 고립된 노드 (연결 0개) : {isolatedNodes.Count}개 발견 (자동 삭제됨)");
+          if (verboseDebug) log($"      IDs: {SummarizeIds(isolatedNodes, printLimit)}");
         }
       }
 
@@ -173,7 +168,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         }
         else if (verboseDebug)
         {
-          Console.WriteLine($"      -> [SPC 제거] 노드 N{targetNode}는 강체(RBE)에 포함되어 있어 경계조건이 삭제되었습니다.");
+          log($"      -> [SPC 제거] 노드 N{targetNode}는 강체(RBE)에 포함되어 있어 경계조건이 삭제되었습니다.");
         }
       }
 
@@ -186,7 +181,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         {
           var groupNodes = new HashSet<int>();
 
-          // 해당 컴포넌트 내부의 든 노드 수집
+          // 해당 컴포넌트 내부의 모든 노드 수집
           foreach (int eid in comp.ElementIDs)
             if (context.Elements.Contains(eid))
               foreach (int nid in context.Elements[eid].NodeIDs) groupNodes.Add(nid);
@@ -227,9 +222,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
 
             if (pipelineDebug && addedSpcCount > 0)
             {
-              Console.ForegroundColor = ConsoleColor.Magenta;
-              Console.WriteLine($"      -> [안전망 작동] 경계조건이 누락된 독립 그룹 발견! 해당 그룹 최하단(Z={minZ:F1}) 유효 노드 {addedSpcCount}개에 SPC 강제 할당 완료.");
-              Console.ResetColor();
+              log($"[경고] 안전망 작동 : 경계조건이 누락된 독립 그룹 발견! 해당 그룹 최하단(Z={minZ:F1}) 유효 노드 {addedSpcCount}개에 SPC 강제 할당 완료.");
             }
           }
         }
@@ -241,35 +234,35 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       {
         string modeStr = effectiveUseExplicitWeldSpc ? "명시적 용접점(Weld)" : "자유단(Free Node)";
         if (resultList.Count == 0)
-          LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 지정할 노드가 없습니다.");
+          LogPass(log, $"02_A - SPC 지정 : {modeStr} 기반으로 지정할 노드가 없습니다.");
         else
-          LogPass($"02_A - SPC 지정 : {modeStr} 기반으로 {resultList.Count}개의 노드를 지정했습니다.");
+          LogPass(log, $"02_A - SPC 지정 : {modeStr} 기반으로 {resultList.Count}개의 노드를 지정했습니다.");
       }
 
       return resultList;
     }
 
-    private static void InspectGeometry(FeModelContext context, double threshold, bool pipelineDebug, bool verboseDebug)
+    private static void InspectGeometry(FeModelContext context, double threshold, bool pipelineDebug, bool verboseDebug, Action<string> log)
     {
       var shortElements = ElementDetectShortInspector.Run(context, threshold);
       if (pipelineDebug)
       {
-        if (shortElements.Count == 0) LogPass($"03 - 기하 형상 : 길이가 {threshold} 미만인 짧은 요소가 없습니다.");
-        else LogWarning($"03 - 기하 형상 : 짧은 요소 {shortElements.Count}개 발견.");
+        if (shortElements.Count == 0) LogPass(log, $"03 - 기하 형상 : 길이가 {threshold} 미만인 짧은 요소가 없습니다.");
+        else LogWarning(log, $"03 - 기하 형상 : 짧은 요소 {shortElements.Count}개 발견.");
       }
     }
 
-    private static void InspectEquivalence(FeModelContext context, double EquivalenceTolerance, bool pipelineDebug, bool verboseDebug)
+    private static void InspectEquivalence(FeModelContext context, double EquivalenceTolerance, bool pipelineDebug, bool verboseDebug, Action<string> log)
     {
       var coincidentGroups = NodeEquivalenceInspector.InspectEquivalenceNodes(context, EquivalenceTolerance);
       if (pipelineDebug)
       {
-        if (coincidentGroups.Count == 0) LogPass($"04 - 노드 중복 : 허용오차({EquivalenceTolerance}) 내에 겹치는 노드가 없습니다.");
-        else LogWarning($"04 - 노드 중복 : 위치가 겹치는 노드 그룹 {coincidentGroups.Count}개 발견.");
+        if (coincidentGroups.Count == 0) LogPass(log, $"04 - 노드 중복 : 허용오차({EquivalenceTolerance}) 내에 겹치는 노드가 없습니다.");
+        else LogWarning(log, $"04 - 노드 중복 : 위치가 겹치는 노드 그룹 {coincidentGroups.Count}개 발견.");
       }
     }
 
-    private static void InspectDuplicate(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    private static void InspectDuplicate(FeModelContext context, bool pipelineDebug, bool verboseDebug, Action<string> log)
     {
       var duplicateGroups = ElementDuplicateInspector.FindDuplicateGroups(context);
       if (duplicateGroups.Count > 0)
@@ -281,19 +274,19 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
             if (context.Elements.Contains(group[i]))
             {
               context.Elements.Remove(group[i]);
-              if (verboseDebug) Console.WriteLine($"      -> [중복 삭제] 위치가 동일한 중복 부재(E{group[i]}) 삭제됨.");
+              if (verboseDebug) log($"      -> [중복 삭제] 위치가 동일한 중복 부재(E{group[i]}) 삭제됨.");
             }
           }
         }
       }
       if (pipelineDebug)
       {
-        if (duplicateGroups.Count == 0) LogPass("05 - 요소 중복 : 완전히 겹치는 요소가 없습니다.");
-        else LogWarning($"05 - 요소 중복 : 중복 요소 세트 {duplicateGroups.Count}개 삭제 완료.");
+        if (duplicateGroups.Count == 0) LogPass(log, "05 - 요소 중복 : 완전히 겹치는 요소가 없습니다.");
+        else LogWarning(log, $"05 - 요소 중복 : 중복 요소 세트 {duplicateGroups.Count}개 삭제 완료.");
       }
     }
 
-    private static void InspectIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    private static void InspectIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug, Action<string> log)
     {
       var invalidElements = ElementIntegrityInspector.FindElementsWithInvalidReference(context);
       if (invalidElements.Count > 0)
@@ -303,29 +296,31 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
           if (context.Elements.Contains(eid))
           {
             context.Elements.Remove(eid);
-            if (verboseDebug) Console.WriteLine($"      -> [불량 삭제] 유효지 않은 속성 참조 부재(E{eid}) 삭제됨.");
+            if (verboseDebug) log($"      -> [불량 삭제] 유효하지 않은 속성 참조 부재(E{eid}) 삭제됨.");
           }
         }
       }
       if (pipelineDebug)
       {
-        if (invalidElements.Count == 0) LogPass("06 - 데이터 무결성 : 모든 요소가 유효합니다.");
-        else LogWarning($"06 - 데이터 무결성 : 불량 요소 {invalidElements.Count}개 삭제 완료.");
+        if (invalidElements.Count == 0) LogPass(log, "06 - 데이터 무결성 : 모든 요소가 유효합니다.");
+        else LogWarning(log, $"06 - 데이터 무결성 : 불량 요소 {invalidElements.Count}개 삭제 완료.");
       }
     }
 
-    private static void InspectIsolation(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    private static void InspectIsolation(FeModelContext context, bool pipelineDebug, bool verboseDebug, Action<string> log)
     {
       var isolation = ElementIsolationInspector.FindIsolatedElements(context);
       if (pipelineDebug)
       {
-        if (isolation.Count == 0) LogPass("07 - 요소 고립 : 고립된 요소가 없습니다.");
-        else LogWarning($"07 - 요소 고립 : 메인 구조물과 끊어진 요소 {isolation.Count}개 발견.");
+        if (isolation.Count == 0) LogPass(log, "07 - 요소 고립 : 고립된 요소가 없습니다.");
+        else LogWarning(log, $"07 - 요소 고립 : 메인 구조물과 끊어진 요소 {isolation.Count}개 발견.");
       }
     }
 
-    public static void InspectRigidIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug)
+    public static void InspectRigidIntegrity(FeModelContext context, bool pipelineDebug, bool verboseDebug, Action<string>? log = null)
     {
+      log ??= Console.WriteLine;
+
       var emptyRbeInfos = new List<(int RbeId, int IndepNodeId)>();
       foreach (var kvp in context.Rigids)
       {
@@ -336,17 +331,17 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       foreach (var info in emptyRbeInfos)
       {
         if (context.Rigids.Contains(info.RbeId)) context.Rigids.Remove(info.RbeId);
-        if (verboseDebug) Console.WriteLine($"      -> [연결 실패] 타겟이 없는 불량 강체 삭제됨.");
+        if (verboseDebug) log($"      -> [연결 실패] 타겟이 없는 불량 강체 삭제됨.");
       }
 
       if (pipelineDebug)
       {
-        if (emptyRbeInfos.Count == 0) LogPass("08 - 강체 무결성 : 모든 강체가 정상입니다.");
-        else LogWarning($"08 - 강체 무결성 : 불량 강체 {emptyRbeInfos.Count}개 삭제 완료.");
+        if (emptyRbeInfos.Count == 0) LogPass(log, "08 - 강체 무결성 : 모든 강체가 정상입니다.");
+        else LogWarning(log, $"08 - 강체 무결성 : 불량 강체 {emptyRbeInfos.Count}개 삭제 완료.");
       }
     }
 
-    public static void InspectRigidDependencies(FeModelContext context, bool pipelineDebug)
+    public static void InspectRigidDependencies(FeModelContext context, bool pipelineDebug, Action<string> log)
     {
       if (!pipelineDebug) return;
 
@@ -373,7 +368,7 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       var doubleDeps = depNodeToRbes.Where(kv => kv.Value.Count > 1).ToList();
       if (doubleDeps.Count > 0)
       {
-        LogCritical($"[치명적 오류 탐지] 다중 종속(Double Dependency) 발생!");
+        LogCritical(log, $"[치명적 오류 탐지] 다중 종속(Double Dependency) 발생!");
         hasError = true;
       }
 
@@ -400,13 +395,13 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
         var path = new List<int>();
         if (DetectCycle(node, path))
         {
-          LogCritical($"[치명적 오류 탐지] 강체 순환 꼬리물기(Circular Dependency) 발생!");
+          LogCritical(log, $"[치명적 오류 탐지] 강체 순환 꼬리물기(Circular Dependency) 발생!");
           hasError = true;
           break;
         }
       }
 
-      if (!hasError) LogPass("09 - 강체 역학망 검사 : 다중/순환 종속이 없는 깨끗한 상태입니다.");
+      if (!hasError) LogPass(log, "09 - 강체 역학망 검사 : 다중/순환 종속이 없는 깨끗한 상태입니다.");
     }
 
     private static int RemoveOrphanNodes(FeModelContext context, List<int> isolatedNodes)
@@ -420,9 +415,12 @@ namespace HiTessModelBuilder.Pipeline.Preprocess
       return removed;
     }
 
-    private static void LogPass(string msg) => Console.WriteLine($"[통과] {msg}");
-    private static void LogWarning(string msg) { Console.ForegroundColor = ConsoleColor.Yellow; Console.WriteLine($"[주의] {msg}"); Console.ResetColor(); }
-    private static void LogCritical(string msg) { Console.ForegroundColor = ConsoleColor.Red; Console.WriteLine($"[실패] {msg}"); Console.ResetColor(); }
+    // =========================================================================
+    // ★ 델리게이트를 통한 로깅 헬퍼 메써드 (색상 변경은 PipelineLogger에 위임)
+    // =========================================================================
+    private static void LogPass(Action<string> log, string msg) => log($"[통과] {msg}");
+    private static void LogWarning(Action<string> log, string msg) => log($"[경고] {msg}");
+    private static void LogCritical(Action<string> log, string msg) => log($"[실패] {msg}");
 
     private static string SummarizeIds(List<int> ids, int limit)
     {
