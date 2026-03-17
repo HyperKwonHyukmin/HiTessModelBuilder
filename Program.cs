@@ -6,6 +6,8 @@ using System;
 using System.IO;
 using System.Linq;
 
+// CMD 작동 명령어 : HiTessModelBuilder.exe --stru "C:\stru.csv" --mesh 300 --verbose true --nastran false
+
 namespace HiTessModelBuilder
 {
   public class AppOptions
@@ -15,10 +17,8 @@ namespace HiTessModelBuilder
     public string? EquipCsvPath { get; set; }
 
     public double MeshSize { get; set; } = 500.0;
-
-    // Nastran 해석 실행 여부
+    public bool ForceUboltRigid { get; set; } = false; 
     public bool RunNastran { get; set; } = true;
-
     public bool CsvDebug { get; set; } = true;
     public bool FeModelDebug { get; set; } = true;
     public bool PipelineDebug { get; set; } = true;
@@ -42,21 +42,103 @@ namespace HiTessModelBuilder
       RunApplication(options);
     }
 
+    /// <summary>
+    /// 커맨드라인 인자(args)를 분석하여 프로그램 실행 옵션 객체를 반환합니다.
+    /// 
+    /// [지원하는 입력 방식 2가지]
+    /// 1. 순서 기반 (기존 방식): HiTessModelBuilder.exe "C:\stru.csv" "C:\pipe.csv" "null"
+    /// 2. 태그 기반 (고급 방식): HiTessModelBuilder.exe --stru "C:\stru.csv" --mesh 300
+    /// 3. 혼합 방식 (가장 권장): HiTessModelBuilder.exe "C:\stru.csv" "null" "C:\equip.csv" --mesh 300 --nastran false
+    /// </summary>
     private static AppOptions ParseArguments(string[] args)
     {
-      return new AppOptions
+      // 1. 기본값 초기화 (VS 버깅 시 기본 작동)
+      var options = new AppOptions
       {
         StruCsvPath = PathManager.Current.Stru,
         PipeCsvPath = PathManager.Current.Pipe,
         EquipCsvPath = PathManager.Current.Equip,
-
         MeshSize = 500.0,
+        ForceUboltRigid = false, 
         RunNastran = true,
         CsvDebug = true,
         FeModelDebug = true,
         PipelineDebug = true,
         VerboseDebug = false
       };
+
+      if (args == null || args.Length == 0)
+        return options;
+
+      int positionalIndex = 0; // 순서대로 들어오는 파일 경로의 인덱스를 추적 (0:Stru, 1:Pipe, 2:Equip)
+
+      // 2. 파싱 루프 (순서 기반과 태그 기반을 동시에 처리)
+      for (int i = 0; i < args.Length; i++)
+      {
+        string arg = args[i].ToLower();
+
+        // [A] 태그(명령어)로 시작하는 경우 (예: --mesh, --stru)
+        if (arg.StartsWith("--"))
+        {
+          if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+          {
+            string value = args[i + 1];
+            bool isNullStr = value.Equals("null", StringComparison.OrdinalIgnoreCase);
+
+            switch (arg)
+            {
+              // 명시적으로 파일 경로를 지정하는 경우
+              case "--stru": options.StruCsvPath = isNullStr ? null : value; break;
+              case "--pipe": options.PipeCsvPath = isNullStr ? null : value; break;
+              case "--equip": options.EquipCsvPath = isNullStr ? null : value; break;
+
+              // 추가 옵션들
+              case "--mesh":
+              case "--meshsize":
+                if (double.TryParse(value, out double mesh)) options.MeshSize = mesh;
+                break;
+              // ★ [추가] U-Bolt 강제 고정 옵션 태그
+              case "--ubolt":
+              case "--forceuboltrigid":
+                if (bool.TryParse(value, out bool forceUbolt)) options.ForceUboltRigid = forceUbolt;
+                break;
+              case "--nastran":
+              case "--runnastran":
+                if (bool.TryParse(value, out bool runNastran)) options.RunNastran = runNastran;
+                break;
+              case "--csvdebug":
+                if (bool.TryParse(value, out bool csvDbg)) options.CsvDebug = csvDbg;
+                break;
+              case "--fedebug":
+              case "--femodeldebug":
+                if (bool.TryParse(value, out bool feDbg)) options.FeModelDebug = feDbg;
+                break;
+              case "--pipeline":
+              case "--pipelinedebug":
+                if (bool.TryParse(value, out bool pipeDbg)) options.PipelineDebug = pipeDbg;
+                break;
+              case "--verbose":
+              case "--verbosedebug":
+                if (bool.TryParse(value, out bool verbDbg)) options.VerboseDebug = verbDbg;
+                break;
+            }
+            i++; // 옵션의 '값(value)'을 읽었으므로 인덱스 1칸 건너뜀
+          }
+        }
+        // [B] 태그 없이 그냥 텍스트가 들어온 경우 (기존처럼 순서대로 경로를 넣은 것으로 간주)
+        else
+        {
+          bool isNullStr = args[i].Equals("null", StringComparison.OrdinalIgnoreCase);
+
+          if (positionalIndex == 0) options.StruCsvPath = isNullStr ? null : args[i];
+          else if (positionalIndex == 1) options.PipeCsvPath = isNullStr ? null : args[i];
+          else if (positionalIndex == 2) options.EquipCsvPath = isNullStr ? null : args[i];
+
+          positionalIndex++; // 다음 순서 없는 문자열은 다음 파일 경로로 인식
+        }
+      }
+
+      return options;
     }
 
     private static void RunApplication(AppOptions opt)
@@ -131,7 +213,7 @@ namespace HiTessModelBuilder
           logger.LogInfo("=======================================================");
 
           // 다시 원래 설계 부서가 입력했던 자유도(Rest)로 원상 복구합니다.
-          ToggleUboltRigidity(context, forceRigid: false, logger);
+          ToggleUboltRigidity(context, forceRigid: opt.ForceUboltRigid, logger);
 
           string finalBdfName = $"{pureFileName}.bdf";
           BdfExporter.Export(context, csvFolderPath, finalBdfName, finalSpcNodes);
