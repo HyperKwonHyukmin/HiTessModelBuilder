@@ -2,32 +2,23 @@ using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Services.Initialization;
 using HiTessModelBuilder.Pipeline;
 using HiTessModelBuilder.Services.Logging;
-using HiTessModelBuilder.Services.Execution;
 using System;
 using System.IO;
 using System.Linq;
 
 namespace HiTessModelBuilder
 {
-  /// <summary>
-  /// 프로그램 구동을 위한 환경 설정(인자) 클래스입니다.
-  /// 향후 CommandLineParser 등을 통해 args 배열을 이 객체로 매핑하게 됩니다.
-  /// </summary>
   public class AppOptions
   {
-    // 파일 경로 설정
     public string? StruCsvPath { get; set; }
     public string? PipeCsvPath { get; set; }
     public string? EquipCsvPath { get; set; }
 
-    // 모델링 알고리즘 파라미터
     public double MeshSize { get; set; } = 500.0;
-    public bool ForceUboltRigid { get; set; } = true;
 
-    // ★ Nastran 해석 실행 관련 옵션 (cmd.exe 환경 변수 의존)
+    // Nastran 해석 실행 여부
     public bool RunNastran { get; set; } = true;
 
-    // 디버깅 및 로깅 설정
     public bool CsvDebug { get; set; } = true;
     public bool FeModelDebug { get; set; } = true;
     public bool PipelineDebug { get; set; } = true;
@@ -38,7 +29,6 @@ namespace HiTessModelBuilder
   {
     static void Main(string[] args)
     {
-      // 1. 초기 환경 설정 및 인자 파싱
       AppOptions options = ParseArguments(args);
 
       if (string.IsNullOrWhiteSpace(options.StruCsvPath) &&
@@ -49,30 +39,19 @@ namespace HiTessModelBuilder
         return;
       }
 
-      // 2. 메인 파이프라인 실행
       RunApplication(options);
     }
 
-    /// <summary>
-    /// 입력된 args를 분석하여 AppOptions 객체를 반환합니다.
-    /// 현재는 개발 단계이므로 PathManager를 활용한 하드코딩 데이터를 주입합니다.
-    /// </summary>
     private static AppOptions ParseArguments(string[] args)
     {
-      // TODO: 향후 상용화 시 여기에 args 파싱 로직을 추가합니다. (예: System.CommandLine 사용)
-      // if (args.Length > 0) { ... }
-
       return new AppOptions
       {
         StruCsvPath = PathManager.Current.Stru,
         PipeCsvPath = PathManager.Current.Pipe,
         EquipCsvPath = PathManager.Current.Equip,
 
-        // 테스트용 하드코딩 값
         MeshSize = 500.0,
-        ForceUboltRigid = true,
-        RunNastran = true, // Nastran 해석 여부
-
+        RunNastran = true,
         CsvDebug = true,
         FeModelDebug = true,
         PipelineDebug = true,
@@ -80,78 +59,125 @@ namespace HiTessModelBuilder
       };
     }
 
-    /// <summary>
-    /// 설정된 AppOptions를 바탕으로 FE 모델 생성 파이프라인을 실행합니다.
-    /// </summary>
     private static void RunApplication(AppOptions opt)
     {
-      // 경로 및 기준 파일명 도출 (Stru 최우선, 없으면 Pipe)
       string sourceForFileName = opt.StruCsvPath ?? opt.PipeCsvPath ?? "Default_Model";
       string targetPath = opt.StruCsvPath ?? opt.PipeCsvPath ?? opt.EquipCsvPath!;
       string csvFolderPath = Path.GetDirectoryName(targetPath) ?? Environment.CurrentDirectory;
+      string pureFileName = Path.GetFileNameWithoutExtension(sourceForFileName);
 
       using (var logger = new PipelineLogger(csvFolderPath, sourceForFileName))
       {
         try
         {
           logger.LogInfo("=== HiTess Model Builder 파이프라인 시작 ===");
-          logger.LogInfo($"[설정 요약] MeshSize: {opt.MeshSize}mm, ForceUboltRigid: {opt.ForceUboltRigid}, RunNastran: {opt.RunNastran}");
 
-          // [단계 1] 원시 데이터 로드 및 초기 FE 모델 빌드
+          // ====================================================================
+          // 1. 단일 모델 빌드 및 기하학 파이프라인 실행 (단 1회만 수행!)
+          // ====================================================================
+          logger.LogInfo("[단계 1] 원시 데이터 로드 및 초기 모델 빌드");
+          // 처음엔 원본 자유도(false)를 유지한 채로 뼈대를 올립니다.
           (RawCsvDesignData? rawCsvDesignData, FeModelContext context) =
             FeModelLoader.LoadAndBuild(
                 opt.StruCsvPath!, opt.PipeCsvPath!, opt.EquipCsvPath!,
-                forceUboltRigid: opt.ForceUboltRigid,
+                forceUboltRigid: false,
                 csvDebug: opt.CsvDebug,
                 FeModelDebug: opt.FeModelDebug);
 
-          // [단 2] 기하학 및 위상학 힐링 파이프라인 실행 (Stage 1 ~ 7)
+          logger.LogInfo("\n[단계 2] 기하학 및 위상학 힐링 알고리즘 실행");
           var pipeline = new FeModelProcessPipeline(
               rawCsvDesignData, context, csvFolderPath, sourceForFileName,
               pipelineDebug: opt.PipelineDebug, verboseDebug: opt.VerboseDebug, logger: logger);
 
-          pipeline.RunFocusingOn(7);
+          pipeline.RunFocusingOn(7); // STAGE 파일들은 여기서 한 번만 출력됩니다.
 
-          // [단계 3] 최종 부재 메쉬 분할 (Meshing)
-          logger.LogInfo($"\n[Finalizing] 최종 모델링 최적화 진행 중... (MeshSize: {opt.MeshSize}mm)");
+          logger.LogInfo($"\n[단계 3] 모델링 최적화 진행 중... (MeshSize: {opt.MeshSize}mm)");
           HiTessModelBuilder.Pipeline.ElementModifier.ElementMeshingModifier.Run(context, opt.MeshSize, logger.LogDelegate);
 
-          // [단계 4] 최종 무결성 검사 및 해석용 경계조건(SPC) 산출
+          logger.LogInfo("\n[단계 4] 최종 무결성 검사 및 경계조건(SPC) 산출");
           var finalSpcNodes = HiTessModelBuilder.Pipeline.Preprocess.StructuralSanityInspector.Inspect(
               context, true, opt.PipelineDebug, opt.VerboseDebug, isFinalStage: true, log: logger.LogDelegate);
 
-          // [단계 5] 최종 BDF 포맷 추출 및 장 (마지막 최종본에만 타임스탬프 추가)
-          BdfExporter.Export(context, csvFolderPath, sourceForFileName, finalSpcNodes, appendTimestamp: true);
+          // ====================================================================
+          // [Phase 1] 검증용 모델 BDF 추출 및 Nastran 해석
+          // ====================================================================
+          logger.LogInfo("\n=======================================================");
+          logger.LogInfo("[Phase 1] Nastran 검증 실행");
+          logger.LogInfo("=======================================================");
 
-          // Export 후 생성된 최종 BDF 파일의 전체 경로를 역추적하여 가져옵니다.
-          string pureFileName = Path.GetFileNameWithoutExtension(sourceForFileName);
-          string bdfFilePath = Directory.GetFiles(csvFolderPath, $"{pureFileName}_*.bdf")
-                                        .OrderByDescending(f => File.GetCreationTime(f))
-                                        .FirstOrDefault()!;
+          // 메모리 상에서 U-Bolt 강체들의 자유도를 모두 "123456"으로 덮어씌웁니다.
+          ToggleUboltRigidity(context, forceRigid: true, logger);
 
-          // [단계 6] Nastran 해석 및 f06 결과 분석 (옵션이 켜져 있을 때만)
-          if (opt.RunNastran && !string.IsNullOrEmpty(bdfFilePath))
+          string verifyBdfName = $"{pureFileName}_Verification.bdf";
+          BdfExporter.Export(context, csvFolderPath, verifyBdfName, finalSpcNodes);
+
+          if (opt.RunNastran)
           {
-            // 경로 인자 제거됨 (NastranExecutionService 내부에서 cmd.exe로 실행)
-            bool isSuccess = NastranExecutionService.RunAndAnalyze(
-                bdfFilePath, logger.LogDelegate);
+            string verifyBdfPath = Path.Combine(csvFolderPath, verifyBdfName);
+            bool isSuccess = HiTessModelBuilder.Services.Execution.NastranExecutionService.RunAndAnalyze(
+                verifyBdfPath, logger.LogDelegate);
 
             if (isSuccess)
-              logger.LogSuccess("=== 모델 빌드 및 Nastran 해석 검증까지 모두 완벽하게 종료되었습니다 ===");
+              logger.LogSuccess("\n[검증 결과] 모델 건전성 검사 통과! (FATAL 에러 없음)");
             else
-              logger.LogWarning("=== 모델 빌드는 완료되었으나, Nastran 해석에서 오류(FATAL)가 검출되었습니다 ===");
+              logger.LogWarning("\n[검증 결과] Nastran 해석 중 FATAL 에러가 검출되었습니다. 위 로그의 문맥을 확인하세요.");
           }
-          else
-          {
-            logger.LogSuccess("=== 파이프라인 및 BDF 추출 정상 종료 (해석 스킵) ===");
-          }
+
+          // ====================================================================
+          // [Phase 2] 최종 납품용 모델 BDF 추출
+          // ====================================================================
+          logger.LogInfo("\n=======================================================");
+          logger.LogInfo("[Phase 2] 최종 납품용 모델 생성");
+          logger.LogInfo("=======================================================");
+
+          // 다시 원래 설계 부서가 입력했던 자유도(Rest)로 원상 복구합니다.
+          ToggleUboltRigidity(context, forceRigid: false, logger);
+
+          string finalBdfName = $"{pureFileName}.bdf";
+          BdfExporter.Export(context, csvFolderPath, finalBdfName, finalSpcNodes);
+
+          logger.LogSuccess($"\n=== 모든 프로세스 정상 종료. 최종 모델({finalBdfName})이 추출되었습니다. ===");
         }
         catch (Exception ex)
         {
           logger.LogError("파이프라인 실행 중 치명적인 오류가 발생하여 중단되었습니다.", ex);
-          logger.LogInfo("위 에러 스택 트레이스를 구조시스템연구실에 전달해 주세요.");
         }
       }
+    }
+
+    /// <summary>
+    /// FeModelContext 내부의 모든 UBOLT RBE 자유도를 메모리 상에서 즉시 스위칭합니다.
+    /// (파이프라인 재실행으로 인한 리소스 낭비를 방지)
+    /// </summary>
+    private static void ToggleUboltRigidity(FeModelContext context, bool forceRigid, PipelineLogger logger)
+    {
+      int changedCount = 0;
+      var rbeIds = context.Rigids.Keys.ToList(); // 순회 중 컬렉션 변경 에러 방지
+
+      foreach (int id in rbeIds)
+      {
+        var rbe = context.Rigids[id];
+        if (rbe.ExtraData != null && rbe.ExtraData.TryGetValue("Type", out string? type) && type == "UBOLT")
+        {
+          // PipeModelBuilder가 백업해둔 원본 Rest 값 가져오기 (없으면 기본값 123456)
+          string originalRest = rbe.ExtraData.GetValueOrDefault("Rest") ?? "123456";
+          if (string.IsNullOrWhiteSpace(originalRest)) originalRest = "123456";
+
+          // 적용할 새로운 자유도 문자열 결정
+          string newCm = forceRigid ? "123456" : originalRest;
+
+          // 실제 변경이 필요할 때만 덮어쓰기 (RigidInfo는 불변 객체이므로 새로 할당)
+          if (rbe.Cm != newCm)
+          {
+            var extraCopy = rbe.ExtraData.ToDictionary(k => k.Key, v => v.Value);
+            context.Rigids.AddWithID(id, rbe.IndependentNodeID, rbe.DependentNodeIDs, newCm, extraCopy);
+            changedCount++;
+          }
+        }
+      }
+
+      string state = forceRigid ? "완전 구속(123456)" : "설계 원본(Rest)";
+      logger.LogInfo($"   -> U-Bolt {changedCount}개의 자유도를 [{state}] 상태로 스위칭 완료.");
     }
   }
 }
