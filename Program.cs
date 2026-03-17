@@ -28,7 +28,8 @@ namespace HiTessModelBuilder
   public class MainApp
   {
     static void Main(string[] args)
-    {
+    {     
+
       AppOptions options = ParseArguments(args);
 
       if (string.IsNullOrWhiteSpace(options.StruCsvPath) &&
@@ -166,7 +167,7 @@ namespace HiTessModelBuilder
                 csvDebug: opt.CsvDebug,
                 FeModelDebug: opt.FeModelDebug);
 
-          logger.LogInfo("\n[단 2] 기하학 및 위상학 힐링 알고리즘 실행");
+          logger.LogInfo("\n[단계 2] 기하학 및 위상학 힐링 알고리즘 실행");
           var pipeline = new FeModelProcessPipeline(
               rawCsvDesignData, context, csvFolderPath, sourceForFileName,
               pipelineDebug: opt.PipelineDebug, verboseDebug: opt.VerboseDebug, logger: logger);
