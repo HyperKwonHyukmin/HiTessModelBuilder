@@ -25,7 +25,7 @@ namespace HiTessModelBuilder
     public bool VerboseDebug { get; set; } = false;
   }
 
-  class MainApp
+  public class MainApp
   {
     static void Main(string[] args)
     {
@@ -50,9 +50,9 @@ namespace HiTessModelBuilder
     /// 2. 태그 기반 (고급 방식): HiTessModelBuilder.exe --stru "C:\stru.csv" --mesh 300
     /// 3. 혼합 방식 (가장 권장): HiTessModelBuilder.exe "C:\stru.csv" "null" "C:\equip.csv" --mesh 300 --nastran false
     /// </summary>
-    private static AppOptions ParseArguments(string[] args)
+    public static AppOptions ParseArguments(string[] args)
     {
-      // 1. 기본값 초기화 (VS 버깅 시 기본 작동)
+      // 1. 기본값 초기화 (VS 디버깅 시 기본 작동)
       var options = new AppOptions
       {
         StruCsvPath = PathManager.Current.Stru,
@@ -141,7 +141,7 @@ namespace HiTessModelBuilder
       return options;
     }
 
-    private static void RunApplication(AppOptions opt)
+    public static void RunApplication(AppOptions opt)
     {
       string sourceForFileName = opt.StruCsvPath ?? opt.PipeCsvPath ?? "Default_Model";
       string targetPath = opt.StruCsvPath ?? opt.PipeCsvPath ?? opt.EquipCsvPath!;
@@ -166,7 +166,7 @@ namespace HiTessModelBuilder
                 csvDebug: opt.CsvDebug,
                 FeModelDebug: opt.FeModelDebug);
 
-          logger.LogInfo("\n[단계 2] 기하학 및 위상학 힐링 알고리즘 실행");
+          logger.LogInfo("\n[단 2] 기하학 및 위상학 힐링 알고리즘 실행");
           var pipeline = new FeModelProcessPipeline(
               rawCsvDesignData, context, csvFolderPath, sourceForFileName,
               pipelineDebug: opt.PipelineDebug, verboseDebug: opt.VerboseDebug, logger: logger);
