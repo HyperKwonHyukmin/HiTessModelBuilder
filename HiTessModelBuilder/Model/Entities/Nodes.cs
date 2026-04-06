@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,7 +12,14 @@ namespace HiTessModelBuilder.Model.Entities
   {
     // 내부 상태
     private readonly Dictionary<int, Point3D> _nodes = new Dictionary<int, Point3D>();
-    private readonly Dictionary<string, HashSet<int>> _nodeLookup = new Dictionary<string, HashSet<int>>();
+
+    // string 키 대신 Point3D 자체를 키로 사용 (Phase 3-2: GC 압박 제거)
+    // Point3D에 IEquatable + GetHashCode 구현 완료로 Dictionary 키 사용 가능
+    private readonly Dictionary<Point3D, HashSet<int>> _nodeLookup = new Dictionary<Point3D, HashSet<int>>();
+
+    // 좌표→대표 ID 캐시 (AddOrGet의 existingSet.Min() O(N) 순회 제거)
+    private readonly Dictionary<Point3D, int> _nodeRepresentative = new Dictionary<Point3D, int>();
+
     public ICollection<int> Keys => _nodes.Keys;
 
     // 다음에 부여할 Node ID
@@ -35,21 +42,7 @@ namespace HiTessModelBuilder.Model.Entities
       return new Point3D(RoundCoord(x), RoundCoord(y), RoundCoord(z));
     }
 
-    // 저장된 Point3D로부터 lookup key 생성
-    private static string MakeKey(Point3D p)
-    {
-      // 필요하다면 CultureInfo.InvariantCulture를 써도 됨
-      return $"{p.X},{p.Y},{p.Z}";
-    }
-
-    // 외부에서 들어온 좌표(x,y,z)를 반올림 규칙에 맞춰 key 생성
-    private static string MakeKey(double x, double y, double z)
-    {
-      var p = RoundPoint(x, y, z);
-      return MakeKey(p);
-    }
-
-    private void LookupAdd(string key, int nodeID)
+    private void LookupAdd(Point3D key, int nodeID)
     {
       if (!_nodeLookup.TryGetValue(key, out var set))
       {
@@ -57,9 +50,13 @@ namespace HiTessModelBuilder.Model.Entities
         _nodeLookup[key] = set;
       }
       set.Add(nodeID);
+
+      // 첫 등록이거나 대표 ID가 없으면 캐시
+      if (!_nodeRepresentative.ContainsKey(key))
+        _nodeRepresentative[key] = nodeID;
     }
 
-    private void LookupRemove(string key, int nodeID)
+    private void LookupRemove(Point3D key, int nodeID)
     {
       if (!_nodeLookup.TryGetValue(key, out var set))
         return;
@@ -67,7 +64,15 @@ namespace HiTessModelBuilder.Model.Entities
       set.Remove(nodeID);
 
       if (set.Count == 0)
+      {
         _nodeLookup.Remove(key);
+        _nodeRepresentative.Remove(key);
+      }
+      else if (_nodeRepresentative.TryGetValue(key, out int rep) && rep == nodeID)
+      {
+        // 대표 노드가 삭제됐으므로 남아 있는 노드 중 가장 작은 ID로 갱신
+        _nodeRepresentative[key] = set.Min();
+      }
     }
 
     /// <summary>
@@ -77,17 +82,13 @@ namespace HiTessModelBuilder.Model.Entities
     public int AddOrGet(double x, double y, double z)
     {
       Point3D rounded = RoundPoint(x, y, z);
-      string key = MakeKey(rounded);
 
-      if (_nodeLookup.TryGetValue(key, out var existingSet) && existingSet.Count > 0)
-      {
-        // 결정적으로 반환하고 싶으면 Min() 권장 (HashSet은 순서 보장 X)
-        return existingSet.Min();
-      }
+      if (_nodeRepresentative.TryGetValue(rounded, out int repId))
+        return repId;
 
       int newNodeID = _nextNodeID++;
       _nodes[newNodeID] = rounded;
-      LookupAdd(key, newNodeID);
+      LookupAdd(rounded, newNodeID);
 
       LastNodeID = newNodeID;
       return newNodeID;
@@ -103,15 +104,13 @@ namespace HiTessModelBuilder.Model.Entities
       // 기존 nodeID가 이미 있으면, 이전 lookup에서도 빼줘야 무결성 유지됨
       if (_nodes.TryGetValue(nodeID, out var oldPoint))
       {
-        string oldKey = MakeKey(oldPoint);
-        LookupRemove(oldKey, nodeID);
+        LookupRemove(oldPoint, nodeID);
       }
 
       Point3D rounded = RoundPoint(x, y, z);
-      string key = MakeKey(rounded);
 
       _nodes[nodeID] = rounded;
-      LookupAdd(key, nodeID);
+      LookupAdd(rounded, nodeID);
 
       if (nodeID >= _nextNodeID)
         _nextNodeID = nodeID + 1;
@@ -137,24 +136,9 @@ namespace HiTessModelBuilder.Model.Entities
         throw new KeyNotFoundException($"Node ID {nodeID} does not exist.");
 
       _nodes.Remove(nodeID);
-
-      string key = MakeKey(removedNode);
-      LookupRemove(key, nodeID);
-
-      // 삭제된 노드가 마지막 ID였다면 LastNodeID와 _nextNodeID 재조정
-      if (nodeID == LastNodeID)
-      {
-        if (_nodes.Count > 0)
-        {
-          LastNodeID = _nodes.Keys.Max();
-          _nextNodeID = LastNodeID + 1;
-        }
-        else
-        {
-          LastNodeID = 0;
-          _nextNodeID = 1;
-        }
-      }
+      LookupRemove(removedNode, nodeID);
+      // LastNodeID/_nextNodeID는 단조 증가 방식으로 관리 — 삭제 시 O(N) Keys.Max() 재계산 불필요
+      // FE 모델에서 ID 공백은 정상이며 BDF 출력에도 영향 없음
     }
 
     /// <summary>
@@ -163,8 +147,8 @@ namespace HiTessModelBuilder.Model.Entities
     /// </summary>
     public IReadOnlyCollection<int> FindNodeIDs(double x, double y, double z)
     {
-      string key = MakeKey(x, y, z);
-      if (_nodeLookup.TryGetValue(key, out var set))
+      Point3D rounded = RoundPoint(x, y, z);
+      if (_nodeLookup.TryGetValue(rounded, out var set))
         return set;
 
       return Array.Empty<int>();

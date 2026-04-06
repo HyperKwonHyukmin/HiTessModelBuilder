@@ -96,6 +96,19 @@ namespace HiTessModelBuilder.Model.Entities
     public IReadOnlyDictionary<int, Property> AsReadOnly()
       => _properties;
 
+    /// <summary>
+    /// 다음으로 발급될 Property ID의 최소값을 강제로 설정(Jump)합니다.
+    /// 배관(Pipe) Property 등 특정 요소의 ID 대역을 분리할 때 사용합니다.
+    /// </summary>
+    /// <param name="targetId">시작하고자 하는 목표 ID (예: 101)</param>
+    public void AdvanceNextID(int targetId)
+    {
+      if (_nextPropertyID < targetId)
+      {
+        _nextPropertyID = targetId;
+      }
+    }
+
     private static string MakeKey(
       string type,
       IEnumerable<double> dims,

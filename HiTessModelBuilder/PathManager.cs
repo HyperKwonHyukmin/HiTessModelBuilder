@@ -55,14 +55,49 @@ namespace HiTessModelBuilder
     );
 
     // 삼호 임시 테스트 
-    private static readonly (string Stru, string? Pipe, string? Equip) Case7 = (
-     @"C:\Users\HHI\Desktop\temp\846706--struData-D317616_20260223.csv",
-     null,
+    private static readonly (string Stru, string? Pipe, string? Equip) Samho_1 = (
+     @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\Samho\8264\8264-MU5AU-struData-A539863_20260312.csv",
+     @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\Samho\8264\8264-MU5AU-pipeData-A539863_20260312.csv",
+     @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\Samho\8264\8264-MU5AU-euqupData-A539863_20260312.csv"
+    );
+
+    private static readonly (string Stru, string? Pipe, string? Equip) Mipo_1 = (
+     @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\Mipo\Case_01\846706--struData-D317616_20260311.csv",
+     @"C:\Coding\Csharp\Projects\HiTessModelBuilder\HiTessModelBuilder\csv\Mipo\Case_01\846706--pipeData-D317616_20260311.csv",
      null
     );
 
+    private static readonly (string Stru, string? Pipe, string? Equip) MU_Test1 = (
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\02\3515-35020-struData-READONLY_20250731.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\02\3515-35020-pipeData-READONLY_20250731.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\02\3515-35020-equpData-READONLY_20250731.csv"
+    );
 
-    public static (string? Stru, string? Pipe, string? Equip) Current = Case2;
+    private static readonly (string Stru, string? Pipe, string? Equip) MU_Test2 = (
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\03\3515-35030-struData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\03\3515-35030-pipeData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\03\3515-35030-equpData-A476986_20250728.csv"
+    );
+
+    private static readonly (string Stru, string? Pipe, string? Equip) MU_Test3 = (
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\09\3515-35090-struData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\09\3515-35090-pipeData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\09\3515-35090-equpData-A476986_20250728.csv"
+    );
+
+    private static readonly (string Stru, string? Pipe, string? Equip) MU_Test4 = (
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\21\3515-35210-struData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\21\3515-35210-pipeData-A476986_20250728.csv",
+     null
+    );
+
+    private static readonly (string Stru, string? Pipe, string? Equip) MU_Test5 = (
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\22\3515-35220-struData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\22\3515-35220-pipeData-A476986_20250728.csv",
+     @"C:\Coding\Csharp\Projects\ModuleGroupUnitAnalysis\KangSangHunCSV\HiTessModelBuilderTest\3515\22\3515-35220-equpData-A476986_20250728.csv"
+    );
+
+    public static (string? Stru, string? Pipe, string? Equip) Current = Case4;
 
     
   }

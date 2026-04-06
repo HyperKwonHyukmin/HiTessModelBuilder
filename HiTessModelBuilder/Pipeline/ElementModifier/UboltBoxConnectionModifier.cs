@@ -1,5 +1,6 @@
 ﻿using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
+using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,6 +48,16 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         log($"==================================================\n");
       }
 
+      // ★ [Phase 4-4] ElementSpatialHash로 BOX UBOLT별 구조물 전수 탐색 제거
+      // struElements와 spatialHash를 루프 바깥에서 1회 구축하여 O(U×S) → O(U×logS) 개선
+      var struElements = context.Elements.Where(kv =>
+          kv.Value.ExtraData != null &&
+          kv.Value.ExtraData.TryGetValue("Classification", out var struCls) && struCls == "Stru"
+      ).ToList();
+      var struEidSet = new HashSet<int>(struElements.Select(kv => kv.Key));
+      double hashInflate = opt.ExtraMargin;
+      var spatialHash = new ElementSpatialHash(context.Elements, context.Nodes, (opt.MaxSearchDistance + opt.ExtraMargin) * 2, hashInflate);
+
       foreach (var ubolt in uboltBoxes)
       {
         int rigidId = ubolt.Key;
@@ -88,27 +99,25 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         var vRight = CrossProduct(vX, vGlobalUp).Normalize();
         var vUp = CrossProduct(vRight, vX).Normalize();
 
-        // [Step 3] 구조물 부재(Stru)를 순회하며 4방향 버킷에 담기
-        var struElements = context.Elements.Where(kv =>
-            kv.Value.ExtraData != null &&
-            kv.Value.ExtraData.TryGetValue("Classification", out var cls) && cls == "Stru"
-        ).ToList();
-
+        // [Step 3] 구조물 부재(Stru)를 SpatialHash로 탐색하여 4방향 버킷에 담기
         var topCands = new List<(int Eid, double Dist, Point3D ProjPoint)>();
         var bottomCands = new List<(int Eid, double Dist, Point3D ProjPoint)>();
         var rightCands = new List<(int Eid, double Dist, Point3D ProjPoint)>();
         var leftCands = new List<(int Eid, double Dist, Point3D ProjPoint)>();
 
-        foreach (var struKv in struElements)
+        var queryBB = BoundingBox.FromSegment(pIndep, pIndep, dynamicSearchDist);
+        foreach (var targetEid in spatialHash.QueryBBox(queryBB))
         {
-          var elem = struKv.Value;
+          if (!struEidSet.Contains(targetEid)) continue;
+
+          var elem = context.Elements[targetEid];
           if (elem.NodeIDs.Count < 2) continue;
 
           var pA = context.Nodes[elem.NodeIDs.First()];
           var pB = context.Nodes[elem.NodeIDs.Last()];
 
           // 수선의 발과 거리 계산
-          double dist = DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
+          double dist = ProjectionUtils.DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
           if (dist > dynamicSearchDist) continue;
 
           Vector3D diff = projPoint - pIndep;
@@ -120,22 +129,22 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
           if (Math.Abs(u) >= Math.Abs(r))
           {
-            if (u >= 0) topCands.Add((struKv.Key, dist, projPoint));
-            else bottomCands.Add((struKv.Key, dist, projPoint));
+            if (u >= 0) topCands.Add((targetEid, dist, projPoint));
+            else bottomCands.Add((targetEid, dist, projPoint));
           }
           else
           {
-            if (r >= 0) rightCands.Add((struKv.Key, dist, projPoint));
-            else leftCands.Add((struKv.Key, dist, projPoint));
+            if (r >= 0) rightCands.Add((targetEid, dist, projPoint));
+            else leftCands.Add((targetEid, dist, projPoint));
           }
         }
 
-        // [Step 4] 각 4개 구역에서 가장 거리가 짧은 부재 1개씩만 선택
+        // [Step 4] 각 4개 구역에서 가장 거리가 짧은 부재 1개씩만 선택 (MinBy로 정렬 중복 제거)
         var selectedTargets = new List<(int Eid, double Dist, Point3D ProjPoint, string Dir)>();
-        if (topCands.Any()) selectedTargets.Add((topCands.OrderBy(x => x.Dist).First().Eid, topCands.OrderBy(x => x.Dist).First().Dist, topCands.OrderBy(x => x.Dist).First().ProjPoint, "윗쪽"));
-        if (bottomCands.Any()) selectedTargets.Add((bottomCands.OrderBy(x => x.Dist).First().Eid, bottomCands.OrderBy(x => x.Dist).First().Dist, bottomCands.OrderBy(x => x.Dist).First().ProjPoint, "아랫쪽"));
-        if (rightCands.Any()) selectedTargets.Add((rightCands.OrderBy(x => x.Dist).First().Eid, rightCands.OrderBy(x => x.Dist).First().Dist, rightCands.OrderBy(x => x.Dist).First().ProjPoint, "오른쪽"));
-        if (leftCands.Any()) selectedTargets.Add((leftCands.OrderBy(x => x.Dist).First().Eid, leftCands.OrderBy(x => x.Dist).First().Dist, leftCands.OrderBy(x => x.Dist).First().ProjPoint, "왼쪽"));
+        if (topCands.Count > 0) { var best = topCands.MinBy(x => x.Dist)!; selectedTargets.Add((best.Eid, best.Dist, best.ProjPoint, "윗쪽")); }
+        if (bottomCands.Count > 0) { var best = bottomCands.MinBy(x => x.Dist)!; selectedTargets.Add((best.Eid, best.Dist, best.ProjPoint, "아랫쪽")); }
+        if (rightCands.Count > 0) { var best = rightCands.MinBy(x => x.Dist)!; selectedTargets.Add((best.Eid, best.Dist, best.ProjPoint, "오른쪽")); }
+        if (leftCands.Count > 0) { var best = leftCands.MinBy(x => x.Dist)!; selectedTargets.Add((best.Eid, best.Dist, best.ProjPoint, "왼쪽")); }
 
         // =====================================================================
         // ★ [신규 추가] 배관 노드(Independent Node)를 BOX 평면으로 슬라이딩 정렬
@@ -225,23 +234,5 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       );
     }
 
-    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
-    {
-      var ab = b - a;
-      var ap = p - a;
-
-      double lengthSq = ab.Dot(ab);
-      if (lengthSq < 1e-12)
-      {
-        projPoint = a;
-        return (p - a).Magnitude();
-      }
-
-      double t = ap.Dot(ab) / lengthSq;
-      t = Math.Max(0.0, Math.Min(1.0, t)); // 선분 밖으로 벗어나지 않게 클램핑
-
-      projPoint = a + (ab * t);
-      return (p - projPoint).Magnitude();
-    }
   }
 }

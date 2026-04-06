@@ -48,6 +48,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       int rbeCreatedCount = 0;
       var newRbeElements = new List<(int n1, int n2, int sourceEid, int targetEid)>();
 
+      // ★ [Phase 4-3] ElementSpatialHash로 Free Node별 전체 요소 전수 탐색 제거
+      // inflate = ExtraMargin + 500mm (단면 최대 치수 상한 추정치)
+      double hashInflate = opt.ExtraMargin + 500.0;
+      var spatialHash = new ElementSpatialHash(elements, nodes, hashInflate * 2, hashInflate);
+
+      // 단면 치수 캐시 (PropertyDimensionHelper 중복 호출 제거)
+      var propDimCache = new Dictionary<int, double>();
+
       // 2. 각 Free Node에 대해 SearchDim 내에 있는 최적의 Target Element 탐색
       foreach (var freeNodeId in freeNodes)
       {
@@ -57,7 +65,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         Point3D bestProjPoint = default;
         int bestTargetEid = -1;
 
-        foreach (var targetEid in elements.Keys)
+        // Free Node 주변의 후보 요소만 탐색
+        var queryBB = BoundingBox.FromSegment(pFree, pFree, hashInflate);
+        foreach (var targetEid in spatialHash.QueryBBox(queryBB))
         {
           var targetElem = elements[targetEid];
           if (targetElem.NodeIDs.Count < 2) continue;
@@ -66,13 +76,17 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           var pA = nodes[targetElem.NodeIDs.First()];
           var pB = nodes[targetElem.NodeIDs.Last()];
 
-          // 타겟 부재의 SearchDim 계산
+          // 타겟 부재의 SearchDim 계산 (캐시 활용)
           var prop = properties[targetElem.PropertyID];
-          double searchDim = PropertyDimensionHelper.GetMaxCrossSectionDim(prop);
+          if (!propDimCache.TryGetValue(targetElem.PropertyID, out double searchDim))
+          {
+            searchDim = PropertyDimensionHelper.GetMaxCrossSectionDim(prop);
+            propDimCache[targetElem.PropertyID] = searchDim;
+          }
           double allowedDist = searchDim + opt.ExtraMargin;
 
           // 수선의 발(Projection Point)과 최단 거리 계산
-          double dist = DistancePointToSegment(pFree, pA, pB, out Point3D projPoint, out double t);
+          double dist = ProjectionUtils.DistancePointToSegment(pFree, pA, pB, out Point3D projPoint, out double t);
 
           // 허용 반경 이내이고, 가장 가까우며, 수선의 발이 선분 내부(0 <= t <= 1)에 떨어지는 경우만 채택
           if (dist <= allowedDist && dist < bestDist && t >= -1e-4 && t <= 1.0001)
@@ -121,29 +135,5 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       return rbeCreatedCount;
     }
 
-    /// <summary>
-    /// 점 P에서 선분 AB에 내린 수선의 발(projPoint)과 그 매개변수 t, 그리고 최단 거리를 반환합니다.
-    /// </summary>
-    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint, out double t)
-    {
-      var ab = b - a;
-      var ap = p - a;
-
-      double lengthSq = ab.Dot(ab);
-      if (lengthSq < 1e-12)
-      {
-        projPoint = a;
-        t = 0.0;
-        return (p - a).Magnitude();
-      }
-
-      t = ap.Dot(ab) / lengthSq;
-
-      // 수선의 발이 선분 밖을 벗어나지 않도록 클램핑
-      double clampedT = Math.Max(0.0, Math.Min(1.0, t));
-
-      projPoint = a + (ab * clampedT);
-      return (p - projPoint).Magnitude();
-    }
   }
 }

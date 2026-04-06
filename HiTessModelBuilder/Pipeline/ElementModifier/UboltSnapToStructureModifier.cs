@@ -1,5 +1,6 @@
 ﻿using HiTessModelBuilder.Model.Entities;
 using HiTessModelBuilder.Model.Geometry;
+using HiTessModelBuilder.Pipeline.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -74,6 +75,12 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           )
       ).ToList();
 
+      // ★ [Phase 4-4] ElementSpatialHash로 U-Bolt별 구조물 전수 탐색 제거
+      // inflate = ExtraMargin으로 요소 bbox를 살짝 확장, cellSize는 넉넉하게 설정
+      var struEidSet = new HashSet<int>(struElements.Select(kv => kv.Key));
+      double hashInflate = opt.ExtraMargin;
+      var spatialHash = new ElementSpatialHash(context.Elements, context.Nodes, (opt.MaxSearchRadius + opt.ExtraMargin) * 2, hashInflate);
+
       foreach (var ubolt in ubolts)
       {
         int rigidId = ubolt.Key;
@@ -97,49 +104,55 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         int bestStruTargetEid = -1;
 
         // =========================================================================
-        // [1차 탐색] 기존과 동일하게 기본 반경 내에서 가장 가까운 구조물 탐색
+        // [1차 탐색] 기본 반경 내에서 가장 가까운 구조물 탐색 (SpatialHash 활용)
         // =========================================================================
-        foreach (var struKv in struElements)
+        var queryBB1 = BoundingBox.FromSegment(pIndep, pIndep, dynamicSearchRadius);
+        foreach (var targetEid in spatialHash.QueryBBox(queryBB1))
         {
-          var elem = struKv.Value;
+          if (!struEidSet.Contains(targetEid)) continue;
+
+          var elem = context.Elements[targetEid];
           if (elem.NodeIDs.Count < 2) continue;
 
           var pA = context.Nodes[elem.NodeIDs.First()];
           var pB = context.Nodes[elem.NodeIDs.Last()];
 
-          double dist = DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
+          double dist = ProjectionUtils.DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
 
           if (dist <= dynamicSearchRadius && dist < bestDist)
           {
             bestDist = dist;
             bestHitStruPoint = projPoint;
-            bestStruTargetEid = struKv.Key;
+            bestStruTargetEid = targetEid;
           }
         }
 
         // =========================================================================
-        // [2차 탐색] 1차 탐색 실패 시, 지름(반지름x2)까지 범위를 넓혀 튼튼한 부재 우선 탐색
+        // [2차 탐색] 1차 탐색 실패 시, 지름(반지름x2)까지 범위를 넓혀 튼튼한 부재 우선 탐색 (SpatialHash 활용)
         // =========================================================================
         bool usedExpandedSearch = false;
         if (bestStruTargetEid == -1)
         {
           var expandedCandidates = new List<(int Eid, double Dist, Point3D ProjPoint, double MaxDim)>();
 
-          foreach (var struKv in struElements)
+          var queryBB2 = BoundingBox.FromSegment(pIndep, pIndep, expandedSearchRadius);
+          foreach (var targetEid in spatialHash.QueryBBox(queryBB2))
           {
-            var elem = struKv.Value;
+            if (!struEidSet.Contains(targetEid)) continue;
+
+            var elem = context.Elements[targetEid];
             if (elem.NodeIDs.Count < 2) continue;
 
             var pA = context.Nodes[elem.NodeIDs.First()];
             var pB = context.Nodes[elem.NodeIDs.Last()];
 
-            double dist = DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
+            double dist = ProjectionUtils.DistancePointToSegment(pIndep, pA, pB, out Point3D projPoint);
 
             if (dist <= expandedSearchRadius)
             {
               // ElementExtensions에 있는 기능 활용: 구조물의 단면 치수(가장 큰 값) 추출
               double maxDim = elem.GetReferencedPropertyDim(context.Properties);
-              expandedCandidates.Add((struKv.Key, dist, projPoint, maxDim));
+              expandedCandidates.Add((targetEid, dist, projPoint, maxDim));
             }
           }
 
@@ -170,7 +183,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           {
             var pPipeA = context.Nodes[ownerPipeElem.NodeIDs.First()];
             var pPipeB = context.Nodes[ownerPipeElem.NodeIDs.Last()];
-            DistancePointToSegment(bestHitStruPoint, pPipeA, pPipeB, out bestProjPipePoint);
+            ProjectionUtils.DistancePointToSegment(bestHitStruPoint, pPipeA, pPipeB, out bestProjPipePoint);
           }
           int newIndepNodeId = context.Nodes.AddOrGet(bestProjPipePoint.X, bestProjPipePoint.Y, bestProjPipePoint.Z);
 
@@ -224,19 +237,5 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       return snappedCount;
     }
 
-    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
-    {
-      var ab = b - a;
-      var ap = p - a;
-      double lengthSq = ab.Dot(ab);
-      if (lengthSq < 1e-12)
-      {
-        projPoint = a;
-        return (p - a).Magnitude();
-      }
-      double t = Math.Max(0.0, Math.Min(1.0, ap.Dot(ab) / lengthSq));
-      projPoint = a + (ab * t);
-      return (p - projPoint).Magnitude();
-    }
   }
 }

@@ -91,5 +91,38 @@ namespace HiTessModelBuilder.Pipeline.Utils
       double t = Point3dUtils.Dot(dx, vUnit);
       return Point3dUtils.Add(P0, Point3dUtils.Mul(vUnit, t));
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // DistancePointToSegment 편의 오버로드
+    // 여러 Modifier에 중복 구현되어 있던 private static 헬퍼를 공용 유틸로 통합합니다.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 점 P에서 선분 AB까지의 최단 거리를 반환합니다.
+    /// </summary>
+    public static double DistancePointToSegment(Point3D p, Point3D a, Point3D b)
+        => ProjectPointToSegment(p, a, b).Distance;
+
+    /// <summary>
+    /// 점 P에서 선분 AB에 내린 수선의 발(<paramref name="projPoint"/>)과 최단 거리를 반환합니다.
+    /// </summary>
+    public static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
+    {
+      var r = ProjectPointToSegment(p, a, b);
+      projPoint = r.ProjectedPoint;
+      return r.Distance;
+    }
+
+    /// <summary>
+    /// 점 P에서 선분 AB에 내린 수선의 발(<paramref name="projPoint"/>),
+    /// 선분 매개변수(<paramref name="t"/>), 최단 거리를 반환합니다.
+    /// </summary>
+    public static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint, out double t)
+    {
+      var r = ProjectPointToSegment(p, a, b);
+      projPoint = r.ProjectedPoint;
+      t = r.T;
+      return r.Distance;
+    }
   }
 }

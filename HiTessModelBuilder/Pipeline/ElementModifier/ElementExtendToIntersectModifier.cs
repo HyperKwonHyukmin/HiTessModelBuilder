@@ -48,6 +48,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         }
       }
 
+      // ★ [Phase 4-2] ElementSpatialHash로 Free Node별 전체 요소 전수 탐색 제거
+      // inflate = ExtraMargin + 500mm (단면 최대 치수 상한 추정치)로 넉넉하게 설정
+      double hashInflate = opt.ExtraMargin + 500.0;
+      var spatialHash = new ElementSpatialHash(elements, nodes, hashInflate * 2, hashInflate);
+
       int movedNodesCount = 0;
 
       if (opt.VerboseDebug)
@@ -93,8 +98,9 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         int bestTargetEid = -1;
         double bestDistToTarget = 0;
 
-        // 모든 부재를 순회하며 ElementA(타겟 부재) 후보 찾기
-        foreach (var elemA_Id in elements.Keys)
+        // ★ [Phase 4-2] Free Node 주변의 후보 요소만 탐색 (전수 순회 제거)
+        var queryBB = BoundingBox.FromSegment(pFree, pFree, hashInflate);
+        foreach (var elemA_Id in spatialHash.QueryBBox(queryBB))
         {
           if (elemA_Id == elemB_Id) continue;
           
@@ -130,7 +136,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
           double totalSearchRadiusA = searchDimA + opt.ExtraMargin;
 
           // [Condition 1] ElementA의 SearchDim 영역 이내에 해당 Node가 물리적으로 존재하는가?
-          double distNodeToElementA = DistancePointToSegment(pFree, pA1, pA2);
+          double distNodeToElementA = ProjectionUtils.DistancePointToSegment(pFree, pA1, pA2);
           if (distNodeToElementA > totalSearchRadiusA)
           {
             continue; // 영역 밖이면 아예 연장(교차) 검사를 하지 않음
@@ -191,24 +197,6 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       }
       return movedNodesCount;
       
-    }
-
-    /// <summary>
-    /// 점 P와 선분 AB 사이의 최단 거리를 계산합니다. (영역 진입 검사용 - Condition 1)
-    /// </summary>
-    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b)
-    {
-        var ab = b - a; 
-        var ap = p - a; 
-
-        double lengthSq = ab.Dot(ab);
-        if (lengthSq < 1e-12) return (p - a).Magnitude(); 
-
-        double t = ap.Dot(ab) / lengthSq;
-        t = Math.Max(0.0, Math.Min(1.0, t));
-
-        var proj = a + (ab * t);
-        return (p - proj).Magnitude();
     }
 
     /// <summary>

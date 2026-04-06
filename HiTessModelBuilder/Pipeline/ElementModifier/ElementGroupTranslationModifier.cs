@@ -133,11 +133,11 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
 
       if (filteredSlaves.Count == 0) return 0;
 
-      // 2. 방향성 및 근접도 기반 사전 그룹화
-      var metaSlaveGroups = PreGroupSlavesByProximityAndIntent(context, filteredSlaves, masterElementIds, opt);
+      // 2. 방향성 및 근접도 기반 사전 그룹화 (nodeDegree를 먼저 계산하여 재사용)
+      var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
+      var metaSlaveGroups = PreGroupSlavesByProximityAndIntent(context, filteredSlaves, masterElementIds, nodeDegree, opt);
 
       int translatedCount = 0;
-      var nodeDegree = NodeDegreeInspector.BuildNodeDegree(context);
 
       // 3. 검증된 Meta-Group 이동 처리
       foreach (var slaveGroup in metaSlaveGroups)
@@ -160,13 +160,14 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
     }
 
     private static List<List<int>> PreGroupSlavesByProximityAndIntent(
-        FeModelContext context, List<List<int>> slaves, HashSet<int> masterIds, Options opt)
+        FeModelContext context, List<List<int>> slaves, HashSet<int> masterIds,
+        Dictionary<int, int> nodeDegree, Options opt)
     {
       if (slaves.Count <= 1) return slaves;
 
       var slaveIntents = slaves.Select(s => new {
         Elements = s,
-        Vector = CalculateCandidateVector(context, s, masterIds, opt)
+        Vector = CalculateCandidateVector(context, s, masterIds, nodeDegree, opt)
       }).ToList();
 
       var uf = new UnionFind(Enumerable.Range(0, slaves.Count).ToList());
@@ -188,9 +189,10 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       ).ToList();
     }
 
-    private static Vector3D CalculateCandidateVector(FeModelContext context, List<int> slaveElements, HashSet<int> masterIds, Options opt)
+    private static Vector3D CalculateCandidateVector(FeModelContext context, List<int> slaveElements,
+        HashSet<int> masterIds, Dictionary<int, int> nodeDegree, Options opt)
     {
-      var (vec, _, target, _) = CalculateBestMove(context, slaveElements, masterIds, NodeDegreeInspector.BuildNodeDegree(context), opt);
+      var (vec, _, target, _) = CalculateBestMove(context, slaveElements, masterIds, nodeDegree, opt);
       return target == -1 ? new Vector3D(0, 0, 0) : vec.Normalize();
     }
 
@@ -211,7 +213,7 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
         foreach (var meid in masters)
         {
           var masterElem = context.Elements[meid];
-          double dist = DistancePointToSegment(pFree, context.Nodes[masterElem.NodeIDs[0]], context.Nodes[masterElem.NodeIDs[1]], out Point3D proj);
+          double dist = ProjectionUtils.DistancePointToSegment(pFree, context.Nodes[masterElem.NodeIDs[0]], context.Nodes[masterElem.NodeIDs[1]], out Point3D proj);
 
           // 이 부분에서 Property 참조 오류를 방지하기 위해 TryGetValue 사용 권장
           double maxCrossSection = 0.0;
@@ -242,14 +244,5 @@ namespace HiTessModelBuilder.Pipeline.ElementModifier
       return nodes1.Min(n1 => nodes2.Min(n2 => (context.Nodes[n1] - context.Nodes[n2]).Magnitude()));
     }
 
-    private static double DistancePointToSegment(Point3D p, Point3D a, Point3D b, out Point3D projPoint)
-    {
-      var ab = b - a; var ap = p - a;
-      double lenSq = ab.Dot(ab);
-      if (lenSq < 1e-12) { projPoint = a; return (p - a).Magnitude(); }
-      double t = Math.Max(0, Math.Min(1, ap.Dot(ab) / lenSq));
-      projPoint = a + (ab * t);
-      return (p - projPoint).Magnitude();
-    }
   }
 }

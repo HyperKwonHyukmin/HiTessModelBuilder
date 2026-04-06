@@ -62,6 +62,24 @@ namespace HiTessModelBuilder.Pipeline.Utils
       return set;
     }
 
+    /// <summary>
+    /// 지정된 바운딩 박스와 교차하는 셀에 등록된 모든 요소 ID를 반환합니다.
+    /// 특정 점/반경 주변의 요소를 탐색할 때 사용합니다.
+    /// </summary>
+    public IEnumerable<int> QueryBBox(BoundingBox bbox)
+    {
+      var set = new HashSet<int>();
+      foreach (var key in CoveredCells(bbox))
+      {
+        if (_map.TryGetValue(key, out var list))
+        {
+          for (int i = 0; i < list.Count; i++)
+            set.Add(list[i]);
+        }
+      }
+      return set;
+    }
+
     private IEnumerable<(int, int, int)> CoveredCells(BoundingBox bb)
     {
       var (ix0, iy0, iz0) = Key(bb.Min);

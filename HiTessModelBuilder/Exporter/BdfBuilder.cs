@@ -14,7 +14,7 @@ namespace HiTessModelBuilder.Exporter
     public FeModelContext feModelContext;
     int LoadCase;
     public List<int> SpcList = new List<int>();
-    //public List<ForceLoad> ForceLoads = new List<ForceLoad>();
+    public bool ForceRigid123456 { get; set; }
 
     // BDF에 입력된 텍스트 라인모음 리스트
     public List<String> BdfLines = new List<String>();
@@ -98,35 +98,38 @@ namespace HiTessModelBuilder.Exporter
     {
       foreach (var node in this.feModelContext.Nodes)
       {
-        string nodeText = $"{BdfFormatFields.FormatField("GRID")}"
-          + $"{BdfFormatFields.FormatField(node.Key, "right")}"
-          + $"{BdfFormatFields.FormatField("")}"
-          + $"{BdfFormatFields.FormatField(node.Value.X, "right")}"
-          + $"{BdfFormatFields.FormatField(node.Value.Y, "right")}"
-          + $"{BdfFormatFields.FormatField(node.Value.Z, "right")}";
-        BdfLines.Add(nodeText);
+        var sb = new StringBuilder();
+        sb.Append(BdfFormatFields.FormatField("GRID"));
+        sb.Append(BdfFormatFields.FormatField(node.Key, "right"));
+        sb.Append(BdfFormatFields.FormatField(""));
+        sb.Append(BdfFormatFields.FormatField(node.Value.X, "right"));
+        sb.Append(BdfFormatFields.FormatField(node.Value.Y, "right"));
+        sb.Append(BdfFormatFields.FormatField(node.Value.Z, "right"));
+        BdfLines.Add(sb.ToString());
       }
 
       foreach (var element in this.feModelContext.Elements)
-      { 
+      {
         double oriX = 0.0, oriY = 0.0, oriZ = 1.0;
 
         if (element.Value.ExtraData.TryGetValue("OriX", out string sX))
-          double.TryParse(sX, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out oriX);
+          double.TryParse(sX, NumberStyles.Any, CultureInfo.InvariantCulture, out oriX);
         if (element.Value.ExtraData.TryGetValue("OriY", out string sY))
-          double.TryParse(sY, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out oriY);
+          double.TryParse(sY, NumberStyles.Any, CultureInfo.InvariantCulture, out oriY);
         if (element.Value.ExtraData.TryGetValue("OriZ", out string sZ))
-          double.TryParse(sZ, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out oriZ);
-        string elementText = $"{BdfFormatFields.FormatField("CBEAM")}"
-         + $"{BdfFormatFields.FormatField(element.Key, "right")}"
-         + $"{BdfFormatFields.FormatField(element.Value.PropertyID, "right")}"
-         + $"{BdfFormatFields.FormatField(element.Value.NodeIDs[0], "right")}"
-         + $"{BdfFormatFields.FormatField(element.Value.NodeIDs[1], "right")}"
-          + $"{BdfFormatFields.FormatField(oriX, "right")}" // X1 (oriX)
-         + $"{BdfFormatFields.FormatField(oriY, "right")}" // X2 (oriY)
-         + $"{BdfFormatFields.FormatField(oriZ, "right")}" // X3 (oriZ)
-         + $"{BdfFormatFields.FormatField("BGG", "right")}";
-        BdfLines.Add(elementText);
+          double.TryParse(sZ, NumberStyles.Any, CultureInfo.InvariantCulture, out oriZ);
+
+        var sb = new StringBuilder();
+        sb.Append(BdfFormatFields.FormatField("CBEAM"));
+        sb.Append(BdfFormatFields.FormatField(element.Key, "right"));
+        sb.Append(BdfFormatFields.FormatField(element.Value.PropertyID, "right"));
+        sb.Append(BdfFormatFields.FormatField(element.Value.NodeIDs[0], "right"));
+        sb.Append(BdfFormatFields.FormatField(element.Value.NodeIDs[1], "right"));
+        sb.Append(BdfFormatFields.FormatField(oriX, "right")); // X1
+        sb.Append(BdfFormatFields.FormatField(oriY, "right")); // X2
+        sb.Append(BdfFormatFields.FormatField(oriZ, "right")); // X3
+        sb.Append(BdfFormatFields.FormatField("BGG", "right"));
+        BdfLines.Add(sb.ToString());
       }
     }
 
@@ -134,132 +137,69 @@ namespace HiTessModelBuilder.Exporter
     {
       foreach (var property in this.feModelContext.Properties)
       {
-        string type = property.Value.Type.ToUpper(); // 대소문자 무시
-     
-        // 1. L
-        if (type == "L")
+        string type = property.Value.Type.ToUpper();
+        var dims = property.Value.Dim;
+
+        // PBEAML 헤더 줄 (공통)
+        var header = new StringBuilder();
+        header.Append(BdfFormatFields.FormatField("PBEAML"));
+        header.Append(BdfFormatFields.FormatField(property.Key, "right"));
+        header.Append(BdfFormatFields.FormatField(property.Value.MaterialID, "right"));
+        header.Append(BdfFormatFields.FormatField("", "right"));
+        header.Append(BdfFormatFields.FormatField(type, "right"));
+        BdfLines.Add(header.ToString());
+
+        // PBEAML 치수 줄 (타입별 분기)
+        var dimLine = new StringBuilder();
+        dimLine.Append(BdfFormatFields.FormatField(""));
+        switch (type)
         {
-          string propertyText = $"{BdfFormatFields.FormatField("PBEAML")}"
-            + $"{BdfFormatFields.FormatField(property.Key, "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.MaterialID, "right")}"
-            + $"{BdfFormatFields.FormatField("", "right")}"
-            + $"{BdfFormatFields.FormatField("L", "right")}";
-          BdfLines.Add(propertyText);
-
-          propertyText = $"{BdfFormatFields.FormatField("")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[0], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[1], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[2], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[2], "right")}"
-            + $"{BdfFormatFields.FormatField("0.0", "right")}"; 
-
-          BdfLines.Add(propertyText);
+          case "L":
+            // L형강: DIM3(웹 두께)을 두 번 기재하는 Nastran 규격
+            dimLine.Append(BdfFormatFields.FormatField(dims[0], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[1], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[2], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[2], "right"));
+            dimLine.Append(BdfFormatFields.FormatField("0.0", "right"));
+            break;
+          case "H":
+          case "CHAN":
+            dimLine.Append(BdfFormatFields.FormatField(dims[0], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[1], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[2], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[3], "right"));
+            dimLine.Append(BdfFormatFields.FormatField("0.0", "right"));
+            break;
+          case "BAR":
+          case "TUBE":
+            dimLine.Append(BdfFormatFields.FormatField(dims[0], "right"));
+            dimLine.Append(BdfFormatFields.FormatField(dims[1], "right"));
+            dimLine.Append(BdfFormatFields.FormatField("0.0", "right"));
+            break;
+          case "ROD":
+            dimLine.Append(BdfFormatFields.FormatField(dims[0], "right"));
+            dimLine.Append(BdfFormatFields.FormatField("0.0", "right"));
+            break;
+          default:
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"[경고] 알 수 없는 단면 타입 '{type}' (PID={property.Key}) - PBEAML 치수 줄 생략됨.");
+            Console.ResetColor();
+            continue;
         }
-        // 2. H
-        else if (type == "H")
-        {
-          string propertyText = $"{BdfFormatFields.FormatField("PBEAML")}"
-            + $"{BdfFormatFields.FormatField(property.Key, "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.MaterialID, "right")}"
-            + $"{BdfFormatFields.FormatField("", "right")}"
-            + $"{BdfFormatFields.FormatField("H", "right")}";
-          BdfLines.Add(propertyText);
-
-          propertyText = $"{BdfFormatFields.FormatField("")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[0], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[1], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[2], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[3], "right")}"
-            + $"{BdfFormatFields.FormatField("0.0", "right")}";
-
-          BdfLines.Add(propertyText);
-        }
-
-        // 3. CHAN
-        else if (type == "CHAN")
-        {
-          string propertyText = $"{BdfFormatFields.FormatField("PBEAML")}"
-            + $"{BdfFormatFields.FormatField(property.Key, "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.MaterialID, "right")}"
-            + $"{BdfFormatFields.FormatField("", "right")}"
-            + $"{BdfFormatFields.FormatField("CHAN", "right")}";
-          BdfLines.Add(propertyText);
-
-          propertyText = $"{BdfFormatFields.FormatField("")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[0], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[1], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[2], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[3], "right")}"
-            + $"{BdfFormatFields.FormatField("0.0", "right")}";
-
-          BdfLines.Add(propertyText);
-        }
-
-        // 4. BAR
-        else if (type == "BAR")
-        {
-          string propertyText = $"{BdfFormatFields.FormatField("PBEAML")}"
-            + $"{BdfFormatFields.FormatField(property.Key, "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.MaterialID, "right")}"
-            + $"{BdfFormatFields.FormatField("", "right")}"
-            + $"{BdfFormatFields.FormatField("BAR", "right")}";
-          BdfLines.Add(propertyText);
-
-          propertyText = $"{BdfFormatFields.FormatField("")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[0], "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[1], "right")}"
-            + $"{BdfFormatFields.FormatField("0.0", "right")}";
-
-          BdfLines.Add(propertyText);
-        }
-
-        // 5. ROD
-        else if (type == "ROD")
-        {
-          string propertyText = $"{BdfFormatFields.FormatField("PBEAML")}"
-            + $"{BdfFormatFields.FormatField(property.Key, "right")}"
-            + $"{BdfFormatFields.FormatField(property.Value.MaterialID, "right")}"
-            + $"{BdfFormatFields.FormatField("", "right")}"
-            + $"{BdfFormatFields.FormatField("ROD", "right")}";
-          BdfLines.Add(propertyText);
-
-          propertyText = $"{BdfFormatFields.FormatField("")}"
-            + $"{BdfFormatFields.FormatField(property.Value.Dim[0], "right")}"
-            + $"{BdfFormatFields.FormatField("0.0", "right")}";
-
-          BdfLines.Add(propertyText);
-        }      
-
-        // 5. BAR
-        else if (type == "TUBE")
-      {
-        string propertyText = $"{BdfFormatFields.FormatField("PBEAML")}"
-          + $"{BdfFormatFields.FormatField(property.Key, "right")}"
-          + $"{BdfFormatFields.FormatField(property.Value.MaterialID, "right")}"
-          + $"{BdfFormatFields.FormatField("", "right")}"
-          + $"{BdfFormatFields.FormatField("TUBE", "right")}";
-        BdfLines.Add(propertyText);
-
-        propertyText = $"{BdfFormatFields.FormatField("")}"
-          + $"{BdfFormatFields.FormatField(property.Value.Dim[0], "right")}"
-          + $"{BdfFormatFields.FormatField(property.Value.Dim[1], "right")}"
-          + $"{BdfFormatFields.FormatField("0.0", "right")}";
-
-        BdfLines.Add(propertyText);
+        BdfLines.Add(dimLine.ToString());
       }
-    }
 
       // Material 출력
       foreach (var material in this.feModelContext.Materials)
       {
-        string materialText = $"{BdfFormatFields.FormatField("MAT1")}"
-            + $"{BdfFormatFields.FormatField(material.Key, "right")}"
-            + $"{BdfFormatFields.FormatField(material.Value.E, "right")}"
-            + $"{BdfFormatFields.FormatField("")}"
-            + $"{BdfFormatFields.FormatField(material.Value.Nu, "right")}"
-            + $"{BdfFormatFields.FormatField(material.Value.Rho, "right", true)}";
-
-        BdfLines.Add(materialText);
+        var sb = new StringBuilder();
+        sb.Append(BdfFormatFields.FormatField("MAT1"));
+        sb.Append(BdfFormatFields.FormatField(material.Key, "right"));
+        sb.Append(BdfFormatFields.FormatField(material.Value.E, "right"));
+        sb.Append(BdfFormatFields.FormatField(""));
+        sb.Append(BdfFormatFields.FormatField(material.Value.Nu, "right"));
+        sb.Append(BdfFormatFields.FormatField(material.Value.Rho, "right", true));
+        BdfLines.Add(sb.ToString());
       }
     }
 

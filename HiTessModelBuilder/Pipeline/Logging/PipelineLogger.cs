@@ -12,6 +12,7 @@ namespace HiTessModelBuilder.Services.Logging
   {
     private readonly StreamWriter _fileWriter;
     private readonly string _logFilePath;
+    private readonly TextWriter _originalConsoleOut;
 
     public PipelineLogger(string outputDirectory, string baseFileName)
     {
@@ -27,6 +28,9 @@ namespace HiTessModelBuilder.Services.Logging
       {
         AutoFlush = true
       };
+
+      _originalConsoleOut = Console.Out;
+      Console.SetOut(new DualTextWriter(_originalConsoleOut, _fileWriter));
 
       LogInfo($"[System] 로그 기록 시작: {_logFilePath}");
     }
@@ -85,7 +89,7 @@ namespace HiTessModelBuilder.Services.Logging
       string fullMessage = timePrefix + message;
 
       // 1. 파일 쓰기
-      _fileWriter.WriteLine(fullMessage);
+      //_fileWriter.WriteLine(fullMessage);
 
       // 2. 콘솔 쓰기
       Console.ForegroundColor = color;
@@ -105,8 +109,16 @@ namespace HiTessModelBuilder.Services.Logging
 
     public void Dispose()
     {
-      LogInfo("[System] 로그 기록 종료.");
-      _fileWriter?.Dispose();
+      try
+      {
+        LogInfo("[System] 로그 기록 종료.");
+      }
+      finally
+      {
+        // Console.Out을 먼저 원복한 뒤 파일 스트림 닫기
+        Console.SetOut(_originalConsoleOut);
+        _fileWriter?.Dispose();
+      }
     }
   }
 }

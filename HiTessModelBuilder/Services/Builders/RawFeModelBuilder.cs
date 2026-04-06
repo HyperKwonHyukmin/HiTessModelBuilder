@@ -162,6 +162,9 @@ namespace HiTessModelBuilder.Services.Builders
 
     private void PipeBuild()
     {
+      // [추가됨] 배관(Pipe) 생성 시작 전, Property ID 대역을 101번부터 시작하도록 강제 동기화
+      _feModelContext.Properties.AdvanceNextID(101);
+
       // 1. 배관 전담 빌더 인스턴스 생성
       // [수정됨] useFluidDensity 파라미터를 true로 전달하여 내부 유체 질량 보정을 활성화합니다.
       bool useFluidDensity = true;

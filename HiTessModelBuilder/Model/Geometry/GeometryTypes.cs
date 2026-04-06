@@ -1,15 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace HiTessModelBuilder.Model.Geometry
 {
   // [1] Vector3D 정의
-  public struct Vector3D
+  public readonly struct Vector3D : IEquatable<Vector3D>
   {
-    public double X { get; set; }
-    public double Y { get; set; }
-    public double Z { get; set; }
+    public double X { get; }
+    public double Y { get; }
+    public double Z { get; }
 
     public Vector3D(double x, double y, double z) { X = x; Y = y; Z = z; }
 
@@ -19,7 +19,7 @@ namespace HiTessModelBuilder.Model.Geometry
     public Vector3D Normalize()
     {
       double m = Magnitude();
-      return m < 1e-12 ? new Vector3D(0, 0, 0) : new Vector3D(X / m, Y / m, Z / m);
+      return m < 1e-9 ? new Vector3D(0, 0, 0) : new Vector3D(X / m, Y / m, Z / m);
     }
 
     public double Dot(Vector3D other) => X * other.X + Y * other.Y + Z * other.Z;
@@ -33,14 +33,21 @@ namespace HiTessModelBuilder.Model.Geometry
 
     // 호환성: Point3D로 암시적 변환
     public static implicit operator Point3D(Vector3D v) => new Point3D(v.X, v.Y, v.Z);
+
+    // IEquatable<Vector3D> 구현
+    public bool Equals(Vector3D other) => X == other.X && Y == other.Y && Z == other.Z;
+    public override bool Equals(object? obj) => obj is Vector3D v && Equals(v);
+    public override int GetHashCode() => HashCode.Combine(X, Y, Z);
+    public static bool operator ==(Vector3D a, Vector3D b) => a.Equals(b);
+    public static bool operator !=(Vector3D a, Vector3D b) => !a.Equals(b);
   }
 
   // [2] Point3D 정의
-  public struct Point3D
+  public readonly struct Point3D : IEquatable<Point3D>
   {
-    public double X { get; set; }
-    public double Y { get; set; }
-    public double Z { get; set; }
+    public double X { get; }
+    public double Y { get; }
+    public double Z { get; }
 
     public Point3D(double x, double y, double z) { X = x; Y = y; Z = z; }
 
@@ -63,14 +70,21 @@ namespace HiTessModelBuilder.Model.Geometry
     public static Point3D operator /(Point3D a, double s) => new Point3D(a.X / s, a.Y / s, a.Z / s);
 
     public double Dot(Point3D other) => X * other.X + Y * other.Y + Z * other.Z;
+
+    // IEquatable<Point3D> 구현
+    public bool Equals(Point3D other) => X == other.X && Y == other.Y && Z == other.Z;
+    public override bool Equals(object? obj) => obj is Point3D p && Equals(p);
+    public override int GetHashCode() => HashCode.Combine(X, Y, Z);
+    public static bool operator ==(Point3D a, Point3D b) => a.Equals(b);
+    public static bool operator !=(Point3D a, Point3D b) => !a.Equals(b);
   }
 
   // [3] BoundingBox 정의 (호환성 유지)
-  public struct BoundingBox
+  public readonly struct BoundingBox
   {
-    public Point3D Min { get; private set; }
-    public Point3D Max { get; private set; }
-    public bool IsValid { get; private set; }
+    public Point3D Min { get; }
+    public Point3D Max { get; }
+    public bool IsValid { get; }
 
     public BoundingBox(Point3D min, Point3D max)
     {
