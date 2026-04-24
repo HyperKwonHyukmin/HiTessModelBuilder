@@ -1,5 +1,4 @@
 using Cmb.Core.Model;
-using Cmb.Core.Model.Context;
 using Cmb.Pipeline.Core;
 
 namespace Cmb.Pipeline.Stages;
@@ -11,11 +10,10 @@ public sealed class MeshingStage : IPipelineStage
     public bool Execute(StageContext ctx)
     {
         var model = ctx.Model;
+        model.SyncIdCounters();
         var tol = ctx.Options.Tolerances;
 
         var elementIds = model.Elements.Select(e => e.Id).ToList();
-        int nextNodeId = model.Nodes.Count > 0 ? model.Nodes.Max(n => n.Id) + 1 : 1;
-        int nextElemId = MaxElemId(model) + 1;
         int splitCount = 0;
 
         foreach (int eid in elementIds)
@@ -43,7 +41,7 @@ public sealed class MeshingStage : IPipelineStage
             for (int i = 1; i < steps; i++)
             {
                 var pos = nA.Position + dir * (stepLen * i);
-                var newNode = new Node(nextNodeId++, pos);
+                var newNode = new Node(model.AllocNodeId(), pos);
                 model.Nodes.Add(newNode);
                 chain.Add(newNode.Id);
             }
@@ -53,7 +51,7 @@ public sealed class MeshingStage : IPipelineStage
 
             for (int i = 0; i < chain.Count - 1; i++)
             {
-                int childId = nextElemId++;
+                int childId = model.AllocElemId();
                 model.Elements.Add(new BeamElement(
                     childId, chain[i], chain[i + 1],
                     elem.PropertyId, elem.Category, elem.Orientation,
@@ -73,12 +71,4 @@ public sealed class MeshingStage : IPipelineStage
         return true;
     }
 
-    private static int MaxElemId(FeModel model)
-    {
-        int max = 0;
-        if (model.Elements.Count > 0)    max = Math.Max(max, model.Elements.Max(e => e.Id));
-        if (model.Rigids.Count > 0)      max = Math.Max(max, model.Rigids.Max(r => r.Id));
-        if (model.PointMasses.Count > 0) max = Math.Max(max, model.PointMasses.Max(pm => pm.Id));
-        return max;
-    }
 }

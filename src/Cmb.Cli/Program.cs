@@ -5,6 +5,7 @@ using Cmb.Core.Model.Raw;
 using Cmb.Core.Serialization;
 using Cmb.Io.Csv;
 using Cmb.Io.Nastran;
+using Cmb.Pipeline.Analysis;
 using Cmb.Pipeline.Core;
 using Cmb.Pipeline.Stages;
 using Microsoft.Extensions.Logging;
@@ -203,21 +204,43 @@ static Command BuildBuildFullCommand()
             new MeshingStage(),
             new NodeEquivalenceStage(),
             new IntersectionStage(),
+            new DanglingShortRemoveStage(),
+            new CollinearNodeMergeStage(),
+            new ExtendToIntersectStage(),           // 자유단 → 인접 부재 연장 연결
+            new SplitByExistingNodesStage(),         // ExtendToIntersect pSeg 노드 → 타겟 부재 분할
             new GroupConnectStage(),
-            new SplitByExistingNodesStage(), // GroupConnect snap 노드 → 구조 부재 분할
+            new SplitByExistingNodesStage(),         // GroupConnect snap 노드 → 구조 부재 분할
             new UboltRbeStage(),
-            new SplitByExistingNodesStage(), // UboltRbe snap 노드 → 구조 부재 분할
+            new SplitByExistingNodesStage(),         // UboltRbe snap 노드 → 구조 부재 분할
             new FinalValidationStage(),
         ];
 
         int idx = 0;
         var report = PipelineRunner.Run(model, stages, options, logger,
-            onStageComplete: (stageName, m) =>
+            onStageComplete: (stageName, m, stageDiagnostics) =>
             {
                 idx++;
-                var jsonFile = Path.Combine(outDir, $"{idx:D2}_{stageName}.json");
-                File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName));
+                var connectivity  = ConnectivityAnalyzer.Analyze(m);
+                var healthMetrics = HealthMetricsAnalyzer.Analyze(m, stageDiagnostics, options.Tolerances);
+                var prefix   = Path.Combine(outDir, $"{idx:D2}_{stageName}");
+                var jsonFile = prefix + ".json";
+                File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
+                    connectivity: connectivity, healthMetrics: healthMetrics));
+
+                var bdfFile = prefix + ".bdf";
+                using (var writer = new StreamWriter(bdfFile))
+                    BdfWriter.Write(m, writer);
+
+                var pct = connectivity.LargestGroupNodeRatio * 100;
+                Console.WriteLine($"  [연결성] 그룹 {connectivity.GroupCount}개 | " +
+                                  $"최대 {connectivity.LargestGroupElementCount}요소 ({pct:F1}%) | " +
+                                  $"고립노드 {connectivity.IsolatedNodeCount}개");
+                var iss = healthMetrics.Issues;
+                Console.WriteLine($"  [건전성] 자유단 {iss.FreeEndNodes} · 고립 {iss.OrphanNodes} · " +
+                                  $"짧은 {iss.ShortElements} · 미해결U볼트 {iss.UnresolvedUbolts} · " +
+                                  $"분리그룹 {iss.DisconnectedGroups}");
                 Console.WriteLine($"  → {jsonFile}");
+                Console.WriteLine($"  → {bdfFile}");
             });
 
         foreach (var sr in report.Stages)

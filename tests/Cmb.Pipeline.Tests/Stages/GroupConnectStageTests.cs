@@ -12,10 +12,9 @@ public class GroupConnectStageTests
 {
     private static readonly Vector3 Up = Vector3.UnitZ;
 
-    // snapTol = spatialCellSizeMm / 4.0
-    private static StageContext MakeCtx(FeModel model, double spatialCellSizeMm = 200.0, double nodeMergeMm = 1.0)
+    private static StageContext MakeCtx(FeModel model, double snapTolMm = 50.0, double nodeMergeMm = 1.0)
         => new(model, new RunOptions(new Tolerances(
-                SpatialCellSizeMm: spatialCellSizeMm,
+                GroupConnectSnapTolMm: snapTolMm,
                 NodeMergeMm: nodeMergeMm)),
             NullLogger.Instance);
 

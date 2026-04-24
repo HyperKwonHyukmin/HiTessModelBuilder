@@ -16,6 +16,7 @@ public sealed class IntersectionStage : IPipelineStage
 
     public bool Execute(StageContext ctx)
     {
+        ctx.Model.SyncIdCounters();
         int totalSplits = 0;
         for (int iter = 0; iter < ctx.Options.Tolerances.MaxConvergenceIterations; iter++)
         {
@@ -43,7 +44,6 @@ public sealed class IntersectionStage : IPipelineStage
         var splitMap = new Dictionary<int, List<(int nodeId, double u)>>();
         var visited  = new HashSet<(int, int)>();
         var posMap   = new Dictionary<(long, long, long), int>(); // dedup intersection nodes
-        int nextNodeId = model.Nodes.Count > 0 ? model.Nodes.Max(n => n.Id) + 1 : 1;
 
         foreach (int eid in model.Elements.Select(e => e.Id).ToList())
         {
@@ -81,7 +81,7 @@ public sealed class IntersectionStage : IPipelineStage
                 var key = Quant(X);
                 if (!posMap.TryGetValue(key, out int nid))
                 {
-                    nid = nextNodeId++;
+                    nid = model.AllocNodeId();
                     var newNode = new Node(nid, X);
                     model.Nodes.Add(newNode);
                     nodeById[nid] = newNode;
@@ -104,7 +104,6 @@ public sealed class IntersectionStage : IPipelineStage
         Dictionary<int, Node> nodeById)
     {
         var model      = ctx.Model;
-        int nextElemId = MaxElemId(model) + 1;
         int splitCount = 0;
 
         foreach (var (eid, rawHits) in splitMap)
@@ -156,7 +155,7 @@ public sealed class IntersectionStage : IPipelineStage
 
             for (int i = 1; i < segs.Count; i++)
             {
-                int childId = nextElemId++;
+                int childId = model.AllocElemId();
                 model.Elements.Add(new BeamElement(childId, segs[i].n1, segs[i].n2,
                     elem.PropertyId, elem.Category, elem.Orientation,
                     elem.SourceName, eid));
@@ -199,12 +198,4 @@ public sealed class IntersectionStage : IPipelineStage
     private static (long, long, long) Quant(Point3 p)
         => ((long)Math.Round(p.X * 1000), (long)Math.Round(p.Y * 1000), (long)Math.Round(p.Z * 1000));
 
-    private static int MaxElemId(FeModel model)
-    {
-        int max = 0;
-        if (model.Elements.Count > 0)    max = Math.Max(max, model.Elements.Max(e => e.Id));
-        if (model.Rigids.Count > 0)      max = Math.Max(max, model.Rigids.Max(r => r.Id));
-        if (model.PointMasses.Count > 0) max = Math.Max(max, model.PointMasses.Max(pm => pm.Id));
-        return max;
-    }
 }

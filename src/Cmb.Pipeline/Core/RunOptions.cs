@@ -10,6 +10,16 @@ public sealed record Tolerances(
     double MeshingMaxLengthStructure = 2000.0,
     double MeshingMaxLengthPipe     = 1000.0,
     double NodeOnSegmentTolMm       = 0.5,
+    double DanglingShortLengthMm    = 50.0,
+    double CollinearMergeDistanceMm = 50.0,
+    double CollinearMergeAngleDeg   = 3.0,
+    double CollinearMergeLateralMm  = 1.0,
+    double GroupConnectLocalTolMm    = 40.0,
+    double GroupConnectExtraMarginMm = 50.0,
+    double ExtendExtraMarginMm      = 100.0,
+    double ExtendCoplanarTolMm      = 10.0,
+    double ExtendSnapLateralMm      = 2.0,
+    int    ExtendMaxIterations      = 10,
     int    MaxConvergenceIterations = 50);
 
 public sealed record RunOptions(

@@ -90,20 +90,34 @@ JSON `meta` 필드: `phase`, `stageName`, `timestamp`, `unit="mm"`, `schemaVersi
 
 ## Pipeline 스테이지 순서 (Phase C)
 
-`SanityPreprocess → Meshing → NodeEquivalence → Intersection → WeldNode → GroupConnect → UboltRbe → FinalValidation`
+```
+SanityPreprocess → Meshing → NodeEquivalence → Intersection → DanglingShortRemove
+→ CollinearNodeMerge → ExtendToIntersect → SplitByExistingNodes
+→ GroupConnect → SplitByExistingNodes → UboltRbe → SplitByExistingNodes
+→ FinalValidation
+```
+
+`SplitByExistingNodes`는 세 번 실행됨 (ExtendToIntersect pSeg 노드, GroupConnect snap 노드, UboltRbe snap 노드 처리).
 
 ### 핵심 Tolerance (`RunOptions.Tolerances`)
 
 | 필드 | 기본값 | 용도 |
 |------|--------|------|
-| `NodeMergeTol` | 1.0 mm | 동일 노드 판정 |
-| `IntersectionTol` | 0.1 mm | 교차점 판정 |
-| `UboltSnapMaxDist` | 50.0 mm | U-bolt snap |
-| `ShortElemMin` | 5.0 mm | 단축 요소 제거 기준 |
+| `NodeMergeMm` | 1.0 mm | 동일 노드 판정 |
+| `IntersectionSnapMm` | 5.0 mm | 교차점 snap |
+| `UboltSnapMaxDistMm` | 50.0 mm | U-bolt snap 최대 거리 |
+| `ShortElemMinMm` | 5.0 mm | dangling 단축 요소 제거 기준 |
 | `SpatialCellSizeMm` | 200.0 mm | 공간 해시 셀 크기 |
-| `MaxConvergenceIterations` | 50 | 수렴 루프 상한 |
 | `MeshingMaxLengthStructure` | 2000.0 mm | Structure 분할 기준 |
 | `MeshingMaxLengthPipe` | 1000.0 mm | Pipe 분할 기준 |
+| `NodeOnSegmentTolMm` | 0.5 mm | 노드-세그먼트 on-segment 판정 |
+| `DanglingShortLengthMm` | 50.0 mm | dangling 짧은 가지 제거 기준 |
+| `CollinearMergeDistanceMm` | 50.0 mm | Collinear 노드 병합 거리 |
+| `GroupConnectSnapTolMm` | 50.0 mm | 분리 그룹 → master 연결 최대 거리 |
+| `ExtendExtraMarginMm` | 100.0 mm | 자유단 연장 시 단면 치수 외 여유 |
+| `ExtendCoplanarTolMm` | 10.0 mm | ray-segment 공면 판정 상한 |
+| `ExtendSnapLateralMm` | 2.0 mm | pSeg 모드 전환 임계 (설계 오차 흡수) |
+| `ExtendMaxIterations` | 10 | ExtendToIntersect 수렴 루프 상한 |
 
 **Tolerance는 `RunOptions.Tolerances` 레코드에만 정의. 코드 내 하드코딩 금지.**
 

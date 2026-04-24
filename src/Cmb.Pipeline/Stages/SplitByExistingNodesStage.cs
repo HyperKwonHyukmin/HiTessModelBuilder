@@ -22,6 +22,7 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
     public bool Execute(StageContext ctx)
     {
         var model    = ctx.Model;
+        model.SyncIdCounters();
         double tol   = ctx.Options.Tolerances.NodeOnSegmentTolMm;
         double cell  = ctx.Options.Tolerances.SpatialCellSizeMm;
 
@@ -89,7 +90,6 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
         Dictionary<int, Node> nodeById)
     {
         var model      = ctx.Model;
-        int nextElemId = MaxElemId(model) + 1;
         int splitCount = 0;
 
         foreach (var (eid, hits) in splitMap)
@@ -133,7 +133,7 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
 
             for (int i = 1; i < segs.Count; i++)
             {
-                int childId = nextElemId++;
+                int childId = model.AllocElemId();
                 model.Elements.Add(new BeamElement(childId, segs[i].n1, segs[i].n2,
                     elem.PropertyId, elem.Category, elem.Orientation,
                     elem.SourceName, eid));
@@ -164,12 +164,4 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
             hits.RemoveRange(write + 1, hits.Count - write - 1);
     }
 
-    private static int MaxElemId(FeModel model)
-    {
-        int max = 0;
-        if (model.Elements.Count > 0)    max = Math.Max(max, model.Elements.Max(e => e.Id));
-        if (model.Rigids.Count > 0)      max = Math.Max(max, model.Rigids.Max(r => r.Id));
-        if (model.PointMasses.Count > 0) max = Math.Max(max, model.PointMasses.Max(pm => pm.Id));
-        return max;
-    }
 }

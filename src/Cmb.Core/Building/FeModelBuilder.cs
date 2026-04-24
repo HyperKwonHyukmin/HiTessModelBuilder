@@ -25,6 +25,7 @@ public sealed class FeModelBuilder
         BuildPipes    (data.Pipes,  model, nodeAlloc, elemAlloc, secAlloc, nodeMap, nodeById, secMap, matId);
         BuildEquips   (data.Equips, model, nodeAlloc, elemAlloc, nodeMap, nodeById);
 
+        model.SyncIdCounters();
         return model;
     }
 

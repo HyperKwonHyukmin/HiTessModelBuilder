@@ -79,6 +79,17 @@ public sealed class FinalValidationStage : IPipelineStage
             nodeRefCount[elem.EndNodeId]   = nodeRefCount.GetValueOrDefault(elem.EndNodeId)   + 1;
         }
 
+        // RBE 연결 노드도 차수에 포함 (U-bolt dependent 파이프 노드 등이 오검출되는 것 방지)
+        // 단, 이미 요소에 연결된 노드에 한정 (RBE 전용 노드를 새로 추가하면 안 됨)
+        foreach (var rigid in model.Rigids)
+        {
+            if (nodeRefCount.ContainsKey(rigid.IndependentNodeId))
+                nodeRefCount[rigid.IndependentNodeId]++;
+            foreach (int dep in rigid.DependentNodeIds)
+                if (nodeRefCount.ContainsKey(dep))
+                    nodeRefCount[dep]++;
+        }
+
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
         foreach (var (nodeId, count) in nodeRefCount)
         {

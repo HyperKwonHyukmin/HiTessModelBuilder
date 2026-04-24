@@ -179,4 +179,25 @@ public class FinalValidationStageTests
         ctx.Diagnostics.Where(d => d.Code == "FREE_END_NODE")
             .Should().NotContain(d => d.NodeId == 2);
     }
+
+    // ── RBE-connected node not flagged as free end ────────────────────────────
+
+    [Fact]
+    public void FreeEndNode_ConnectedViaRbeToo_NotReported()
+    {
+        // Pipe element E10: N1→N2.  N2 is also the independent node of RBE1 (U-bolt snapped)
+        // N2 has element-degree=1 but RBE makes effective degree=2 → should NOT be flagged
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 100, 50)]);
+        model.Elements.Add(new BeamElement(10, 1, 2, 1, EntityCategory.Pipe, Up));
+        model.Rigids.Add(new RigidElement(20, 2, [3], "UBOLT", null));
+        model.Sections.Add(Section(1));
+        model.Materials.Add(Steel());
+
+        var ctx = MakeCtx(model);
+        new FinalValidationStage().Execute(ctx);
+
+        ctx.Diagnostics.Where(d => d.Code == "FREE_END_NODE")
+            .Should().NotContain(d => d.NodeId == 2);
+    }
 }

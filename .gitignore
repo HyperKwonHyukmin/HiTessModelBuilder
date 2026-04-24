@@ -39,7 +39,7 @@ desktop.ini
 *.temp
 
 ## CSV 입력 / CLI 산출물 (로컬 작업 파일)
-csv/
+*.bdf
 
 ## MCP / Task Manager (로컬 절대경로 포함, 머신 종속)
 .mcp.json

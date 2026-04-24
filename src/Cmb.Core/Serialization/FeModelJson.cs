@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Cmb.Core.Model;
@@ -9,6 +10,7 @@ namespace Cmb.Core.Serialization;
 
 public sealed class FeModelDto
 {
+    [JsonPropertyName("_keys")]       public Dictionary<string, string> Keys { get; set; } = [];
     [JsonPropertyName("meta")]        public MetaDto Meta { get; set; } = new();
     [JsonPropertyName("nodes")]       public List<NodeDto> Nodes { get; set; } = [];
     [JsonPropertyName("elements")]    public List<BeamElementDto> Elements { get; set; } = [];
@@ -16,6 +18,10 @@ public sealed class FeModelDto
     [JsonPropertyName("properties")]  public List<BeamSectionDto> Properties { get; set; } = [];
     [JsonPropertyName("materials")]   public List<MaterialDto> Materials { get; set; } = [];
     [JsonPropertyName("pointMasses")] public List<PointMassDto> PointMasses { get; set; } = [];
+    [JsonPropertyName("connectivity")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ConnectivityDto? Connectivity { get; set; }
+    [JsonPropertyName("healthMetrics")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HealthMetricsDto? HealthMetrics { get; set; }
     [JsonPropertyName("diagnostics")] public List<DiagnosticDto> Diagnostics { get; set; } = [];
     [JsonPropertyName("trace")]       [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<TraceEventDto>? Trace { get; set; }
@@ -106,10 +112,83 @@ public sealed class DiagnosticDto
     [JsonPropertyName("nodeId")]   public int? NodeId { get; set; }
 }
 
+public sealed class ConnectivityDto
+{
+    [JsonPropertyName("groupCount")]               public int    GroupCount               { get; set; }
+    [JsonPropertyName("largestGroupNodeCount")]    public int    LargestGroupNodeCount    { get; set; }
+    [JsonPropertyName("largestGroupElementCount")] public int    LargestGroupElementCount { get; set; }
+    [JsonPropertyName("largestGroupNodeRatio")]    public double LargestGroupNodeRatio    { get; set; }
+    [JsonPropertyName("isolatedNodeCount")]        public int    IsolatedNodeCount        { get; set; }
+    [JsonPropertyName("groups")]                   public List<ConnectivityGroupDto> Groups { get; set; } = [];
+}
+
+public sealed class ConnectivityGroupDto
+{
+    [JsonPropertyName("id")]           public int Id           { get; set; }
+    [JsonPropertyName("nodeCount")]    public int NodeCount    { get; set; }
+    [JsonPropertyName("elementCount")] public int ElementCount { get; set; }
+}
+
+public sealed class HealthMetricsDto
+{
+    [JsonPropertyName("totals")]          public HealthTotalsDto      Totals          { get; set; } = new();
+    [JsonPropertyName("issues")]          public HealthIssuesDto      Issues          { get; set; } = new();
+    [JsonPropertyName("diagnosticCounts")] public DiagnosticCountsDto DiagnosticCounts { get; set; } = new();
+}
+
+public sealed class HealthTotalsDto
+{
+    [JsonPropertyName("nodeCount")]          public int                    NodeCount          { get; set; }
+    [JsonPropertyName("elementCount")]       public int                    ElementCount       { get; set; }
+    [JsonPropertyName("rigidCount")]         public int                    RigidCount         { get; set; }
+    [JsonPropertyName("pointMassCount")]     public int                    PointMassCount     { get; set; }
+    [JsonPropertyName("elementsByCategory")] public Dictionary<string,int> ElementsByCategory { get; set; } = [];
+    [JsonPropertyName("totalLengthMm")]      public double                 TotalLengthMm      { get; set; }
+    [JsonPropertyName("lengthByCategoryMm")] public Dictionary<string,double> LengthByCategoryMm { get; set; } = [];
+    [JsonPropertyName("bbox")]               public BBoxDto                Bbox               { get; set; } = new();
+}
+
+public sealed class BBoxDto
+{
+    [JsonPropertyName("minX")] public double MinX { get; set; }
+    [JsonPropertyName("minY")] public double MinY { get; set; }
+    [JsonPropertyName("minZ")] public double MinZ { get; set; }
+    [JsonPropertyName("maxX")] public double MaxX { get; set; }
+    [JsonPropertyName("maxY")] public double MaxY { get; set; }
+    [JsonPropertyName("maxZ")] public double MaxZ { get; set; }
+}
+
+public sealed class HealthIssuesDto
+{
+    [JsonPropertyName("freeEndNodes")]       public int FreeEndNodes      { get; set; }
+    [JsonPropertyName("orphanNodes")]        public int OrphanNodes       { get; set; }
+    [JsonPropertyName("shortElements")]      public int ShortElements     { get; set; }
+    [JsonPropertyName("unresolvedUbolts")]   public int UnresolvedUbolts  { get; set; }
+    [JsonPropertyName("disconnectedGroups")] public int DisconnectedGroups { get; set; }
+}
+
+public sealed class DiagnosticCountsDto
+{
+    [JsonPropertyName("error")]   public int                    Error   { get; set; }
+    [JsonPropertyName("warning")] public int                    Warning { get; set; }
+    [JsonPropertyName("info")]    public int                    Info    { get; set; }
+    [JsonPropertyName("byCode")]  public Dictionary<string,int> ByCode  { get; set; } = [];
+}
+
 // ── Source Generator Context ──────────────────────────────────────────────────
 
 [JsonSerializable(typeof(FeModelDto))]
+[JsonSerializable(typeof(ConnectivityDto))]
+[JsonSerializable(typeof(ConnectivityGroupDto))]
+[JsonSerializable(typeof(HealthMetricsDto))]
+[JsonSerializable(typeof(HealthTotalsDto))]
+[JsonSerializable(typeof(BBoxDto))]
+[JsonSerializable(typeof(HealthIssuesDto))]
+[JsonSerializable(typeof(DiagnosticCountsDto))]
 [JsonSerializable(typeof(TraceEventDto))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, int>))]
+[JsonSerializable(typeof(Dictionary<string, double>))]
 [JsonSourceGenerationOptions(WriteIndented = true)]
 internal partial class FeModelJsonContext : JsonSerializerContext { }
 
@@ -117,13 +196,24 @@ internal partial class FeModelJsonContext : JsonSerializerContext { }
 
 public static class FeModelJson
 {
+    private static readonly JsonSerializerOptions _writeOptions = new()
+    {
+        WriteIndented = true,
+        Encoder       = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = FeModelJsonContext.Default,
+    };
+
     public static string ToJson(
         this FeModel model,
         string phase = "",
-        string stageName = "")
+        string stageName = "",
+        ConnectivityDto? connectivity = null,
+        HealthMetricsDto? healthMetrics = null)
     {
         var dto = ToDto(model, phase, stageName);
-        return JsonSerializer.Serialize(dto, FeModelJsonContext.Default.FeModelDto);
+        dto.Connectivity  = connectivity;
+        dto.HealthMetrics = healthMetrics;
+        return JsonSerializer.Serialize(dto, _writeOptions);
     }
 
     public static FeModel FromJson(string json)
@@ -135,8 +225,24 @@ public static class FeModelJson
 
     // ── FeModel → DTO ─────────────────────────────────────────────────────────
 
+    private static readonly Dictionary<string, string> SchemaKeys = new()
+    {
+        ["meta"]         = "스테이지 메타 (phase, stageName, timestamp, unit, schemaVersion)",
+        ["nodes"]        = "노드 배열 (id, x, y, z, tags[])",
+        ["elements"]     = "빔 요소 배열 (id, type, startNode, endNode, propertyId, category, orientation[])",
+        ["rigids"]       = "RBE2 배열 (id, independentNode, dependentNodes[], remark)",
+        ["properties"]   = "빔 단면 배열 (id, kind, dims[], materialId)",
+        ["materials"]    = "재료 배열 (id, name, E, nu, rho)",
+        ["pointMasses"]  = "집중질량 배열 (id, nodeId, mass)",
+        ["connectivity"]   = "연결성 분석 (groupCount, largestGroupNodeCount, largestGroupElementCount, largestGroupNodeRatio, isolatedNodeCount, groups[])",
+        ["healthMetrics"]  = "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
+        ["diagnostics"]    = "스테이지 진단 메시지 배열 (severity, code, msg, elemId?, nodeId?)",
+        ["trace"]        = "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)",
+    };
+
     private static FeModelDto ToDto(FeModel model, string phase, string stageName) => new()
     {
+        Keys = SchemaKeys,
         Meta = new MetaDto
         {
             Phase = phase,

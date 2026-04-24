@@ -7,11 +7,11 @@ namespace Cmb.Pipeline.Core;
 public static class PipelineRunner
 {
     public static PipelineReport Run(
-        FeModel                     model,
-        IReadOnlyList<IPipelineStage> stages,
-        RunOptions                  options,
-        ILogger                     logger,
-        Action<string, FeModel>?    onStageComplete = null)
+        FeModel                                         model,
+        IReadOnlyList<IPipelineStage>                  stages,
+        RunOptions                                     options,
+        ILogger                                        logger,
+        Action<string, FeModel, IReadOnlyList<Diagnostic>>? onStageComplete = null)
     {
         var stageReports    = new List<StageReport>();
         string? stoppedAfter = null;
@@ -43,7 +43,7 @@ public static class PipelineRunner
             logger.LogInformation("Stage [{Name}] {Result} in {Elapsed:F0}ms",
                 stage.Name, ok ? "succeeded" : "FAILED", sw.Elapsed.TotalMilliseconds);
 
-            onStageComplete?.Invoke(stage.Name, model);
+            onStageComplete?.Invoke(stage.Name, model, ctx.Diagnostics);
 
             if (!ok)
             {

@@ -13,6 +13,7 @@ public sealed class GroupConnectStage : IPipelineStage
     public bool Execute(StageContext ctx)
     {
         var model = ctx.Model;
+        model.SyncIdCounters();
         if (model.Elements.Count == 0) return true;
 
         // Assign elements to connectivity groups via UnionFind on node IDs
@@ -34,9 +35,8 @@ public sealed class GroupConnectStage : IPipelineStage
 
         var masterElems   = elemsByRoot[0].ToList();
         var nodeById      = model.Nodes.ToDictionary(n => n.Id);
-        double snapTol    = ctx.Options.Tolerances.SpatialCellSizeMm / 4.0;
+        double snapTol    = ctx.Options.Tolerances.GroupConnectSnapTolMm;
         double mergeTol   = ctx.Options.Tolerances.NodeMergeMm;
-        int nextNodeId    = model.Nodes.Count > 0 ? model.Nodes.Max(n => n.Id) + 1 : 1;
         int connectedCount = 0;
 
         foreach (var slaveGroup in elemsByRoot.Skip(1))
@@ -70,14 +70,15 @@ public sealed class GroupConnectStage : IPipelineStage
                     if (!nodeById.TryGetValue(masterElem.EndNodeId,   out var mB)) continue;
                     var (proj, _, dist) = ProjectionUtils.ClosestPointOnSegment(
                         freeNode.Position, mA.Position, mB.Position);
-                    if (dist < bestDist) { bestDist = bestFreeNode != -1 || true ? dist : bestDist; bestFreeNode = fnid; bestProj = proj; bestDist = dist; }
+                    if (dist < bestDist) { bestFreeNode = fnid; bestProj = proj; bestDist = dist; }
                 }
             }
 
             if (bestFreeNode == -1 || bestDist > snapTol)
             {
+                int slaveRootNode = degrees.Keys.Min();
                 ctx.AddDiagnostic(DiagnosticSeverity.Warning, "GROUP_NOT_CONNECTED",
-                    $"Disconnected group (root node {allNodeIds.Min()}) is {bestDist:F1} mm from master — too far to snap (limit {snapTol:F1} mm).");
+                    $"Disconnected group (node {slaveRootNode}, {slaveElems.Count} elem(s)) is {bestDist:F1} mm from master — too far to snap (limit {snapTol:F1} mm).");
                 continue;
             }
 
@@ -91,7 +92,7 @@ public sealed class GroupConnectStage : IPipelineStage
             }
             else
             {
-                snapNodeId = nextNodeId++;
+                snapNodeId = model.AllocNodeId();
                 var snapNode = new Node(snapNodeId, bestProj);
                 model.Nodes.Add(snapNode);
                 nodeById[snapNodeId] = snapNode;

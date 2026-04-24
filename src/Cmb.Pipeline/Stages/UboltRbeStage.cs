@@ -13,6 +13,7 @@ public sealed class UboltRbeStage : IPipelineStage
     public bool Execute(StageContext ctx)
     {
         var model = ctx.Model;
+        model.SyncIdCounters();
         var uboltRbes = model.Rigids.Where(r => r.Remark == "UBOLT").ToList();
         if (uboltRbes.Count == 0) return true;
 
@@ -37,7 +38,6 @@ public sealed class UboltRbeStage : IPipelineStage
         // Build spatial hash inflated to cover 2× snap radius for phase-2 queries
         var spatialHash = new ElementSpatialHash(structureElems, nodeById, cellSize, snapDist * 2);
 
-        int nextNodeId  = model.Nodes.Count > 0 ? model.Nodes.Max(n => n.Id) + 1 : 1;
         int snapped     = 0;
         int fallback    = 0;
 
@@ -49,12 +49,12 @@ public sealed class UboltRbeStage : IPipelineStage
 
             // Phase 1: snap within UboltSnapMaxDistMm
             var (snapId, found) = TrySnap(model, spatialHash, structById, nodeById,
-                uboltNode.Position, snapDist, mergeTol, ref nextNodeId);
+                uboltNode.Position, snapDist, mergeTol);
 
             // Phase 2: widen to 2× if phase 1 missed
             if (!found)
                 (snapId, found) = TrySnap(model, spatialHash, structById, nodeById,
-                    uboltNode.Position, snapDist * 2, mergeTol, ref nextNodeId);
+                    uboltNode.Position, snapDist * 2, mergeTol);
 
             if (found)
             {
@@ -93,8 +93,7 @@ public sealed class UboltRbeStage : IPipelineStage
         Dictionary<int, Node> nodeById,
         Point3 pos,
         double radius,
-        double mergeTol,
-        ref int nextNodeId)
+        double mergeTol)
     {
         var boxMin = new Point3(pos.X - radius, pos.Y - radius, pos.Z - radius);
         var boxMax = new Point3(pos.X + radius, pos.Y + radius, pos.Z + radius);
@@ -124,7 +123,7 @@ public sealed class UboltRbeStage : IPipelineStage
         }
         else
         {
-            snapId = nextNodeId++;
+            snapId = model.AllocNodeId();
             var snapNode = new Node(snapId, bestProj);
             model.Nodes.Add(snapNode);
             nodeById[snapId] = snapNode;

@@ -74,7 +74,9 @@ public class FeModelJsonTraceTests
     public void ToJson_EmptyTraceLog_TraceKeyOmitted()
     {
         var json = MinimalModel().ToJson();
-        json.Should().NotContain("\"trace\"");
+        // "trace" 키는 _keys 설명에 있으므로 최상위 배열 필드 absent 여부를 JSON 파싱으로 검증
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.TryGetProperty("trace", out _).Should().BeFalse("빈 TraceLog 는 직렬화 생략");
     }
 
     [Fact]
