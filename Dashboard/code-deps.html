@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClaudeModelBuilder — 의존성 그래프</title>
+<link rel="stylesheet" href="cmb-style.css">
+<style>
+.nav-page-link { text-decoration: none; }
+.nav-page-link.current { background: rgba(96,165,250,0.15); color: var(--accent); border-left: 2px solid var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="app-header-title">ClaudeModelBuilder</span>
+  <span class="app-header-sep">|</span>
+  <span class="app-header-sub">AM CSV &rarr; FEM Beam &rarr; Nastran BDF &nbsp;·&nbsp; .NET 8 / C# 12</span>
+</header>
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<div class="app-layout">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-group-header">페이지</div>
+    <a class="nav-item nav-page-link" href="index.html">&#128203; 진행 현황</a>
+    <a class="nav-item nav-page-link" href="code-flow.html">&#8644; 데이터 흐름</a>
+    <a class="nav-item nav-page-link" href="code-classes.html">&#128230; 클래스 목록</a>
+    <a class="nav-item nav-page-link current" href="code-deps.html">&#128279; 의존성 그래프</a>
+    <a class="nav-item nav-page-link" href="code-algorithms.html">&#9881; 알고리즘</a>
+    <div class="nav-divider"></div>
+    <div class="nav-group-header">이 페이지</div>
+    <a class="nav-item" data-target="code-deps" data-memo-section="code-deps">&#128279; 의존성 그래프</a>
+  </nav>
+
+  <main class="main-content">
+
+    <!-- ═══ 의존성 그래프 ═══ -->
+    <section class="content-section" id="code-deps">
+      <h1 class="section-heading">의존성 그래프</h1>
+
+      <div class="dep-principle">
+        <strong>핵심 원칙:</strong> 의존성은 반드시 단방향이어야 합니다. <code>Cmb.Cli → Cmb.Pipeline → Cmb.Io → Cmb.Core</code> 방향으로만 흐릅니다.<br>
+        역방향 참조 또는 순환 참조는 빌드 오류로 차단됩니다. <code>Cmb.Core</code>는 외부 NuGet 없이 BCL(<code>System.Text.Json</code>)만 허용.
+      </div>
+
+      <!-- 레이어 다이어그램 -->
+      <div class="section-sub-heading">프로젝트 레이어 다이어그램</div>
+      <div class="dep-diagram">
+        <div class="dep-layer">
+          <div class="dep-box accent">
+            <div class="dep-box-name">Cmb.Cli</div>
+            <div class="dep-box-sub">CLI 진입점 · System.CommandLine</div>
+          </div>
+        </div>
+        <div class="dep-layer-connector"></div>
+        <div class="dep-layer">
+          <div class="dep-box accent">
+            <div class="dep-box-name">Cmb.Pipeline</div>
+            <div class="dep-box-sub">8단계 파이프라인 · 공간 자료구조</div>
+          </div>
+        </div>
+        <div class="dep-layer-connector"></div>
+        <div class="dep-layer">
+          <div class="dep-box accent">
+            <div class="dep-box-name">Cmb.Io</div>
+            <div class="dep-box-sub">CSV Reader · BDF Writer · JSON Dumper</div>
+          </div>
+        </div>
+        <div class="dep-layer-connector"></div>
+        <div class="dep-layer">
+          <div class="dep-box core">
+            <div class="dep-box-name">Cmb.Core</div>
+            <div class="dep-box-sub">도메인 모델 · 기하 Primitive · JSON 직렬화</div>
+          </div>
+        </div>
+        <div class="dep-layer-connector"></div>
+        <div class="dep-layer">
+          <div class="dep-box dim">
+            <div class="dep-box-name">BCL / System.Text.Json</div>
+            <div class="dep-box-sub">.NET 기본 클래스 라이브러리</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 클래스 간 의존성 표 -->
+      <div class="section-sub-heading">클래스 간 주요 의존성</div>
+      <div style="overflow-x:auto">
+        <table class="dep-class-table">
+          <thead>
+            <tr><th>클래스</th><th>프로젝트</th><th>의존하는 클래스</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Program</td>
+              <td>Cmb.Cli</td>
+              <td>CsvDesignLoader, FeModelBuilder, FeModelJson, RawDesignDataJson, BdfWriter</td>
+            </tr>
+            <tr>
+              <td>FeModel</td>
+              <td>Cmb.Core</td>
+              <td>Node, BeamElement, RigidElement, PointMass, BeamSection, Material, IdAllocator</td>
+            </tr>
+            <tr>
+              <td>FeModelBuilder</td>
+              <td>Cmb.Core</td>
+              <td>RawDesignData, FeModel, Node, BeamElement, BeamSection, Material, IdAllocator, Point3, Vector3</td>
+            </tr>
+            <tr>
+              <td>BeamElement</td>
+              <td>Cmb.Core</td>
+              <td>Vector3, EntityCategory</td>
+            </tr>
+            <tr>
+              <td>Node</td>
+              <td>Cmb.Core</td>
+              <td>Point3, NodeTags</td>
+            </tr>
+            <tr>
+              <td>BeamSection</td>
+              <td>Cmb.Core</td>
+              <td>BeamSectionKind</td>
+            </tr>
+            <tr>
+              <td>Segment3</td>
+              <td>Cmb.Core</td>
+              <td>Point3, Vector3</td>
+            </tr>
+            <tr>
+              <td>CsvDesignLoader</td>
+              <td>Cmb.Io</td>
+              <td>HiTessStructureCsvReader, HiTessPipeCsvReader, HiTessEquipCsvReader, RawDesignData</td>
+            </tr>
+            <tr>
+              <td>HiTessStructureCsvReader</td>
+              <td>Cmb.Io</td>
+              <td>CsvSchema, CsvParsing, RawBeamRow</td>
+            </tr>
+            <tr>
+              <td>HiTessPipeCsvReader</td>
+              <td>Cmb.Io</td>
+              <td>CsvSchema, CsvParsing, RawPipeRow</td>
+            </tr>
+            <tr>
+              <td>HiTessEquipCsvReader</td>
+              <td>Cmb.Io</td>
+              <td>CsvSchema, CsvParsing, RawEquipRow</td>
+            </tr>
+            <tr>
+              <td>BdfWriter</td>
+              <td>Cmb.Io</td>
+              <td>FeModel, BdfField, Node, BeamElement, BeamSection, Material, RigidElement, PointMass</td>
+            </tr>
+            <tr>
+              <td>RawDesignData</td>
+              <td>Cmb.Core</td>
+              <td>RawBeamRow, RawPipeRow, RawEquipRow</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- NuGet 의존성 -->
+      <div class="section-sub-heading" style="margin-top:32px">NuGet 패키지 의존성 정책</div>
+      <div style="overflow-x:auto">
+        <table class="prop-table">
+          <thead>
+            <tr><th>프로젝트</th><th>외부 NuGet</th><th>허용 이유 / 제한 이유</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Cmb.Core</td>
+              <td><span style="color:var(--done)">없음 (BCL만)</span></td>
+              <td><span class="prop-note">AOT 호환, 최소 의존성, 가장 안정적인 레이어여야 함</span></td>
+            </tr>
+            <tr>
+              <td>Cmb.Io</td>
+              <td><span class="prop-note">필요시 CSV 파서 라이브러리 허용</span></td>
+              <td><span class="prop-note">현재 직접 구현. 복잡한 CSV 포맷 지원 필요 시 추가 검토</span></td>
+            </tr>
+            <tr>
+              <td>Cmb.Pipeline</td>
+              <td><span class="prop-note">MathNet.Numerics (SVD 필요 시)</span></td>
+              <td><span class="prop-note">실제 필요 시점에만 추가. Directory.Build.props에 버전 고정</span></td>
+            </tr>
+            <tr>
+              <td>Cmb.Cli</td>
+              <td><span class="prop-note">System.CommandLine</span></td>
+              <td><span class="prop-note">CLI 파싱 전용. --help/--version 자동 생성, 타입 안전 옵션 파싱</span></td>
+            </tr>
+            <tr>
+              <td>*.Tests</td>
+              <td><span class="prop-note">xUnit, FluentAssertions, Verify.Xunit</span></td>
+              <td><span class="prop-note">테스트 전용. 골든 스냅샷(Verify), 가독성 좋은 어서션(FluentAssertions)</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 순환 참조 방지 예시 -->
+      <div class="section-sub-heading" style="margin-top:32px">순환 참조 금지 예시</div>
+      <div class="two-col">
+        <div class="info-block">
+          <div class="info-block-title" style="color:var(--blocked)">잘못된 참조 (금지)</div>
+          <p><code>Cmb.Core</code> → <code>Cmb.Io</code> (역방향)</p>
+          <p style="margin-top:4px"><code>Cmb.Io</code> → <code>Cmb.Pipeline</code> (역방향)</p>
+          <p style="margin-top:4px"><code>Cmb.Pipeline</code> → <code>Cmb.Cli</code> (역방향)</p>
+          <p style="margin-top:8px;font-size:13px;color:var(--text-dim)">이런 참조가 생기면 변경의 영향 범위가 예측 불가능해짐.</p>
+        </div>
+        <div class="info-block">
+          <div class="info-block-title" style="color:var(--done)">올바른 참조 (허용)</div>
+          <p><code>Cmb.Cli</code> → <code>Cmb.Pipeline</code> (정방향)</p>
+          <p style="margin-top:4px"><code>Cmb.Pipeline</code> → <code>Cmb.Io</code> (정방향)</p>
+          <p style="margin-top:4px"><code>Cmb.Io</code> → <code>Cmb.Core</code> (정방향)</p>
+          <p style="margin-top:8px;font-size:13px;color:var(--text-dim)">Core를 수정해도 Cli를 직접 변경할 필요 없음 — 단방향 전파.</p>
+        </div>
+      </div>
+
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-code-deps">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-code-deps"
+          placeholder="의존성 구조에 대한 메모, 리팩토링 아이디어..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <div class="page-footer">
+      ClaudeModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24
+    </div>
+  </main>
+</div>
+
+<script>
+const memoTimers = {};
+function memoKey(id) { return 'cmb-memo-' + id; }
+function getMemoValue(id) { return localStorage.getItem(memoKey(id)) || ''; }
+function hasMemo(id) { return getMemoValue(id).trim().length > 0; }
+function initMemo(sectionId) {
+  const ta = document.getElementById('memo-' + sectionId);
+  if (!ta) return;
+  ta.value = getMemoValue(sectionId);
+  ta.addEventListener('input', () => {
+    clearTimeout(memoTimers[sectionId]);
+    memoTimers[sectionId] = setTimeout(() => {
+      localStorage.setItem(memoKey(sectionId), ta.value);
+      const ind = document.getElementById('memo-saved-' + sectionId);
+      if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 1500); }
+      updateNavMemoDots();
+    }, 800);
+  });
+}
+function updateNavMemoDots() {
+  document.querySelectorAll('[data-memo-section]').forEach(item => {
+    const id = item.dataset.memoSection;
+    let dot = item.querySelector('.nav-memo-dot');
+    if (hasMemo(id)) {
+      if (!dot) { dot = document.createElement('span'); dot.className = 'nav-memo-dot'; dot.textContent = '📝'; item.appendChild(dot); }
+    } else { if (dot) dot.remove(); }
+  });
+}
+function initAllMemos() {
+  document.querySelectorAll('.content-section[id]').forEach(s => initMemo(s.id));
+  updateNavMemoDots();
+}
+function initScrollspy() {
+  const secs = document.querySelectorAll('.content-section[id]');
+  const items = document.querySelectorAll('[data-target]');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        items.forEach(n => n.classList.remove('active'));
+        const a = document.querySelector('[data-target="' + e.target.id + '"]');
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  secs.forEach(s => obs.observe(s));
+}
+function initNavClicks() {
+  document.querySelectorAll('[data-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const t = document.getElementById(item.dataset.target);
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
+}
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded', () => {
+  initScrollspy();
+  initNavClicks();
+  initAllMemos();
+});
+</script>
+</body>
+</html>

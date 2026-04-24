@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClaudeModelBuilder — 알고리즘 상세</title>
+<link rel="stylesheet" href="cmb-style.css">
+<style>
+.nav-page-link { text-decoration: none; }
+.nav-page-link.current { background: rgba(96,165,250,0.15); color: var(--accent); border-left: 2px solid var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="app-header-title">ClaudeModelBuilder</span>
+  <span class="app-header-sep">|</span>
+  <span class="app-header-sub">AM CSV &rarr; FEM Beam &rarr; Nastran BDF &nbsp;·&nbsp; .NET 8 / C# 12</span>
+</header>
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<div class="app-layout">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-group-header">페이지</div>
+    <a class="nav-item nav-page-link" href="index.html">&#128203; 진행 현황</a>
+    <a class="nav-item nav-page-link" href="code-flow.html">&#8644; 데이터 흐름</a>
+    <a class="nav-item nav-page-link" href="code-classes.html">&#128230; 클래스 목록</a>
+    <a class="nav-item nav-page-link" href="code-deps.html">&#128279; 의존성 그래프</a>
+    <a class="nav-item nav-page-link current" href="code-algorithms.html">&#9881; 알고리즘</a>
+    <div class="nav-divider"></div>
+    <div class="nav-group-header">이 페이지</div>
+    <a class="nav-item" data-target="code-algorithms" data-memo-section="code-algorithms">&#9881; 알고리즘 상세</a>
+  </nav>
+
+  <main class="main-content">
+
+    <!-- ═══ 알고리즘 상세 ═══ -->
+    <section class="content-section" id="code-algorithms">
+      <h1 class="section-heading">알고리즘 상세</h1>
+
+      <div class="info-block" style="margin-bottom:24px">
+        <div class="info-block-title">참조 원칙</div>
+        <p>모든 알고리즘은 HiTess 레거시 코드를 읽기 전용으로 참조하여 구현합니다. <code>C:\Coding\Csharp\Projects\HiTessModelBuilder_26_01\</code> — 절대 수정 금지.</p>
+        <p style="margin-top:6px">HiTess 대비 CMB 개선 사항: <code>ExtraData</code> 딕셔너리 → 타입 안전 enum, 하드코딩 tolerance → <code>RunOptions.Tolerances</code>, <code>Console.WriteLine</code> → <code>ILogger</code>.</p>
+      </div>
+
+      <!-- 알고리즘 1: Sweep-and-Prune -->
+      <div class="algo-block">
+        <div class="algo-title">1. Sweep-and-Prune — 노드 동일성 판별 (NodeEquivalence)</div>
+        <div class="algo-source">참조: Pipeline/NodeInspector/InspectEquivalenceNodes.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">목적</div>
+          <div class="algo-section-text">HiTess CSV 파싱 시 같은 물리적 위치를 가리키는 노드가 미세한 좌표 차이(부동소수점 오차, 단위 변환 오차)로 인해 다른 노드로 등록됩니다. 이 노드들을 찾아 하나로 병합합니다.</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">알고리즘 단계</div>
+          <div class="algo-section-text">
+            1. <strong>X축 정렬</strong>: 모든 노드를 X 좌표 기준으로 오름차순 정렬 — O(N log N)<br>
+            2. <strong>슬라이딩 윈도우</strong>: 왼쪽 포인터를 이동하며, 현재 노드와의 X 좌표 차이가 <code>NodeMergeTol(1mm)</code> 초과이면 윈도우 왼쪽 경계를 전진<br>
+            3. <strong>3D 거리 확인</strong>: 윈도우 내 노드 쌍끼리 실제 3D 유클리드 거리 계산. 1mm 이내이면 같은 그룹<br>
+            4. <strong>UnionFind 병합</strong>: 같은 그룹의 노드들을 UnionFind 자료구조로 묶음<br>
+            5. <strong>대표 노드 선정</strong>: 각 그룹에서 가장 작은 ID를 canonical(대표) 노드로 선정<br>
+            6. <strong>참조 교체</strong>: <code>BeamElement.StartNodeId</code>, <code>EndNodeId</code>, <code>RigidElement</code>의 모든 NodeId를 canonical ID로 교체<br>
+            7. <strong>루프 요소 제거</strong>: 교체 후 <code>StartNodeId == EndNodeId</code>가 된 요소(길이 0 요소) 삭제
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">복잡도</div>
+          <div class="algo-section-text">정렬: O(N log N) / 윈도우 스캔: O(N × W) where W = 평균 윈도우 크기 (보통 소수) / UnionFind: O(α(N)) ≈ O(1)</div>
+        </div>
+
+        <div class="algo-warn">SpatialCellSizeMm(200mm)을 NodeMergeTol(1mm)보다 훨씬 크게 유지해야 합니다. 셀 크기가 너무 작으면 경계 노드가 탐지 안 될 수 있습니다.</div>
+
+        <div class="algo-code">// 의사 코드
+nodes.Sort(n => n.Position.X);
+var uf = new UnionFind(nodes.Count);
+int left = 0;
+for (int right = 0; right < nodes.Count; right++) {
+    while (nodes[right].X - nodes[left].X > NodeMergeTol) left++;
+    for (int k = left; k < right; k++) {
+        if (nodes[right].DistanceTo(nodes[k]) <= NodeMergeTol)
+            uf.Union(right, k);
+    }
+}
+// canonical ID로 모든 참조 교체
+foreach (var elem in model.Elements)
+    elem.StartNodeId = uf.Find(elem.StartNodeId);
+    elem.EndNodeId   = uf.Find(elem.EndNodeId);</div>
+      </div>
+
+      <!-- 알고리즘 2: Dan Sunday -->
+      <div class="algo-block">
+        <div class="algo-title">2. Dan Sunday Segment-Segment — 교차점 분할 (Intersection)</div>
+        <div class="algo-source">참조: Pipeline/ElementModifier/ElementIntersectionSplitModifier.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">목적</div>
+          <div class="algo-section-text">3D 공간에서 두 선분(빔 요소)이 교차하는지 판별하고, 교차하면 교차점에 새 노드를 삽입해 두 빔 각각을 2분할합니다. 이를 통해 "교차하지만 연결 안 된" 구조를 "교차점에서 연결된" 구조로 수정합니다.</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">핵심: 두 선분 사이 최단 거리</div>
+          <div class="algo-section-text">
+            두 3D 선분 P(s) = P0 + s·(P1-P0), Q(t) = Q0 + t·(Q1-Q0)에 대해:<br>
+            w = P0 - Q0, u = P1-P0, v = Q1-Q0<br>
+            a = u·u, b = u·v, c = v·v, d = u·w, e = v·w<br>
+            denom = a·c - b·b<br>
+            s* = (b·e - c·d) / denom<br>
+            t* = (a·e - b·d) / denom<br>
+            최근접점: P(s*), Q(t*) / 최단 거리: |P(s*) - Q(t*)|
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">알고리즘 단계</div>
+          <div class="algo-section-text">
+            1. <strong>후보 쌍 추출</strong>: <code>ElementSpatialHash</code>로 서로 가까운 요소 쌍만 추출 (전체 O(N²) → 근접 쌍만)<br>
+            2. <strong>거리 계산</strong>: Dan Sunday 알고리즘으로 두 선분 사이 최단 거리 및 s*, t* 파라미터 계산<br>
+            3. <strong>교차 판정</strong>: 거리 &lt; <code>IntersectionTol(0.1mm)</code> AND s* ∈ [0,1] AND t* ∈ [0,1]이면 교차<br>
+            4. <strong>노드 삽입</strong>: 교차점 좌표 = P(s*)와 Q(t*)의 중점. 새 노드 ID 발급 후 삽입<br>
+            5. <strong>요소 분할</strong>: 원래 빔 A → [A_start, 교차점], [교차점, A_end]. 빔 B도 동일하게 2분할<br>
+            6. <strong>수렴 반복</strong>: 분할 후 새 교차가 생길 수 있으므로 변화 없을 때까지 반복 (최대 <code>MaxConvergenceIterations=50</code>회)
+          </div>
+        </div>
+
+        <div class="algo-warn">평행 선분(denom ≈ 0)은 교차 판정에서 제외합니다. 수렴하지 않으면 CONVERGENCE_LIMIT_REACHED 진단을 발행하고 중단합니다.</div>
+
+        <div class="algo-code">// 의사 코드
+bool changed = true;
+int iter = 0;
+while (changed && iter++ < MaxConvergenceIterations) {
+    changed = false;
+    var candidates = spatialHash.GetNearbyPairs();
+    foreach (var (a, b) in candidates) {
+        var (dist, sA, tB) = DanSunday(a.Segment, b.Segment);
+        if (dist < IntersectionTol && InRange(sA) && InRange(tB)) {
+            var pt = Midpoint(a.PointAt(sA), b.PointAt(tB));
+            var newNode = model.AddNode(pt);
+            Split(a, newNode);  // a → a1 + a2
+            Split(b, newNode);  // b → b1 + b2
+            changed = true;
+        }
+    }
+}</div>
+      </div>
+
+      <!-- 알고리즘 3: UnionFind -->
+      <div class="algo-block">
+        <div class="algo-title">3. Union-Find (경로 압축 + 랭크 병합)</div>
+        <div class="algo-source">참조: Pipeline/Utils/UnionFind.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">사용 Stage</div>
+          <div class="algo-section-text">NodeEquivalence — 근접 노드 그룹화 / GroupConnect — BeamElement 연결 그룹 식별</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">경로 압축 (Path Compression)</div>
+          <div class="algo-section-text">
+            Find(x) 호출 시 x에서 루트까지의 경로상 모든 노드를 직접 루트에 연결.<br>
+            다음 Find() 호출은 즉시 루트를 반환 — 재귀 깊이를 1로 줄임.
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">랭크 병합 (Union by Rank)</div>
+          <div class="algo-section-text">
+            두 트리를 합칠 때 높이가 낮은 트리를 높은 트리 아래에 붙임.<br>
+            트리 높이가 O(log N) 이하로 유지됨.
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">복잡도</div>
+          <div class="algo-section-text">N번의 Union/Find 연산: O(N · α(N)) ≈ O(N). α는 역 아커만 함수 — 실용적으로 상수.</div>
+        </div>
+
+        <div class="algo-code">// 의사 코드
+int Find(int x) {
+    if (parent[x] != x) parent[x] = Find(parent[x]);  // 경로 압축
+    return parent[x];
+}
+void Union(int x, int y) {
+    int rx = Find(x), ry = Find(y);
+    if (rx == ry) return;
+    if (rank[rx] < rank[ry]) Swap(ref rx, ref ry);
+    parent[ry] = rx;                     // 랭크 병합
+    if (rank[rx] == rank[ry]) rank[rx]++;
+}</div>
+      </div>
+
+      <!-- 알고리즘 4: SpatialHash -->
+      <div class="algo-block">
+        <div class="algo-title">4. SpatialHash — 3D 공간 해시</div>
+        <div class="algo-source">참조: Pipeline/Utils/SpatialHash.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">목적</div>
+          <div class="algo-section-text">3D 공간을 규칙적인 격자(셀)로 분할해, 특정 점 근처의 객체를 O(1) 근사 시간으로 탐색합니다. NodeEquivalence의 O(N²) 전수 탐색을 O(N)으로 줄이는 핵심 자료구조입니다.</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">동작 방식</div>
+          <div class="algo-section-text">
+            1. 셀 크기(<code>SpatialCellSizeMm = 200mm</code>)로 좌표를 나눠 정수 격자 인덱스 (ix, iy, iz) 계산<br>
+            2. Dictionary&lt;(ix,iy,iz), List&lt;T&gt;&gt;에 객체 등록<br>
+            3. 근처 탐색: 쿼리 점의 격자 인덱스 ±1 범위(27개 셀)만 확인<br>
+            4. 27개 셀 내 객체들과만 거리 계산 → 전체 대비 극소수 후보
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">셀 크기 선택 기준</div>
+          <div class="algo-section-text">
+            셀 크기는 탐지하려는 거리(NodeMergeTol=1mm)의 수십~수백 배여야 합니다.<br>
+            200mm 셀에서 1mm 노드는 한 셀에 수백 개가 모일 수 있지만, 인접 셀 27개만 확인하면 충분.<br>
+            셀이 너무 크면 후보가 너무 많아 속도 이점이 사라짐. 너무 작으면 경계 탐지 누락 위험.
+          </div>
+        </div>
+
+        <div class="algo-code">// 의사 코드
+(int, int, int) CellOf(Point3 p) => (
+    (int)Math.Floor(p.X / CellSize),
+    (int)Math.Floor(p.Y / CellSize),
+    (int)Math.Floor(p.Z / CellSize)
+);
+void Insert(T item, Point3 pos) {
+    var key = CellOf(pos);
+    cells.GetOrCreate(key).Add(item);
+}
+IEnumerable&lt;T&gt; GetNear(Point3 pos) {
+    var (cx, cy, cz) = CellOf(pos);
+    for (int dx=-1; dx<=1; dx++)
+    for (int dy=-1; dy<=1; dy++)
+    for (int dz=-1; dz<=1; dz++)
+        if (cells.TryGetValue((cx+dx,cy+dy,cz+dz), out var list))
+            foreach (var item in list) yield return item;
+}</div>
+      </div>
+
+      <!-- 알고리즘 5: U-bolt 2-phase snap -->
+      <div class="algo-block">
+        <div class="algo-title">5. U-bolt 2-Phase Snap (UboltRbe)</div>
+        <div class="algo-source">참조: Pipeline/ElementModifier/UboltSnapToStructureModifier.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">목적</div>
+          <div class="algo-section-text">U-bolt는 파이프를 구조물에 고정하는 클램프입니다. U-bolt의 위치(힌트 좌표)에서 가장 가까운 구조 빔 위 점으로 "snap"하고, 그 점에 RBE2(강체 연결) 요소를 생성합니다.</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">Phase 1 — 힌트 기반 snap</div>
+          <div class="algo-section-text">
+            U-bolt 힌트 좌표(RawPipeRow에서 파싱한 위치)에서 <code>UboltSnapMaxDist(50mm)</code> 이내의 Structure 빔 요소를 SpatialHash로 탐색.<br>
+            찾은 요소 위에 힌트 좌표를 투영(<code>Segment3.ClosestPointTo</code>)해 snap 위치 결정.<br>
+            투영점에 새 노드 삽입 → <code>RigidElement(Remark="UBOLT")</code> 생성.
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">Phase 2 — Fallback snap</div>
+          <div class="algo-section-text">
+            Phase 1 실패(힌트 없음 또는 50mm 초과) 시: Pipe 끝점에서 가장 가까운 Structure 노드 탐색.<br>
+            거리 &lt; <code>UboltSnapMaxDist(50mm)</code>이면 해당 노드를 마스터로 RBE2 생성.<br>
+            거리 ≥ 50mm이면 snap 실패 → <code>NodeTags.Boundary</code> 태그 + <code>UBOLT_SNAP_FAILED</code> 진단.
+          </div>
+        </div>
+
+        <div class="algo-warn">Snap 실패 노드는 NodeTags.Boundary로 표시해 FinalValidation에서 자유단 경고를 억제합니다. 그러나 실제 구조 연결이 없으므로 검토 필요.</div>
+      </div>
+
+      <!-- 알고리즘 6: 요소 메싱 -->
+      <div class="algo-block">
+        <div class="algo-title">6. 요소 등분할 메싱 (Meshing)</div>
+        <div class="algo-source">신규 구현 (HiTess 직접 참조 없음)</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">목적</div>
+          <div class="algo-section-text">FEM 해석 정밀도를 위해 너무 긴 빔 요소를 균등하게 분할합니다. 긴 요소는 굽힘 응력 분포를 부정확하게 표현하므로, 최대 길이 이하로 잘게 나눕니다.</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">분할 규칙</div>
+          <div class="algo-section-text">
+            Structure: 길이 &gt; <code>MeshingMaxLengthStructure(2000mm)</code>이면 분할<br>
+            Pipe: 길이 &gt; <code>MeshingMaxLengthPipe(1000mm)</code>이면 분할<br>
+            Equipment: 분할 안 함 (집중 질량은 위치 변경 불가)<br><br>
+            분할 개수 = <code>ceil(length / maxLength)</code><br>
+            각 조각의 길이 = <code>length / n</code> (균등 분할)<br>
+            중간 노드 좌표 = 선형 보간으로 계산
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">단면/재료 유지</div>
+          <div class="algo-section-text">분할된 조각들은 원래 요소와 동일한 PropertyId(단면)와 MaterialId(재료)를 가집니다. Orientation(보 방향 벡터)도 동일하게 유지.</div>
+        </div>
+
+        <div class="algo-code">// 의사 코드
+foreach (var elem in model.Elements.ToList()) {
+    var seg = elem.GetSegment(model);
+    int n = (int)Math.Ceiling(seg.Length / MaxLength(elem.Category));
+    if (n <= 1) continue;
+    var pts = Enumerable.Range(0, n+1)
+        .Select(i => seg.Start + i * (seg.End - seg.Start) / n)
+        .ToList();
+    var nodes = pts.Select((p,i) =>
+        i == 0 ? elem.StartNodeId :
+        i == n ? elem.EndNodeId  :
+        model.AddNode(p).Id).ToList();
+    model.Remove(elem);
+    for (int i = 0; i < n; i++)
+        model.AddElement(nodes[i], nodes[i+1], elem.PropertyId, elem.Category);
+}</div>
+      </div>
+
+      <!-- 알고리즘 7: 그룹 연결 -->
+      <div class="algo-block">
+        <div class="algo-title">7. 그룹 연결 (GroupConnect)</div>
+        <div class="algo-source">참조: Pipeline/ElementModifier/ElementGroupTranslationModifier.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">목적</div>
+          <div class="algo-section-text">CSV 좌표 오차 또는 설계 의도로 인해 물리적으로 연결되어야 하는 요소들이 위상적으로 분리되어 있을 수 있습니다. 이 Stage는 분리된 그룹들을 감지하고 가장 큰 그룹에 연결합니다.</div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">알고리즘 단계</div>
+          <div class="algo-section-text">
+            1. UnionFind로 <code>BeamElement</code> 연결 그룹 식별 (공유 노드를 가진 요소들이 같은 그룹)<br>
+            2. 가장 많은 요소를 포함한 그룹을 "메인 그룹"으로 선정<br>
+            3. 비메인 그룹의 각 요소에서 메인 그룹의 모든 요소까지 거리 계산 (SpatialHash 활용)<br>
+            4. 거리 &lt; <code>UboltSnapMaxDist × 2 = 100mm</code>이면 중간 연결 노드 생성 (<code>NodeTags.Boundary</code> 태그)<br>
+            5. 거리 ≥ 100mm이면 고립 그룹으로 판정 → <code>ISOLATED_GROUP</code> 진단 발행
+          </div>
+        </div>
+
+        <div class="algo-warn">고립 그룹(100mm 초과)은 자동 연결하지 않습니다. 별도 검토 후 수동으로 처리해야 합니다. FinalValidation에서 자유단 노드 경고로 이어질 수 있습니다.</div>
+      </div>
+
+      <!-- 알고리즘 8: BDF 고정폭 포맷 -->
+      <div class="algo-block">
+        <div class="algo-title">8. Nastran BDF 8열 고정폭 포맷 (BdfField)</div>
+        <div class="algo-source">참조: Exporter/BdfFormatFields.cs, BdfBuilder.cs</div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">Nastran BDF 형식 규칙</div>
+          <div class="algo-section-text">
+            Nastran BDF(Bulk Data File)는 각 필드가 정확히 8자여야 합니다(고정폭 형식).<br>
+            1줄 = 80자 = 카드명(8자) + 필드 8개 × 8자 = 72자 + 8자(계속 여부)<br>
+            실수는 "e" 없이 지수 표기: 2.06e+05 → "2.06+05" (8자 제한 때문에 e 생략)
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">BdfField 구현</div>
+          <div class="algo-section-text">
+            <code>L(int v)</code>: 정수를 오른쪽 정렬 8자 문자열로<br>
+            <code>R(double v)</code>: 실수를 8자 내에서 최대 유효 숫자로 (예: "1234.567")<br>
+            <code>RSci(double v)</code>: 지수 표기 8자 — "1.23+05" 형태 (e 없음, Nastran 전용)
+          </div>
+        </div>
+
+        <div class="algo-section">
+          <div class="algo-section-label">RBE2 Continuation 처리</div>
+          <div class="algo-section-text">
+            RBE2 슬레이브 노드가 많으면 1줄(80자)에 다 들어가지 않음.<br>
+            80자 초과 시 "+" 기호로 다음 줄에 이어 씀 (Nastran 규격 필수).<br>
+            Verify.Xunit 골든 스냅샷으로 포맷 회귀를 방지.
+          </div>
+        </div>
+
+        <div class="algo-code">// 예시 GRID 카드 (노드 42, 좌표 100.0, 200.5, 0.0)
+// "GRID    "+"      42"+"        "+"  100.000"+"  200.500"+"      .0"
+GRID          42             100.000   200.500       .0
+
+// 예시 RBE2 카드 (마스터 10, 슬레이브 11 12 13 14 15 16 17 ...)
+RBE2*         1*            10*123456*            11
++*            12*            13*            14*            15
++*            16*            17</div>
+      </div>
+
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-code-algorithms">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-code-algorithms"
+          placeholder="알고리즘 구현 중 발견한 엣지케이스, 최적화 아이디어..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <div class="page-footer">
+      ClaudeModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24
+    </div>
+  </main>
+</div>
+
+<script>
+const memoTimers = {};
+function memoKey(id) { return 'cmb-memo-' + id; }
+function getMemoValue(id) { return localStorage.getItem(memoKey(id)) || ''; }
+function hasMemo(id) { return getMemoValue(id).trim().length > 0; }
+function initMemo(sectionId) {
+  const ta = document.getElementById('memo-' + sectionId);
+  if (!ta) return;
+  ta.value = getMemoValue(sectionId);
+  ta.addEventListener('input', () => {
+    clearTimeout(memoTimers[sectionId]);
+    memoTimers[sectionId] = setTimeout(() => {
+      localStorage.setItem(memoKey(sectionId), ta.value);
+      const ind = document.getElementById('memo-saved-' + sectionId);
+      if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 1500); }
+      updateNavMemoDots();
+    }, 800);
+  });
+}
+function updateNavMemoDots() {
+  document.querySelectorAll('[data-memo-section]').forEach(item => {
+    const id = item.dataset.memoSection;
+    let dot = item.querySelector('.nav-memo-dot');
+    if (hasMemo(id)) {
+      if (!dot) { dot = document.createElement('span'); dot.className = 'nav-memo-dot'; dot.textContent = '📝'; item.appendChild(dot); }
+    } else { if (dot) dot.remove(); }
+  });
+}
+function initAllMemos() {
+  document.querySelectorAll('.content-section[id]').forEach(s => initMemo(s.id));
+  updateNavMemoDots();
+}
+function initScrollspy() {
+  const secs = document.querySelectorAll('.content-section[id]');
+  const items = document.querySelectorAll('[data-target]');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        items.forEach(n => n.classList.remove('active'));
+        const a = document.querySelector('[data-target="' + e.target.id + '"]');
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  secs.forEach(s => obs.observe(s));
+}
+function initNavClicks() {
+  document.querySelectorAll('[data-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const t = document.getElementById(item.dataset.target);
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
+}
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded', () => {
+  initScrollspy();
+  initNavClicks();
+  initAllMemos();
+});
+</script>
+</body>
+</html>

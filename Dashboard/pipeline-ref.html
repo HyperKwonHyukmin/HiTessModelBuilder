@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>파이프라인 참조 — ClaudeModelBuilder</title>
+<link rel="stylesheet" href="cmb-style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <span class="app-header-title">ClaudeModelBuilder</span>
+  <span class="app-header-sep">|</span>
+  <span class="app-header-sub">AM CSV &rarr; FEM Beam &rarr; Nastran BDF &nbsp;·&nbsp; .NET 8 / C# 12</span>
+</header>
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<div class="app-layout">
+
+  <nav class="sidebar" id="sidebar">
+    <!-- 상단: 페이지 전환 링크 -->
+    <div class="nav-group-header">페이지</div>
+    <a class="nav-item" href="dashboard.html">&#128203; 진행 현황</a>
+    <a class="nav-item active" href="pipeline-ref.html">&#128295; 파이프라인 참조</a>
+    <a class="nav-item" href="code-classes.html">&#128230; 클래스 카탈로그</a>
+    <a class="nav-item" href="code-ref.html">&#128202; 코드 참조</a>
+    <div class="nav-divider"></div>
+    <!-- 하단: 현재 페이지 내 섹션 링크 -->
+    <div class="nav-group-header">이 페이지</div>
+    <a class="nav-item" data-target="section-pipeline" data-memo-section="section-pipeline">
+      파이프라인 스테이지
+    </a>
+    <a class="nav-item" data-target="section-architecture" data-memo-section="section-architecture">
+      아키텍처
+    </a>
+    <a class="nav-item" data-target="section-tolerance" data-memo-section="section-tolerance">
+      Tolerance 설정
+    </a>
+  </nav>
+
+  <main class="main-content">
+
+    <!-- ═══ Pipeline Stages ═══ -->
+    <section class="content-section" id="section-pipeline">
+      <h1 class="section-heading">파이프라인 스테이지 순서 (Phase C)</h1>
+
+      <div class="info-block" style="margin-bottom:20px">
+        <div class="info-block-title">실행 순서</div>
+        <p>SanityPreprocess &rarr; Meshing &rarr; NodeEquivalence &rarr; Intersection &rarr; WeldNode &rarr; GroupConnect &rarr; UboltRbe &rarr; FinalValidation</p>
+      </div>
+
+      <div id="pipeline-stages-list"></div>
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-section-pipeline">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-section-pipeline"
+          placeholder="파이프라인 전체 흐름에 대한 메모..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <!-- ═══ 아키텍처 ═══ -->
+    <section class="content-section" id="section-architecture">
+      <h1 class="section-heading">아키텍처</h1>
+
+      <div class="section-sub-heading">의존성 방향 — 왜 단방향인가?</div>
+      <div class="info-block" style="margin-bottom:16px">
+        <div class="info-block-title">설계 이유</div>
+        <p>순환 참조를 금지하는 이유: 변경의 영향 범위를 예측 가능하게 하기 위해서입니다. <code>Core</code>를 수정하면 모든 프로젝트가 영향받지만, <code>Cli</code>를 수정해도 <code>Core</code>는 영향받지 않습니다.</p>
+        <p style="margin-top:8px">각 프로젝트 역할:</p>
+        <p>&nbsp;&nbsp;<code>Cmb.Core</code> — 순수 도메인. 외부 NuGet 전혀 없음. 가장 안정적.</p>
+        <p>&nbsp;&nbsp;<code>Cmb.Io</code> — 입출력. CSV 읽기, BDF/JSON 쓰기.</p>
+        <p>&nbsp;&nbsp;<code>Cmb.Pipeline</code> — 알고리즘. 8개 파이프라인 스테이지, 공간 자료구조.</p>
+        <p>&nbsp;&nbsp;<code>Cmb.Cli</code> — 진입점. 사용자 인터페이스(커맨드라인).</p>
+      </div>
+      <div class="dep-chain" style="margin-bottom:8px">
+        <div class="dep-node">Cmb.Cli</div>
+        <div class="dep-arrow">&rarr;</div>
+        <div class="dep-node">Cmb.Pipeline</div>
+        <div class="dep-arrow">&rarr;</div>
+        <div class="dep-node">Cmb.Io</div>
+        <div class="dep-arrow">&rarr;</div>
+        <div class="dep-node">Cmb.Core</div>
+      </div>
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px">순환 참조 금지. <code>Cmb.Core</code>는 BCL(<code>System.Text.Json</code>)만 허용.</p>
+
+      <div class="section-sub-heading">HiTess 레거시 참조 가이드</div>
+      <p style="font-size:13px;color:#f87171;margin-bottom:10px">주의: <code>C:\Coding\Csharp\Projects\HiTessModelBuilder_26_01\</code> — 읽기 전용 참조만 허용, 절대 수정 금지</p>
+      <div style="overflow-x:auto">
+        <table class="ref-table">
+          <thead>
+            <tr><th>알고리즘</th><th>참조 파일</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="ref-alg">수렴 루프 패턴</td><td class="ref-file">Pipeline/FeModelProcessPipeline.cs</td></tr>
+            <tr><td class="ref-alg">공간 해시 / UnionFind</td><td class="ref-file">Pipeline/Utils/SpatialHash.cs<br>Pipeline/Utils/UnionFind.cs</td></tr>
+            <tr><td class="ref-alg">노드 동일성 (sweep-and-prune)</td><td class="ref-file">Pipeline/NodeInspector/InspectEquivalenceNodes.cs</td></tr>
+            <tr><td class="ref-alg">교차 분할 (Dan Sunday)</td><td class="ref-file">Pipeline/ElementModifier/ElementIntersectionSplitModifier.cs</td></tr>
+            <tr><td class="ref-alg">그룹 연결</td><td class="ref-file">Pipeline/ElementModifier/ElementGroupTranslationModifier.cs</td></tr>
+            <tr><td class="ref-alg">U-bolt snap</td><td class="ref-file">Pipeline/ElementModifier/UboltSnapToStructureModifier.cs</td></tr>
+            <tr><td class="ref-alg">단면 매핑, 기본 재료</td><td class="ref-file">Services/Builders/RawFeModelBuilder.cs</td></tr>
+            <tr><td class="ref-alg">BDF 고정폭 포맷</td><td class="ref-file">Exporter/BdfFormatFields.cs<br>Exporter/BdfBuilder.cs</td></tr>
+            <tr><td class="ref-alg">CSV 컬럼 구조</td><td class="ref-file">Parsers/CsvParser.cs</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-sub-heading" style="margin-top:24px">HiTess에서 사용하지 않는 패턴 — CMB에서 개선한 부분</div>
+      <div class="info-block">
+        <div class="info-block-title">대체 방식</div>
+        <p><code>ExtraData: Dictionary&lt;string,string&gt;</code> → <code>EntityCategory</code> / <code>NodeTags</code> 로 대체.<br>
+        <span style="font-size:13px;color:var(--text-dim)">이유: 딕셔너리는 어떤 값이 들어올지 컴파일 타임에 알 수 없어 타입 안전성이 없음. 열거형으로 표현하면 코드 분석 도구가 모든 경우를 추적 가능.</span></p>
+        <p style="margin-top:8px"><code>Console.WriteLine</code> 로깅 → <code>ILogger</code> 사용.<br>
+        <span style="font-size:13px;color:var(--text-dim)">이유: 테스트에서 로그를 캡처하거나, 프로덕션에서 파일/구조화 로그로 쉽게 전환 가능.</span></p>
+        <p style="margin-top:8px">하드코딩 tolerance → <code>RunOptions.Tolerances</code> 레코드에만 정의.<br>
+        <span style="font-size:13px;color:var(--text-dim)">이유: 값이 한 곳에만 있어야 실수로 일부만 변경하는 문제를 방지할 수 있음.</span></p>
+      </div>
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-section-architecture">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-section-architecture"
+          placeholder="아키텍처 결정사항, 리팩토링 후보..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <!-- ═══ Tolerance 설정 ═══ -->
+    <section class="content-section" id="section-tolerance">
+      <h1 class="section-heading">Tolerance 설정</h1>
+
+      <div class="info-block" style="margin-bottom:16px">
+        <div class="info-block-title">정의 위치</div>
+        <p><code>RunOptions.Tolerances</code> 레코드에만 정의. 코드 내 하드코딩 금지.</p>
+      </div>
+
+      <div style="overflow-x:auto">
+        <table class="prop-table">
+          <thead>
+            <tr><th>필드명</th><th>기본값</th><th>용도</th><th>사용 Stage</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>NodeMergeTol</td>
+              <td><span class="prop-val">1.0 mm</span></td>
+              <td>동일 노드 판정 거리</td>
+              <td><span class="prop-note">NodeEquivalence, WeldNode</span></td>
+            </tr>
+            <tr>
+              <td>IntersectionTol</td>
+              <td><span class="prop-val">0.1 mm</span></td>
+              <td>교차점 판정 오차</td>
+              <td><span class="prop-note">Intersection</span></td>
+            </tr>
+            <tr>
+              <td>UboltSnapMaxDist</td>
+              <td><span class="prop-val">50.0 mm</span></td>
+              <td>U-bolt snap 최대 거리</td>
+              <td><span class="prop-note">UboltRbe, GroupConnect</span></td>
+            </tr>
+            <tr>
+              <td>ShortElemMin</td>
+              <td><span class="prop-val">5.0 mm</span></td>
+              <td>단축 요소 제거 기준 길이</td>
+              <td><span class="prop-note">SanityPreprocess</span></td>
+            </tr>
+            <tr>
+              <td>SpatialCellSizeMm</td>
+              <td><span class="prop-val">200.0 mm</span></td>
+              <td>공간 해시 셀 크기</td>
+              <td><span class="prop-note">NodeEquivalence, Intersection</span></td>
+            </tr>
+            <tr>
+              <td>MaxConvergenceIterations</td>
+              <td><span class="prop-val">50 회</span></td>
+              <td>수렴 루프 최대 반복</td>
+              <td><span class="prop-note">Intersection</span></td>
+            </tr>
+            <tr>
+              <td>MeshingMaxLengthStructure</td>
+              <td><span class="prop-val">2000.0 mm</span></td>
+              <td>Structure Beam 최대 분할 길이</td>
+              <td><span class="prop-note">Meshing</span></td>
+            </tr>
+            <tr>
+              <td>MeshingMaxLengthPipe</td>
+              <td><span class="prop-val">1000.0 mm</span></td>
+              <td>Pipe Beam 최대 분할 길이</td>
+              <td><span class="prop-note">Meshing</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-section-tolerance">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-section-tolerance"
+          placeholder="Tolerance 값 조정 실험 기록..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <div class="page-footer">
+      ClaudeModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24 &nbsp;|&nbsp; 브라우저에서 직접 열기 가능
+    </div>
+
+  </main>
+</div>
+
+<script>
+const DATA = {
+  pipelineStages: [
+    {
+      idx: 1, name: "SanityPreprocess", status: "waiting",
+      purpose: "입력 데이터 정합성 검사 및 전처리. 중복/단축 요소 제거, 공선 노드 병합, 노드 참조 정합성 검사를 수행한다.",
+      algorithm: "선형 스캔으로 중복 요소 감지, ShortElemMin 임계값 비교로 단축 요소 제거, 세 노드 A-B-C에서 B가 AC 선분 위에 있으면 B를 제거하는 공선 감지.",
+      io: "입력: FeModelBuilder 생성 초기 FeModel | 출력: 중복/단축/공선 제거된 FeModel",
+      tolerance: "ShortElemMin = 5.0 mm",
+      refFile: "Pipeline/FeModelProcessPipeline.cs",
+      diagCodes: ["DUPLICATE_ELEM", "SHORT_ELEM", "COLLINEAR_NODE"]
+    },
+    {
+      idx: 2, name: "Meshing", status: "waiting",
+      purpose: "긴 Beam 요소를 등분할한다. Structure는 2000mm, Pipe는 1000mm 초과 시 분할. Equipment는 분할하지 않음.",
+      algorithm: "ceil(Length / MaxLength)로 분할 개수 계산, IdAllocator로 중간 노드 생성 후 원래 요소 교체.",
+      io: "입력: SanityPreprocess 완료 FeModel | 출력: 모든 요소가 최대 길이 이하인 FeModel",
+      tolerance: "MeshingMaxLengthStructure = 2000.0 mm | MeshingMaxLengthPipe = 1000.0 mm",
+      refFile: "신규 구현",
+      diagCodes: ["MESHING_SPLIT"]
+    },
+    {
+      idx: 3, name: "NodeEquivalence", status: "waiting",
+      purpose: "근접 노드를 병합하여 위상 정규화. O(N log N) sweep-and-prune 알고리즘으로 NodeMergeTol 이내 노드를 찾아 최소 ID 노드로 통합.",
+      algorithm: "X 좌표 정렬 후 슬라이딩 윈도우(sweep-and-prune). UnionFind로 병합 그룹 결정, 최소 ID를 canonical 노드로 선정. BeamElement/RigidElement의 NodeId를 canonical로 교체, 루프 요소 제거.",
+      io: "입력: Meshing 완료 FeModel | 출력: 거리 < NodeMergeTol 노드 쌍 없는 FeModel",
+      tolerance: "NodeMergeTol = 1.0 mm | SpatialCellSizeMm = 200.0 mm",
+      refFile: "Pipeline/NodeInspector/InspectEquivalenceNodes.cs",
+      diagCodes: ["NODE_MERGED"]
+    },
+    {
+      idx: 4, name: "Intersection", status: "waiting",
+      purpose: "빔 요소 교차점에서 요소를 분할하고 노드를 공유시킨다. 수렴 루프로 새로 생긴 교차를 반복 처리.",
+      algorithm: "ElementSpatialHash로 후보 쌍 추출. Dan Sunday segment-segment 최근접점 알고리즘으로 거리 계산. 거리 < IntersectionTol 이면 교차점에 새 노드 삽입 후 2분할. MaxConvergenceIterations까지 수렴 반복.",
+      io: "입력: NodeEquivalence 완료 FeModel | 출력: 교차 쌍 없는 FeModel",
+      tolerance: "IntersectionTol = 0.1 mm | MaxConvergenceIterations = 50",
+      refFile: "Pipeline/ElementModifier/ElementIntersectionSplitModifier.cs",
+      diagCodes: ["INTERSECTION_SPLIT", "CONVERGENCE_LIMIT_REACHED"]
+    },
+    {
+      idx: 5, name: "WeldNode", status: "waiting",
+      purpose: "CSV weld 힌트 기반으로 NodeTags.Weld를 부여. RawPipeRow.IsWeld == true인 행의 끝점 좌표와 가장 가까운 노드에 태그 추가.",
+      algorithm: "힌트 좌표에서 NodeMergeTol 이내 노드를 선형 탐색. 매칭 성공 시 NodeTags.Weld 플래그 추가.",
+      io: "입력: Intersection 완료 FeModel + RawPipeRow 힌트 | 출력: NodeTags.Weld 적용된 FeModel",
+      tolerance: "NodeMergeTol = 1.0 mm",
+      refFile: "HiTess에서 별도 분리 없음 (신규)",
+      diagCodes: ["WELD_TAG_APPLIED", "WELD_HINT_UNMATCHED"]
+    },
+    {
+      idx: 6, name: "GroupConnect", status: "waiting",
+      purpose: "연결 그룹을 감지하고 최대 그룹으로 근접 단독 그룹을 연결. 고립 그룹은 Warn 진단 발행.",
+      algorithm: "UnionFind로 BeamElement 연결 그룹 식별. 최대 그룹 선정. 비최대 그룹 각 요소에 대해 최대 그룹 최근접 요소 탐색. 거리 < UboltSnapMaxDist*2 이면 중간 연결 노드 생성(NodeTags.Boundary).",
+      io: "입력: WeldNode 완료 FeModel | 출력: 단일 연결 그룹 FeModel",
+      tolerance: "UboltSnapMaxDist * 2 = 100.0 mm",
+      refFile: "Pipeline/ElementModifier/ElementGroupTranslationModifier.cs",
+      diagCodes: ["GROUP_CONNECTED", "ISOLATED_GROUP"]
+    },
+    {
+      idx: 7, name: "UboltRbe", status: "waiting",
+      purpose: "Pipe U-bolt를 Structure에 snap하여 RBE2(RigidElement) 또는 ForcedSpc 생성. 2-phase snap 전략.",
+      algorithm: "Phase 1: U-bolt 힌트 좌표 근처 Structure에 snap. Phase 2 fallback: Pipe 끝점 → 가장 가까운 Structure 노드 탐색, 거리 < UboltSnapMaxDist → snap. Snap 성공: RigidElement(Remark='UBOLT') 생성. 실패: NodeTags.Boundary + Warn.",
+      io: "입력: GroupConnect 완료 FeModel | 출력: RigidElement 또는 Boundary 태그 적용된 FeModel",
+      tolerance: "UboltSnapMaxDist = 50.0 mm",
+      refFile: "Pipeline/ElementModifier/UboltSnapToStructureModifier.cs",
+      diagCodes: ["UBOLT_RBE2_CREATED", "UBOLT_SNAP_FAILED"]
+    },
+    {
+      idx: 8, name: "FinalValidation", status: "waiting",
+      purpose: "최종 검증 및 BDF 출력. 자유단/고아 노드 Warn, 누락 Property/Material Error. Error 시 BDF 출력 차단 + exit code 2.",
+      algorithm: "자유단 노드: 1개 요소 연결 + NodeTags.Boundary 없음 → Warn. 고아 노드: 어떤 요소에도 미참조 → Warn. 누락 Property: Error. 누락 Material: Error. 최종 BdfWriter 호출.",
+      io: "입력: UboltRbe 완료 FeModel | 출력: final.bdf + 08_FinalValidation.json",
+      tolerance: "없음 (검증만 수행)",
+      refFile: "Exporter/BdfFormatFields.cs, BdfBuilder.cs",
+      diagCodes: ["FREE_END_NODE", "ORPHAN_NODE", "MISSING_PROPERTY", "MISSING_MATERIAL"]
+    }
+  ],
+  tolerances: [
+    { field: "NodeMergeTol",              value: "1.0 mm",    desc: "동일 노드 판정 거리",         stage: "NodeEquivalence, WeldNode" },
+    { field: "IntersectionTol",           value: "0.1 mm",    desc: "교차점 판정 오차",             stage: "Intersection" },
+    { field: "UboltSnapMaxDist",          value: "50.0 mm",   desc: "U-bolt snap 최대 거리",        stage: "UboltRbe, GroupConnect" },
+    { field: "ShortElemMin",              value: "5.0 mm",    desc: "단축 요소 제거 기준 길이",      stage: "SanityPreprocess" },
+    { field: "SpatialCellSizeMm",         value: "200.0 mm",  desc: "공간 해시 셀 크기",            stage: "NodeEquivalence, Intersection" },
+    { field: "MaxConvergenceIterations",  value: "50 회",     desc: "수렴 루프 최대 반복",          stage: "Intersection" },
+    { field: "MeshingMaxLengthStructure", value: "2000.0 mm", desc: "Structure Beam 최대 분할 길이", stage: "Meshing" },
+    { field: "MeshingMaxLengthPipe",      value: "1000.0 mm", desc: "Pipe Beam 최대 분할 길이",     stage: "Meshing" }
+  ]
+};
+
+function renderPipelineList() {
+  const container = document.getElementById('pipeline-stages-list');
+  if (!container) return;
+  container.innerHTML = DATA.pipelineStages.map(s => {
+    const tolLines = s.tolerance.split('|').map(t => t.trim());
+    const diagHtml = s.diagCodes.map(d => `<code>${d}</code>`).join(' ');
+    return `<div class="stage-ref-card">
+      <div class="stage-ref-header">
+        <span class="stage-ref-num">Stage ${s.idx}</span>
+        <span class="stage-ref-title">${s.name}</span>
+      </div>
+      <div class="stage-ref-body">
+        <div>
+          <div class="stage-ref-field">
+            <div class="stage-ref-label">목적</div>
+            <div class="stage-ref-text">${s.purpose}</div>
+          </div>
+          <div class="stage-ref-field">
+            <div class="stage-ref-label">알고리즘</div>
+            <div class="stage-ref-text">${s.algorithm}</div>
+          </div>
+          <div class="stage-ref-field">
+            <div class="stage-ref-label">입력 / 출력</div>
+            <div class="stage-ref-text">${s.io.replace('|', '<br>')}</div>
+          </div>
+        </div>
+        <div>
+          <div class="stage-ref-field">
+            <div class="stage-ref-label">Tolerance</div>
+            <div class="stage-ref-tol">${tolLines.join('<br>')}</div>
+          </div>
+          <div class="stage-ref-field">
+            <div class="stage-ref-label">진단 코드</div>
+            <div class="stage-ref-text">${diagHtml}</div>
+          </div>
+          <div class="stage-ref-field">
+            <div class="stage-ref-label">HiTess 참조</div>
+            <div class="stage-ref-ref">${s.refFile}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+const memoTimers = {};
+function memoKey(id) { return 'cmb-memo-' + id; }
+function getMemoValue(id) { return localStorage.getItem(memoKey(id)) || ''; }
+function hasMemo(id) { return getMemoValue(id).trim().length > 0; }
+function initMemo(sectionId) {
+  const ta = document.getElementById('memo-' + sectionId);
+  if (!ta) return;
+  ta.value = getMemoValue(sectionId);
+  ta.addEventListener('input', () => {
+    clearTimeout(memoTimers[sectionId]);
+    memoTimers[sectionId] = setTimeout(() => {
+      localStorage.setItem(memoKey(sectionId), ta.value);
+      const ind = document.getElementById('memo-saved-' + sectionId);
+      if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 1500); }
+      updateNavMemoDots();
+    }, 800);
+  });
+}
+function updateNavMemoDots() {
+  document.querySelectorAll('[data-memo-section]').forEach(item => {
+    const id = item.dataset.memoSection;
+    let dot = item.querySelector('.nav-memo-dot');
+    if (hasMemo(id)) {
+      if (!dot) { dot = document.createElement('span'); dot.className = 'nav-memo-dot'; dot.textContent = '📝'; item.appendChild(dot); }
+    } else { if (dot) dot.remove(); }
+  });
+}
+function initAllMemos() {
+  document.querySelectorAll('.content-section[id]').forEach(s => initMemo(s.id));
+  updateNavMemoDots();
+}
+function initScrollspy() {
+  const secs = document.querySelectorAll('.content-section[id]');
+  const items = document.querySelectorAll('[data-target]');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        items.forEach(n => n.classList.remove('active'));
+        const a = document.querySelector('[data-target="' + e.target.id + '"]');
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  secs.forEach(s => obs.observe(s));
+}
+function initNavClicks() {
+  document.querySelectorAll('[data-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const t = document.getElementById(item.dataset.target);
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  renderPipelineList();
+  initScrollspy();
+  initNavClicks();
+  initAllMemos();
+});
+</script>
+</body>
+</html>

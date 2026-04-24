@@ -1,0 +1,55 @@
+## Build outputs
+bin/
+obj/
+out/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+.vscode/
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+nuget.config.local
+
+## Test results
+TestResults/
+coverage*/
+*.trx
+*.coveragexml
+
+## Rider
+.idea/
+*.sln.iml
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Logs & temp
+*.log
+*.tmp
+*.temp
+
+## CSV 입력 / CLI 산출물 (로컬 작업 파일)
+csv/
+
+## MCP / Task Manager (로컬 절대경로 포함, 머신 종속)
+.mcp.json
+.mcp.json.bak
+mcp-shrimp-task-manager/
+shrimp_data/
+
+## Claude Code 로컬 설정 (개인 오버라이드)
+.claude/settings.local.json
+.claude/agent-memory/
+
+## 기타 로컬 메모
+명령어.txt

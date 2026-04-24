@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClaudeModelBuilder — 클래스 목록</title>
+<link rel="stylesheet" href="cmb-style.css">
+<style>
+.nav-page-link { text-decoration: none; }
+.nav-page-link.current { background: rgba(96,165,250,0.15); color: var(--accent); border-left: 2px solid var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="app-header-title">ClaudeModelBuilder</span>
+  <span class="app-header-sep">|</span>
+  <span class="app-header-sub">AM CSV &rarr; FEM Beam &rarr; Nastran BDF &nbsp;·&nbsp; .NET 8 / C# 12</span>
+</header>
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<div class="app-layout">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-group-header">페이지</div>
+    <a class="nav-item nav-page-link" href="index.html">&#128203; 진행 현황</a>
+    <a class="nav-item nav-page-link" href="code-flow.html">&#8644; 데이터 흐름</a>
+    <a class="nav-item nav-page-link current" href="code-classes.html">&#128230; 클래스 목록</a>
+    <a class="nav-item nav-page-link" href="code-deps.html">&#128279; 의존성 그래프</a>
+    <a class="nav-item nav-page-link" href="code-algorithms.html">&#9881; 알고리즘</a>
+    <div class="nav-divider"></div>
+    <div class="nav-group-header">이 페이지</div>
+    <a class="nav-item" data-target="code-classes" data-memo-section="code-classes">
+      &#128230; 클래스 목록
+    </a>
+    <div style="padding:4px 20px 4px 36px;font-size:12px;color:var(--text-dim)">Cmb.Core / Cmb.Io / Cmb.Cli</div>
+  </nav>
+
+  <main class="main-content">
+
+    <!-- ═══ 클래스 목록 ═══ -->
+    <section class="content-section" id="code-classes">
+      <h1 class="section-heading">클래스 목록</h1>
+
+      <div class="class-tabs">
+        <button class="class-tab" data-tab="core" onclick="switchClassTab('core')">Cmb.Core (13)</button>
+        <button class="class-tab" data-tab="io" onclick="switchClassTab('io')">Cmb.Io (8)</button>
+        <button class="class-tab" data-tab="cli" onclick="switchClassTab('cli')">Cmb.Cli (1)</button>
+      </div>
+
+      <!-- Cmb.Core -->
+      <div class="class-panel" data-panel="core">
+        <div class="class-grid">
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">Point3</span>
+              <span class="class-kind-badge kind-struct">readonly struct</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Geometry</div>
+              <div class="class-card-role">3D 공간의 한 점. double 좌표 X/Y/Z.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">선박 구조물은 mm 단위 정밀도가 필요하므로 float 대신 double. readonly struct로 만든 이유는 FEM 노드 좌표가 절대 변경되지 않아야 하기 때문 — 파이프라인에서 노드를 "이동"하는 대신 항상 새 노드를 생성한다.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">X, Y, Z</span>
+                <span class="class-member">Origin (static)</span>
+                <span class="class-member">DistanceTo(Point3)</span>
+                <span class="class-member">operator +/-</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">Vector3</span>
+              <span class="class-kind-badge kind-struct">readonly struct</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Geometry</div>
+              <div class="class-card-role">방향과 크기를 가진 3D 벡터.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">BeamElement의 단면 방향(Orientation)을 표현하기 위해 Point3와 분리. 점은 위치, 벡터는 방향/변위 — 이 구분을 타입 수준에서 강제해 "위치 + 위치"처럼 의미없는 연산을 컴파일 에러로 차단한다.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">X, Y, Z; Length</span>
+                <span class="class-member">Normalize()</span>
+                <span class="class-member">Dot(static); Cross(static)</span>
+                <span class="class-member">Zero (static)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">Segment3</span>
+              <span class="class-kind-badge kind-struct">readonly struct</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Geometry</div>
+              <div class="class-card-role">시작·끝 두 점을 잇는 3D 선분.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">IntersectionStage에서 두 빔 요소의 교차 판정에 사용. ClosestPointTo()가 핵심 — 두 선분 사이의 최근접점을 계산해 교차 여부와 분할 위치를 구한다. Phase C에서 가장 많이 호출되는 기하 연산을 캡슐화.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Start, End; Length; Midpoint</span>
+                <span class="class-member">ClosestPointTo(Point3)</span>
+                <span class="class-member">DistanceTo(Point3)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">Point3</span>
+                <span class="class-dep-chip">Vector3</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">NodeTags</span>
+              <span class="class-kind-badge kind-enum">[Flags] enum</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">노드의 특성 비트 플래그. 중복 적용 가능.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">[Flags] enum으로 만든 이유: 하나의 노드가 동시에 "용접점이자 교차점"일 수 있음. 예) WeldNode Stage 후 Intersection Stage가 같은 노드를 처리하면 Weld|Intersection(=3). BDF 후처리 시 태그별로 경계조건/하중 분기 가능.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">None=0, Weld=1</span>
+                <span class="class-member">Intersection=2, Merged=4</span>
+                <span class="class-member">Boundary=8</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">BeamSectionKind</span>
+              <span class="class-kind-badge kind-enum">enum</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">보 단면 형태 분류.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">HiTess의 ProfilType 문자열("Ang", "Beam" 등)은 소프트웨어마다 다르다. 이를 도메인 enum으로 정규화해서 BDF Writer가 HiTess 문자열을 몰라도 Nastran PBEAML 카드명("L", "I" 등)을 결정할 수 있게 함. 소스 CAD 변경 시 매핑 테이블만 교체.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">H, L, Rod, Tube</span>
+                <span class="class-member">Box, Channel, Bar</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">EntityCategory</span>
+              <span class="class-kind-badge kind-enum">enum</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">요소가 속하는 범주. BDF 출력·U-bolt 판별에 사용.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">구조물·배관·장비는 메싱 기준(MeshingMaxLength)과 U-bolt snap 대상 여부가 다르다. 요소마다 카테고리를 보유해야 Stage에서 분기 처리 가능. HiTess의 ExtraData 딕셔너리 패턴을 타입 안전 enum으로 대체.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Structure, Pipe, Equipment</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">Node</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">FEM 절점. 공간 좌표 + 태그 보유.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">Nastran GRID 카드 1장에 대응. sealed class인 이유: 파이프라인에서 노드를 상속·확장할 필요 없이 항상 동일한 형태여야 ID 참조 무결성이 유지됨. Tags를 분리 필드로 둬서 노드 이동 없이 특성만 추가 가능.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Id; Position (Point3)</span>
+                <span class="class-member">Tags (NodeTags)</span>
+                <span class="class-member">AddTag(); RemoveTag(); HasTag()</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">Point3</span>
+                <span class="class-dep-chip">NodeTags</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">BeamElement</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">두 노드를 잇는 보 요소. 단면·재료 참조.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">Nastran CBEAM 카드에 대응. 노드 좌표를 직접 저장하지 않고 StartNodeId/EndNodeId로 참조 — NodeEquivalenceStage에서 노드를 병합할 때 BeamElement의 ID 참조만 교체하면 되므로 좌표를 다시 계산할 필요 없음. Orientation은 단면 "위" 방향 지정용.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Id; StartNodeId; EndNodeId</span>
+                <span class="class-member">PropertyId; Category</span>
+                <span class="class-member">Orientation (Vector3)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">Vector3</span>
+                <span class="class-dep-chip">EntityCategory</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">RigidElement</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">강체 연결(Nastran RBE2). 마스터 1개 + 슬레이브 N개.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">U-bolt이 배관을 구조물에 고정할 때 사용. 배관 노드(슬레이브)를 구조물 노드(마스터)에 6자유도 강결합. BeamElement와 달리 단면·재료가 없고 순수하게 위상 연결만 표현하므로 별도 클래스로 분리.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Id; IndependentNodeId</span>
+                <span class="class-member">DependentNodeIds (IReadOnlyList&lt;int&gt;)</span>
+                <span class="class-member">Remark</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">PointMass</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">집중 질량(Nastran CONM2). 노드에 질량 부여.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">장비(Equipment)는 보 요소가 아닌 집중 질량으로 모델링. 장비 CSV의 COG(무게중심) 좌표에 노드를 만들고 PointMass를 달아 해석 소프트웨어가 관성 하중을 계산할 수 있게 함. 메싱 대상에서 제외(EntityCategory.Equipment).</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Id; NodeId; Mass (double)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">BeamSection</span>
+              <span class="class-kind-badge kind-record">record</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">보 단면 정의. Kind+Dims 조합으로 dedupe 기준.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">Nastran PBEAML 카드에 대응. record 타입인 이유: 값 동등 비교(Kind+Dims)가 기본 제공되어 dedupe 키로 바로 쓸 수 있음. 1,000개 빔이 같은 HN300×150을 쓰면 PBEAML 카드 1개만 출력 → BDF 파일 크기 절감.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Id; Kind (BeamSectionKind)</span>
+                <span class="class-member">Dims (double[]); MaterialId</span>
+                <span class="class-member">DimensionsEqual()</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">BeamSectionKind</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">Material</span>
+              <span class="class-kind-badge kind-record">record</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">재료 물성. 기본값 Steel 제공.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">Nastran MAT1 카드에 대응. 현재 모든 요소가 단일 Steel 재료를 공유하지만, 향후 알루미늄·스테인리스 지원 시 MaterialId 참조만 추가하면 됨. DefaultSteel 팩토리로 일관된 기본값 보장(E=206GPa, ν=0.3, ρ=7.85×10⁻⁹ t/mm³).</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Id; Name</span>
+                <span class="class-member">E (탄성계수); Nu (포아송비)</span>
+                <span class="class-member">Rho (밀도); DefaultSteel (static)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">IdAllocator</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model</div>
+              <div class="class-card-role">단조 증가 정수 ID 발급기. 절대 재사용 없음.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">파이프라인에서 노드/요소를 추가·삭제할 때 ID 충돌을 막기 위해 중앙화. "삭제된 ID 재사용 금지"가 핵심 — Nastran은 같은 ID가 두 번 나오면 오류. FeModel이 하나의 IdAllocator를 노드·요소·단면이 공유해 전체 ID가 유일함을 보장.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Next() → int</span>
+                <span class="class-member">Peek() → int</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">FeModel</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model.Context</div>
+              <div class="class-card-role">모든 FEM 엔티티의 컨테이너. LengthUnit="mm" 고정.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">파이프라인 Stage가 입력/출력으로 주고받는 핵심 객체. FeModel 하나가 Nastran BDF 파일 하나와 1:1 대응. Context 네임스페이스에 분리한 이유: 나머지 Model 클래스(엔티티)는 단순 데이터인 반면 FeModel은 상태·탐색 메서드를 가진 집합체.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">LengthUnit; Nodes; Elements</span>
+                <span class="class-member">Rigids; PointMasses</span>
+                <span class="class-member">Sections; Materials</span>
+                <span class="class-member">FindNode(); FindSection()</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">Node</span>
+                <span class="class-dep-chip">BeamElement</span>
+                <span class="class-dep-chip">RigidElement</span>
+                <span class="class-dep-chip">PointMass</span>
+                <span class="class-dep-chip">BeamSection</span>
+                <span class="class-dep-chip">Material</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">FeModelBuilder</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Building</div>
+              <div class="class-card-role">RawDesignData → FeModel 변환. 단면 매핑, Property dedupe, 기본 Steel Material 생성.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">CSV DTO(Raw)와 FEM 구조(FeModel)의 변환을 캡슐화. Cmb.Core.Building으로 분리한 이유: 이 변환 로직은 Cmb.Io(파일 I/O)와 무관하므로 의존 방향을 오염시키지 않기 위함. Phase C의 Stage들은 이 Builder를 거친 초기 FeModel을 입력으로 받는다.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Build(RawDesignData) → FeModel</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">RawDesignData</span>
+                <span class="class-dep-chip">FeModel</span>
+                <span class="class-dep-chip">Node</span>
+                <span class="class-dep-chip">BeamElement</span>
+                <span class="class-dep-chip">BeamSection</span>
+                <span class="class-dep-chip">Material</span>
+                <span class="class-dep-chip">IdAllocator</span>
+                <span class="class-dep-chip">Point3</span>
+                <span class="class-dep-chip">Vector3</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">RawBeamRow</span>
+              <span class="class-kind-badge kind-record">record</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model.Raw</div>
+              <div class="class-card-role">Structure CSV 한 행의 파싱 결과.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">HiTess 구조물 한 행을 타입 안전 record로 표현. SectionType 문자열과 Dims 배열을 그대로 보존해 FeModelBuilder의 ProfilType 매핑이 해석하도록 위임. Raw DTO이므로 FEM 변환 로직이 없음.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Name; SectionType; Dims (double[])</span>
+                <span class="class-member">StartPos/EndPos (double[])</span>
+                <span class="class-member">Ori (double[]); Weld (bool)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">RawPipeRow</span>
+              <span class="class-kind-badge kind-record">record</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model.Raw</div>
+              <div class="class-card-role">Pipe CSV 한 행의 파싱 결과.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">배관 파이프 한 행 DTO. Pos/APos/LPos 세 좌표를 모두 담는 이유: 일부 배관 세그먼트는 시작·끝 외에 중간점(APos)이 있어 곡관을 표현함. IsWeld 플래그가 WeldNode Stage의 입력 힌트.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Name; Type</span>
+                <span class="class-member">Pos/APos/LPos (double[])</span>
+                <span class="class-member">OutDia; Thick; Mass; Remark</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">RawEquipRow</span>
+              <span class="class-kind-badge kind-record">record</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model.Raw</div>
+              <div class="class-card-role">Equipment CSV 한 행의 파싱 결과.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">장비 한 행 DTO. 설치 위치(Pos)와 무게중심(Cog)을 별도 저장하는 이유: COG가 Pos와 다를 때 PointMass 노드는 COG에, 연결 노드는 Pos에 생성하기 위함. Mass가 0이면 PointMass 생략 가능.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Name; Pos (double[])</span>
+                <span class="class-member">Cog (double[]); Mass (double)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">RawDesignData</span>
+              <span class="class-kind-badge kind-record">record</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Core.Model.Raw</div>
+              <div class="class-card-role">CSV 전체 파싱 결과 컨테이너.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">3종 리더 결과를 하나로 묶어 FeModelBuilder와 RawDesignDataJson에 전달. Skips 목록을 포함해 파싱 실패 정보를 잃지 않고 CLI 출력에 반영. IReadOnlyList로 불변성을 보장해 Builder가 실수로 Raw 데이터를 수정하지 못하게 함.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Beams; Pipes; Equips; Skips</span>
+                <span class="class-member">(모두 IReadOnlyList)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">RawBeamRow</span>
+                <span class="class-dep-chip">RawPipeRow</span>
+                <span class="class-dep-chip">RawEquipRow</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /class-grid core -->
+      </div><!-- /class-panel core -->
+
+      <!-- Cmb.Io -->
+      <div class="class-panel" data-panel="io">
+        <div class="class-grid">
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">CsvSchema</span>
+              <span class="class-kind-badge kind-static">internal static</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Csv</div>
+              <div class="class-card-role">CSV 컬럼 인덱스 상수. 파서에서 매직 넘버 제거. 3종(Structure/Pipe/Equip) 분리.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">HiTess CSV의 컬럼 배치가 버전마다 바뀔 수 있음. 인덱스를 여기에 한 곳에 모아 두면 변경 시 이 파일만 수정하면 됨. 리더 3종 모두가 이 상수를 참조해 일관성 보장.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">const int NodeAx=0, NodeAy=1 …</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">CsvParsing</span>
+              <span class="class-kind-badge kind-static">internal static</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Csv</div>
+              <div class="class-card-role">CSV 셀 파싱 헬퍼. InvariantCulture 강제.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">double.Parse()를 그냥 쓰면 OS 로케일에 따라 "100.5"가 실패. InvariantCulture 강제 + null/빈칸 처리 + 구간 추출(ExtractDoubles)를 한 곳에 집중. 3개 리더 모두 이 헬퍼만 쓰므로 파싱 버그를 한 곳에서 잡을 수 있음.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">ExtractDoubles()</span>
+                <span class="class-member">ExtractDoublesOrNull()</span>
+                <span class="class-member">ExtractTypeAndDims()</span>
+                <span class="class-member">ParseDoubleSafe()</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">HiTessStructureCsvReader</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Csv</div>
+              <div class="class-card-role">Structure CSV → RawBeamRow 목록. 헤더 스킵, 빈 행 무시.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">구조물 보 요소 전용 파서. 3종 리더를 분리한 이유: 컬럼 구조가 완전히 달라 하나의 범용 리더로 처리하면 분기가 너무 복잡해짐. ParseSkip 반환으로 파싱 실패 행을 에러로 터트리지 않고 수집해 cmb parse 출력에 포함.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Read(string path)</span>
+                <span class="class-member">→ (IReadOnlyList&lt;RawBeamRow&gt;,</span>
+                <span class="class-member">&nbsp;&nbsp;&nbsp;IReadOnlyList&lt;ParseSkip&gt;)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">CsvSchema</span>
+                <span class="class-dep-chip">CsvParsing</span>
+                <span class="class-dep-chip">RawBeamRow</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">HiTessPipeCsvReader</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Csv</div>
+              <div class="class-card-role">Pipe CSV → RawPipeRow 목록.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">배관 전용 파서. 배관에는 외경(OutDia), 두께(Thick), 용접 힌트(IsWeld) 같이 구조물에 없는 컬럼이 있음. 배관 노드 3종(일반/시작/끝) 좌표를 각각 읽어 파이프 선분의 양 끝 + 중간 지점을 모두 캡처.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Read(string path)</span>
+                <span class="class-member">→ (IReadOnlyList&lt;RawPipeRow&gt;,</span>
+                <span class="class-member">&nbsp;&nbsp;&nbsp;IReadOnlyList&lt;ParseSkip&gt;)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">CsvSchema</span>
+                <span class="class-dep-chip">CsvParsing</span>
+                <span class="class-dep-chip">RawPipeRow</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">HiTessEquipCsvReader</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Csv</div>
+              <div class="class-card-role">Equipment CSV → RawEquipRow 목록.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">장비 전용 파서. 장비는 빔 요소가 아닌 집중 질량으로 변환되므로 Pos(위치)와 Cog(무게중심), Mass만 읽으면 됨. 구조물·배관 파서보다 단순하지만 분리 유지 — 장비 CSV 형식 변경 시 격리 수정 가능.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Read(string path)</span>
+                <span class="class-member">→ (IReadOnlyList&lt;RawEquipRow&gt;,</span>
+                <span class="class-member">&nbsp;&nbsp;&nbsp;IReadOnlyList&lt;ParseSkip&gt;)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">CsvSchema</span>
+                <span class="class-dep-chip">CsvParsing</span>
+                <span class="class-dep-chip">RawEquipRow</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">CsvDesignLoader</span>
+              <span class="class-kind-badge kind-class">sealed class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Csv</div>
+              <div class="class-card-role">폴더 탐색 + 3종 리더 조합 → RawDesignData 반환.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">CLI(Program)가 3개 파일 경로를 직접 관리하면 복잡해지므로 Facade로 묶음. LoadFolder()가 폴더에서 파일명 규칙으로 3종 경로를 자동 발견. 파일이 없으면 해당 목록은 빈 배열 — 배관 없는 프로젝트도 처리 가능.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">LoadFolder(string folder) → RawDesignData</span>
+                <span class="class-member">Load(string?,string?,string?) → RawDesignData</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">HiTessStructureCsvReader</span>
+                <span class="class-dep-chip">HiTessPipeCsvReader</span>
+                <span class="class-dep-chip">HiTessEquipCsvReader</span>
+                <span class="class-dep-chip">RawDesignData</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">BdfField</span>
+              <span class="class-kind-badge kind-static">internal static</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Nastran</div>
+              <div class="class-card-role">Nastran 8열 고정폭 필드 포맷터.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">Nastran BDF 규격이 정확히 8자 패딩을 요구하므로 string.Format으로는 처리하기 어렵고 실수하기 쉬움. L()/R()/RSci() 3개 메서드로 정수·실수·과학표기 각각 캡슐화. 특히 RSci는 "e" 없이 "2.06+05" 형태여야 함 — Nastran 고유 규격.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">L(int) → string (8자 정수)</span>
+                <span class="class-member">R(double) → string (8자 실수)</span>
+                <span class="class-member">RSci(double) → string (지수표기)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list"><span class="class-dep-chip">—</span></div>
+            </div>
+          </div>
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">BdfWriter</span>
+              <span class="class-kind-badge kind-static">static class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Io.Nastran</div>
+              <div class="class-card-role">FeModel → Nastran BDF 파일 출력. 9종 카드 지원.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">FeModel을 Nastran이 읽을 수 있는 텍스트 포맷으로 직렬화. TextWriter 파라미터를 받아 파일·메모리 모두에 쓸 수 있어 Verify 스냅샷 테스트가 가능. RBE2 슬레이브 노드가 많을 때 continuation 카드(+)로 자동 줄바꿈.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Write(FeModel, TextWriter,</span>
+                <span class="class-member">&nbsp;&nbsp;&nbsp;IEnumerable&lt;int&gt;?)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">FeModel</span>
+                <span class="class-dep-chip">BdfField</span>
+                <span class="class-dep-chip">Node</span>
+                <span class="class-dep-chip">BeamElement</span>
+                <span class="class-dep-chip">BeamSection</span>
+                <span class="class-dep-chip">Material</span>
+                <span class="class-dep-chip">RigidElement</span>
+                <span class="class-dep-chip">PointMass</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /class-grid io -->
+      </div><!-- /class-panel io -->
+
+      <!-- Cmb.Cli -->
+      <div class="class-panel" data-panel="cli">
+        <div class="class-grid">
+
+          <div class="class-card">
+            <div class="class-card-header">
+              <span class="class-card-name">Program</span>
+              <span class="class-kind-badge kind-static">static class</span>
+            </div>
+            <div class="class-card-body">
+              <div class="class-card-ns">Cmb.Cli</div>
+              <div class="class-card-role">CLI 진입점. System.CommandLine 루트 커맨드 구성. parse / build-raw 서브커맨드 등록.</div>
+              <div class="class-card-why-label">존재 이유</div>
+              <div class="class-card-why">모든 서브커맨드(parse/build-raw/build-full)가 이 단일 진입점에 등록됨. System.CommandLine을 쓰는 이유: --help 자동 생성, 파싱 에러 시 exit code 1 보장, --output 옵션 기본값 처리. Cmb.Core/Io는 CLI를 전혀 모름 — 이 레이어만 System.CommandLine에 의존.</div>
+              <div class="class-card-section-title">주요 멤버</div>
+              <div class="class-member-list">
+                <span class="class-member">Main() → Task&lt;int&gt;</span>
+                <span class="class-member">ParseCommand(…)</span>
+                <span class="class-member">BuildRawCommand(…)</span>
+              </div>
+              <div class="class-card-section-title">의존</div>
+              <div class="class-dep-list">
+                <span class="class-dep-chip">CsvDesignLoader</span>
+                <span class="class-dep-chip">FeModelBuilder</span>
+                <span class="class-dep-chip">FeModelJson</span>
+                <span class="class-dep-chip">RawDesignDataJson</span>
+                <span class="class-dep-chip">BdfWriter</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /class-grid cli -->
+      </div><!-- /class-panel cli -->
+
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-code-classes">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-code-classes"
+          placeholder="클래스 설계에 대한 메모, 리팩토링 아이디어..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <div class="page-footer">
+      ClaudeModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24 &nbsp;|&nbsp; 브라우저에서 직접 열기 가능
+    </div>
+
+  </main>
+</div>
+
+<script>
+function switchClassTab(tabName) {
+  document.querySelectorAll('.class-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tabName));
+  document.querySelectorAll('.class-panel').forEach(p =>
+    p.classList.toggle('active', p.dataset.panel === tabName));
+}
+
+const memoTimers = {};
+function memoKey(id) { return 'cmb-memo-' + id; }
+function getMemoValue(id) { return localStorage.getItem(memoKey(id)) || ''; }
+function hasMemo(id) { return getMemoValue(id).trim().length > 0; }
+function initMemo(sectionId) {
+  const ta = document.getElementById('memo-' + sectionId);
+  if (!ta) return;
+  ta.value = getMemoValue(sectionId);
+  ta.addEventListener('input', () => {
+    clearTimeout(memoTimers[sectionId]);
+    memoTimers[sectionId] = setTimeout(() => {
+      localStorage.setItem(memoKey(sectionId), ta.value);
+      const ind = document.getElementById('memo-saved-' + sectionId);
+      if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 1500); }
+      updateNavMemoDots();
+    }, 800);
+  });
+}
+function updateNavMemoDots() {
+  document.querySelectorAll('[data-memo-section]').forEach(item => {
+    const id = item.dataset.memoSection;
+    let dot = item.querySelector('.nav-memo-dot');
+    if (hasMemo(id)) {
+      if (!dot) { dot = document.createElement('span'); dot.className = 'nav-memo-dot'; dot.textContent = '📝'; item.appendChild(dot); }
+    } else { if (dot) dot.remove(); }
+  });
+}
+function initAllMemos() {
+  document.querySelectorAll('.content-section[id]').forEach(s => initMemo(s.id));
+  updateNavMemoDots();
+}
+function initScrollspy() {
+  const secs = document.querySelectorAll('.content-section[id]');
+  const items = document.querySelectorAll('[data-target]');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        items.forEach(n => n.classList.remove('active'));
+        const a = document.querySelector('[data-target="' + e.target.id + '"]');
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  secs.forEach(s => obs.observe(s));
+}
+function initNavClicks() {
+  document.querySelectorAll('[data-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const t = document.getElementById(item.dataset.target);
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  switchClassTab('core');
+  initScrollspy();
+  initNavClicks();
+  initAllMemos();
+});
+</script>
+</body>
+</html>

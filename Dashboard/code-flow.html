@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClaudeModelBuilder — 데이터 흐름</title>
+<link rel="stylesheet" href="cmb-style.css">
+<style>
+.nav-page-link { text-decoration: none; }
+.nav-page-link.current { background: rgba(96,165,250,0.15); color: var(--accent); border-left: 2px solid var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="app-header-title">ClaudeModelBuilder</span>
+  <span class="app-header-sep">|</span>
+  <span class="app-header-sub">AM CSV &rarr; FEM Beam &rarr; Nastran BDF &nbsp;·&nbsp; .NET 8 / C# 12</span>
+</header>
+<button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
+
+<div class="app-layout">
+
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-group-header">페이지</div>
+    <a class="nav-item nav-page-link" href="index.html">&#128203; 진행 현황</a>
+    <a class="nav-item nav-page-link current" href="code-flow.html">&#8644; 데이터 흐름</a>
+    <a class="nav-item nav-page-link" href="code-classes.html">&#128230; 클래스 목록</a>
+    <a class="nav-item nav-page-link" href="code-deps.html">&#128279; 의존성 그래프</a>
+    <a class="nav-item nav-page-link" href="code-algorithms.html">&#9881; 알고리즘</a>
+    <div class="nav-divider"></div>
+    <div class="nav-group-header">이 페이지</div>
+    <a class="nav-item" data-target="code-flow" data-memo-section="code-flow">&#8644; 전체 데이터 흐름</a>
+  </nav>
+
+  <main class="main-content">
+
+    <!-- ═══ 데이터 흐름 ═══ -->
+    <section class="content-section" id="code-flow">
+      <h1 class="section-heading">전체 데이터 흐름</h1>
+
+      <div class="info-block" style="margin-bottom:20px">
+        <div class="info-block-title">흐름 요약</div>
+        <p>HiTess CSV 파일 → CSV 파서(Cmb.Io) → Raw DTO → FeModelBuilder(Cmb.Core) → FeModel → Pipeline(Cmb.Pipeline) 8단계 변환 → BdfWriter(Cmb.Io) → Nastran BDF</p>
+      </div>
+
+      <!-- Phase A 흐름 -->
+      <div class="section-sub-heading">Phase A — cmb parse 흐름</div>
+      <div class="flow-columns">
+        <div class="flow-lane">
+          <div class="flow-lane-title">입력 (HiTess CSV)</div>
+          <div class="flow-box flow-box-input">
+            <div class="flow-box-label">structure*.csv</div>
+            <div class="flow-box-name">구조물 빔</div>
+            <div class="flow-box-ns">ProfilType, Dims, NodeA/B xyz</div>
+          </div>
+          <div class="flow-arrow-wrap">
+            <div class="flow-arrow-line"></div>
+            <div class="flow-arrow-head">&#9660;</div>
+          </div>
+          <div class="flow-box flow-box-input">
+            <div class="flow-box-label">pipe*.csv</div>
+            <div class="flow-box-name">배관</div>
+            <div class="flow-box-ns">OutDia, Thick, IsWeld, Pos/APos/LPos</div>
+          </div>
+          <div class="flow-arrow-wrap">
+            <div class="flow-arrow-line"></div>
+            <div class="flow-arrow-head">&#9660;</div>
+          </div>
+          <div class="flow-box flow-box-input">
+            <div class="flow-box-label">equip*.csv</div>
+            <div class="flow-box-name">장비</div>
+            <div class="flow-box-ns">Pos, Cog, Mass</div>
+          </div>
+        </div>
+        <div class="flow-lane">
+          <div class="flow-lane-title">출력 (Raw JSON)</div>
+          <div class="flow-box flow-box-core">
+            <div class="flow-box-label">CsvDesignLoader</div>
+            <div class="flow-box-name">LoadFolder()</div>
+            <div class="flow-box-ns">Cmb.Io.Csv</div>
+            <div class="flow-box-desc">폴더 자동 탐색 + 3종 리더 합산 → RawDesignData</div>
+          </div>
+          <div class="flow-arrow-wrap">
+            <div class="flow-arrow-line"></div>
+            <div class="flow-arrow-method">RawDesignDataJson.ToJson()</div>
+            <div class="flow-arrow-head">&#9660;</div>
+          </div>
+          <div class="flow-box flow-box-output">
+            <div class="flow-box-label">out/raw/</div>
+            <div class="flow-box-name">*.raw.json</div>
+            <div class="flow-box-ns">phase:"A", unit:"mm", schemaVersion:"1.0"</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase B 흐름 -->
+      <div class="section-sub-heading" style="margin-top:32px">Phase B — cmb build-raw 흐름</div>
+      <div class="flow-columns">
+        <div class="flow-lane">
+          <div class="flow-lane-title">변환 과정</div>
+          <div class="flow-box flow-box-input">
+            <div class="flow-box-label">RawDesignData</div>
+            <div class="flow-box-name">CSV 파싱 결과</div>
+            <div class="flow-box-ns">RawBeamRow / RawPipeRow / RawEquipRow</div>
+          </div>
+          <div class="flow-arrow-wrap">
+            <div class="flow-arrow-line"></div>
+            <div class="flow-arrow-method">FeModelBuilder.Build()</div>
+            <div class="flow-arrow-head">&#9660;</div>
+          </div>
+          <div class="flow-box flow-box-core">
+            <div class="flow-box-label">Cmb.Core.Building</div>
+            <div class="flow-box-name">FeModel</div>
+            <div class="flow-box-ns">Node / BeamElement / RigidElement / PointMass</div>
+            <div class="flow-box-desc">ProfilType 매핑, Property dedupe, Steel Material 자동 생성</div>
+          </div>
+        </div>
+        <div class="flow-lane">
+          <div class="flow-lane-title">출력 파일</div>
+          <div class="flow-box flow-box-output" style="margin-top:56px">
+            <div class="flow-box-label">out/model/</div>
+            <div class="flow-box-name">*.initial.json</div>
+            <div class="flow-box-ns">FeModel 전체 직렬화 (알고리즘 미적용)</div>
+          </div>
+          <div class="flow-arrow-wrap">
+            <div class="flow-arrow-line"></div>
+            <div class="flow-arrow-method">BdfWriter.Write()</div>
+            <div class="flow-arrow-head">&#9660;</div>
+          </div>
+          <div class="flow-box flow-box-output">
+            <div class="flow-box-label">out/model/</div>
+            <div class="flow-box-name">*.initial.bdf</div>
+            <div class="flow-box-ns">GRID / CBEAM / PBEAML / MAT1 / RBE2 / CONM2</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase C 흐름 -->
+      <div class="section-sub-heading" style="margin-top:32px">Phase C — cmb build-full 파이프라인 흐름</div>
+      <div class="info-block" style="margin-bottom:16px">
+        <div class="info-block-title">파이프라인 실행 방식</div>
+        <p><code>PipelineRunner</code>가 8개 Stage를 순서대로 실행. 각 Stage는 <code>StageContext</code>(FeModel + RunOptions + Diagnostics)를 받아 in-place 변환 후 <code>StageResult</code>를 반환.</p>
+        <p style="margin-top:6px"><code>--stopat &lt;StageName&gt;</code> 옵션: 특정 Stage 직후에 중단하고 그 시점의 FeModel을 JSON으로 저장.</p>
+      </div>
+
+      <div style="overflow-x:auto">
+        <table class="prop-table">
+          <thead>
+            <tr><th>순서</th><th>Stage</th><th>주요 변환</th><th>출력 파일</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>01</td>
+              <td>SanityPreprocess</td>
+              <td><span class="prop-note">중복/단축 요소 제거, 공선 노드 병합</span></td>
+              <td><span class="prop-note">01_SanityPreprocess.json</span></td>
+            </tr>
+            <tr>
+              <td>02</td>
+              <td>Meshing</td>
+              <td><span class="prop-note">긴 빔 등분할 (Structure≤2000mm, Pipe≤1000mm)</span></td>
+              <td><span class="prop-note">02_Meshing.json</span></td>
+            </tr>
+            <tr>
+              <td>03</td>
+              <td>NodeEquivalence</td>
+              <td><span class="prop-note">근접 노드(≤1mm) 병합, 루프 요소 제거</span></td>
+              <td><span class="prop-note">03_NodeEquivalence.json</span></td>
+            </tr>
+            <tr>
+              <td>04</td>
+              <td>Intersection</td>
+              <td><span class="prop-note">교차 빔에 노드 삽입 + 2분할 (수렴 루프)</span></td>
+              <td><span class="prop-note">04_Intersection.json</span></td>
+            </tr>
+            <tr>
+              <td>05</td>
+              <td>WeldNode</td>
+              <td><span class="prop-note">IsWeld 힌트 → NodeTags.Weld 태그 부여</span></td>
+              <td><span class="prop-note">05_WeldNode.json</span></td>
+            </tr>
+            <tr>
+              <td>06</td>
+              <td>GroupConnect</td>
+              <td><span class="prop-note">분리 그룹 연결, 고립 그룹 경고</span></td>
+              <td><span class="prop-note">06_GroupConnect.json</span></td>
+            </tr>
+            <tr>
+              <td>07</td>
+              <td>UboltRbe</td>
+              <td><span class="prop-note">U-bolt snap → RBE2 생성 (2-phase)</span></td>
+              <td><span class="prop-note">07_UboltRbe.json</span></td>
+            </tr>
+            <tr>
+              <td>08</td>
+              <td>FinalValidation</td>
+              <td><span class="prop-note">무결성 검증 + BDF 출력</span></td>
+              <td><span class="prop-note">08_FinalValidation.json + final.bdf</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 핵심 데이터 객체 -->
+      <div class="section-sub-heading" style="margin-top:32px">핵심 데이터 객체</div>
+      <div class="flow-note-row">
+        <div class="flow-note">
+          <div class="flow-note-title">RawDesignData (Cmb.Io)</div>
+          CSV 파싱 결과 컨테이너. 3종 DTO 목록 + 파싱 실패 행(ParseSkip) 수집.<br>
+          <code>IReadOnlyList</code>로 불변성 보장 — Builder가 실수로 수정 불가.<br>
+          Phase A 출력의 직렬화 대상.
+        </div>
+        <div class="flow-note">
+          <div class="flow-note-title">FeModel (Cmb.Core)</div>
+          모든 FEM 엔티티의 최상위 컨테이너. Phase B부터 Pipeline 끝까지 이 객체 하나가 누적 변환됨.<br>
+          <code>LengthUnit = "mm"</code> 고정. <code>IdAllocator</code>로 전역 유일 ID 관리.<br>
+          Nastran BDF 파일 1개에 1:1 대응.
+        </div>
+        <div class="flow-note">
+          <div class="flow-note-title">StageContext (Cmb.Pipeline)</div>
+          파이프라인 실행 시 각 Stage에 전달되는 실행 컨텍스트.<br>
+          <code>FeModel</code> + <code>RunOptions.Tolerances</code> + <code>DiagnosticList</code> 포함.<br>
+          Tolerances는 여기에서만 읽음 — 코드 내 하드코딩 금지 원칙.
+        </div>
+        <div class="flow-note">
+          <div class="flow-note-title">JSON meta 필드</div>
+          모든 출력 JSON에 공통으로 첨부:<br>
+          <code>phase</code>: "A" / "B" / "C"<br>
+          <code>stageName</code>: "parse" / "initial" / "NodeEquivalence" 등<br>
+          <code>unit</code>: "mm" (고정)<br>
+          <code>schemaVersion</code>: "1.0"
+        </div>
+      </div>
+
+      <div class="memo-block">
+        <div class="memo-label">
+          <span class="memo-label-text">&#9998; 메모</span>
+          <span class="memo-saved-indicator" id="memo-saved-code-flow">저장됨 &#10003;</span>
+        </div>
+        <textarea class="memo-textarea" id="memo-code-flow"
+          placeholder="데이터 흐름에 대한 메모, 개선 아이디어..."
+          spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <div class="page-footer">
+      ClaudeModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24
+    </div>
+  </main>
+</div>
+
+<script>
+const memoTimers = {};
+function memoKey(id) { return 'cmb-memo-' + id; }
+function getMemoValue(id) { return localStorage.getItem(memoKey(id)) || ''; }
+function hasMemo(id) { return getMemoValue(id).trim().length > 0; }
+function initMemo(sectionId) {
+  const ta = document.getElementById('memo-' + sectionId);
+  if (!ta) return;
+  ta.value = getMemoValue(sectionId);
+  ta.addEventListener('input', () => {
+    clearTimeout(memoTimers[sectionId]);
+    memoTimers[sectionId] = setTimeout(() => {
+      localStorage.setItem(memoKey(sectionId), ta.value);
+      const ind = document.getElementById('memo-saved-' + sectionId);
+      if (ind) { ind.classList.add('show'); setTimeout(() => ind.classList.remove('show'), 1500); }
+      updateNavMemoDots();
+    }, 800);
+  });
+}
+function updateNavMemoDots() {
+  document.querySelectorAll('[data-memo-section]').forEach(item => {
+    const id = item.dataset.memoSection;
+    let dot = item.querySelector('.nav-memo-dot');
+    if (hasMemo(id)) {
+      if (!dot) { dot = document.createElement('span'); dot.className = 'nav-memo-dot'; dot.textContent = '📝'; item.appendChild(dot); }
+    } else { if (dot) dot.remove(); }
+  });
+}
+function initAllMemos() {
+  document.querySelectorAll('.content-section[id]').forEach(s => initMemo(s.id));
+  updateNavMemoDots();
+}
+function initScrollspy() {
+  const secs = document.querySelectorAll('.content-section[id]');
+  const items = document.querySelectorAll('[data-target]');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        items.forEach(n => n.classList.remove('active'));
+        const a = document.querySelector('[data-target="' + e.target.id + '"]');
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  secs.forEach(s => obs.observe(s));
+}
+function initNavClicks() {
+  document.querySelectorAll('[data-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const t = document.getElementById(item.dataset.target);
+      if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
+}
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded', () => {
+  initScrollspy();
+  initNavClicks();
+  initAllMemos();
+});
+</script>
+</body>
+</html>

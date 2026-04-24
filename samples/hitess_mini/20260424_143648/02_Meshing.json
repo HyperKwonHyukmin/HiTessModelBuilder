@@ -1,0 +1,779 @@
+{
+  "meta": {
+    "phase": "C",
+    "stageName": "Meshing",
+    "timestamp": "2026-04-24T05:36:48.8959247Z",
+    "unit": "mm",
+    "schemaVersion": "1.1"
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "x": 90072,
+      "y": 4908,
+      "z": 38610,
+      "tags": []
+    },
+    {
+      "id": 2,
+      "x": 90072,
+      "y": 4908,
+      "z": 39616,
+      "tags": []
+    },
+    {
+      "id": 3,
+      "x": 90080,
+      "y": 4908,
+      "z": 38766,
+      "tags": []
+    },
+    {
+      "id": 4,
+      "x": 90225,
+      "y": 4908,
+      "z": 38766,
+      "tags": []
+    },
+    {
+      "id": 5,
+      "x": 90080,
+      "y": 4908,
+      "z": 39616,
+      "tags": []
+    },
+    {
+      "id": 6,
+      "x": 88793,
+      "y": 4908,
+      "z": 39616,
+      "tags": []
+    },
+    {
+      "id": 7,
+      "x": 79558,
+      "y": 10610,
+      "z": 38655,
+      "tags": []
+    },
+    {
+      "id": 8,
+      "x": 79558,
+      "y": 10890,
+      "z": 35451,
+      "tags": []
+    },
+    {
+      "id": 9,
+      "x": 78964,
+      "y": 9780,
+      "z": 38660,
+      "tags": []
+    },
+    {
+      "id": 10,
+      "x": 78964,
+      "y": 10555,
+      "z": 38660,
+      "tags": []
+    },
+    {
+      "id": 11,
+      "x": 81420,
+      "y": 3975,
+      "z": 36844,
+      "tags": []
+    },
+    {
+      "id": 12,
+      "x": 81420,
+      "y": 3975,
+      "z": 35527,
+      "tags": [
+        "Weld"
+      ]
+    },
+    {
+      "id": 13,
+      "x": 82435,
+      "y": 4050,
+      "z": 38531,
+      "tags": []
+    },
+    {
+      "id": 14,
+      "x": 83497,
+      "y": 4050,
+      "z": 38531,
+      "tags": []
+    },
+    {
+      "id": 15,
+      "x": 76600,
+      "y": 8965,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 16,
+      "x": 77100,
+      "y": 8965,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 17,
+      "x": 76850,
+      "y": 8965,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 18,
+      "x": 78655,
+      "y": 8965,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 19,
+      "x": 78750,
+      "y": 8870,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 20,
+      "x": 78750,
+      "y": 8965,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 21,
+      "x": 77578,
+      "y": 8965,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 22,
+      "x": 90940,
+      "y": 2435,
+      "z": 38850,
+      "tags": []
+    },
+    {
+      "id": 23,
+      "x": 92064,
+      "y": 3407,
+      "z": 38850,
+      "tags": []
+    },
+    {
+      "id": 24,
+      "x": 92064,
+      "y": 3345,
+      "z": 38850,
+      "tags": []
+    },
+    {
+      "id": 25,
+      "x": 90428,
+      "y": 2435,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 26,
+      "x": 90275,
+      "y": 2435,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 27,
+      "x": 90351,
+      "y": 2435,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 28,
+      "x": 90351,
+      "y": 2435,
+      "z": 37319,
+      "tags": []
+    },
+    {
+      "id": 29,
+      "x": 81616,
+      "y": 6245,
+      "z": 38069,
+      "tags": []
+    },
+    {
+      "id": 30,
+      "x": 81006,
+      "y": 6245,
+      "z": 37968,
+      "tags": []
+    },
+    {
+      "id": 31,
+      "x": 92064,
+      "y": 3715,
+      "z": 38850,
+      "tags": []
+    },
+    {
+      "id": 32,
+      "x": 112100,
+      "y": -7685,
+      "z": 31045,
+      "tags": []
+    },
+    {
+      "id": 33,
+      "x": 79558,
+      "y": 10750,
+      "z": 37053,
+      "tags": []
+    }
+  ],
+  "elements": [
+    {
+      "id": 1,
+      "type": "BEAM",
+      "startNode": 1,
+      "endNode": 2,
+      "propertyId": 1,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "sourceName": "=268454733/2974123_0"
+    },
+    {
+      "id": 2,
+      "type": "BEAM",
+      "startNode": 3,
+      "endNode": 4,
+      "propertyId": 2,
+      "category": "Structure",
+      "orientation": [
+        0,
+        -1,
+        0
+      ],
+      "sourceName": "=268454733/2974298_0"
+    },
+    {
+      "id": 3,
+      "type": "BEAM",
+      "startNode": 5,
+      "endNode": 6,
+      "propertyId": 3,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0,
+        -1
+      ],
+      "sourceName": "=268454733/2974189_0"
+    },
+    {
+      "id": 5,
+      "type": "BEAM",
+      "startNode": 9,
+      "endNode": 10,
+      "propertyId": 5,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "sourceName": "=268454733/2967647"
+    },
+    {
+      "id": 6,
+      "type": "BEAM",
+      "startNode": 11,
+      "endNode": 12,
+      "propertyId": 6,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "sourceName": "=21945/499850"
+    },
+    {
+      "id": 7,
+      "type": "BEAM",
+      "startNode": 13,
+      "endNode": 14,
+      "propertyId": 7,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "sourceName": "=21945/499957"
+    },
+    {
+      "id": 8,
+      "type": "BEAM",
+      "startNode": 15,
+      "endNode": 16,
+      "propertyId": 8,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "sourceName": "=21945/52134"
+    },
+    {
+      "id": 10,
+      "type": "BEAM",
+      "startNode": 18,
+      "endNode": 19,
+      "propertyId": 8,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "sourceName": "=21945/52138"
+    },
+    {
+      "id": 15,
+      "type": "BEAM",
+      "startNode": 23,
+      "endNode": 24,
+      "propertyId": 9,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "sourceName": "=21945/52194"
+    },
+    {
+      "id": 17,
+      "type": "BEAM",
+      "startNode": 25,
+      "endNode": 26,
+      "propertyId": 8,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "sourceName": "=21945/52154"
+    },
+    {
+      "id": 18,
+      "type": "BEAM",
+      "startNode": 27,
+      "endNode": 28,
+      "propertyId": 10,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "sourceName": "=21945/52154"
+    },
+    {
+      "id": 20,
+      "type": "BEAM",
+      "startNode": 29,
+      "endNode": 30,
+      "propertyId": 11,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "sourceName": "=21945/52369"
+    },
+    {
+      "id": 24,
+      "type": "BEAM",
+      "startNode": 7,
+      "endNode": 33,
+      "propertyId": 4,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "sourceName": "=268454733/2967350",
+      "parentElemId": 4
+    },
+    {
+      "id": 25,
+      "type": "BEAM",
+      "startNode": 33,
+      "endNode": 8,
+      "propertyId": 4,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "sourceName": "=268454733/2967350",
+      "parentElemId": 4
+    }
+  ],
+  "rigids": [
+    {
+      "id": 13,
+      "independentNode": 21,
+      "dependentNodes": [],
+      "remark": "UBOLT",
+      "sourceName": "=21945/496593"
+    }
+  ],
+  "properties": [
+    {
+      "id": 1,
+      "kind": "Bar",
+      "dims": [
+        65,
+        16
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 2,
+      "kind": "Rod",
+      "dims": [
+        9.5
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 3,
+      "kind": "Tube",
+      "dims": [
+        21.35,
+        18.1
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 4,
+      "kind": "Bar",
+      "dims": [
+        65,
+        9
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 5,
+      "kind": "L",
+      "dims": [
+        75,
+        75,
+        9,
+        9
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 6,
+      "kind": "L",
+      "dims": [
+        150,
+        150,
+        15,
+        15
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 7,
+      "kind": "H",
+      "dims": [
+        84,
+        16,
+        100,
+        6
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 8,
+      "kind": "Tube",
+      "dims": [
+        36.5,
+        33.45
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 9,
+      "kind": "Tube",
+      "dims": [
+        24.15,
+        20.47
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 10,
+      "kind": "Tube",
+      "dims": [
+        24.15,
+        21.38
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 11,
+      "kind": "Tube",
+      "dims": [
+        330,
+        323.65
+      ],
+      "materialId": 1
+    }
+  ],
+  "materials": [
+    {
+      "id": 1,
+      "name": "Steel",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 7.85E-09
+    }
+  ],
+  "pointMasses": [
+    {
+      "id": 9,
+      "nodeId": 17,
+      "mass": 2.6575,
+      "sourceName": "=21945/52134"
+    },
+    {
+      "id": 11,
+      "nodeId": 20,
+      "mass": 0.78,
+      "sourceName": "=21945/52138"
+    },
+    {
+      "id": 12,
+      "nodeId": 21,
+      "mass": 3.0968,
+      "sourceName": "=21945/496593"
+    },
+    {
+      "id": 14,
+      "nodeId": 22,
+      "mass": 14.3,
+      "sourceName": "=21945/52169"
+    },
+    {
+      "id": 16,
+      "nodeId": 24,
+      "mass": 1.72,
+      "sourceName": "=21945/52194"
+    },
+    {
+      "id": 19,
+      "nodeId": 27,
+      "mass": 1.419,
+      "sourceName": "=21945/52154"
+    },
+    {
+      "id": 21,
+      "nodeId": 29,
+      "mass": 62.5,
+      "sourceName": "=21945/52369"
+    },
+    {
+      "id": 22,
+      "nodeId": 31,
+      "mass": 1.3478,
+      "sourceName": "=21945/135326"
+    },
+    {
+      "id": 23,
+      "nodeId": 32,
+      "mass": 1,
+      "sourceName": "=38329/60941"
+    }
+  ],
+  "diagnostics": [],
+  "trace": [
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 1,
+      "note": "=268454733/2974123_0"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 2,
+      "note": "=268454733/2974298_0"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 3,
+      "note": "=268454733/2974189_0"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 4,
+      "note": "=268454733/2967350"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 5,
+      "note": "=268454733/2967647"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 6,
+      "note": "=21945/499850"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 7,
+      "note": "=21945/499957"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 8,
+      "note": "=21945/52134"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 9,
+      "note": "=21945/52134"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 10,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 11,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 12,
+      "note": "=21945/496593"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 13,
+      "note": "=21945/496593"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 14,
+      "note": "=21945/52169"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 15,
+      "note": "=21945/52194"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 16,
+      "note": "=21945/52194"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 17,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 18,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 19,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 20,
+      "note": "=21945/52369"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 21,
+      "note": "=21945/52369"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 22,
+      "note": "=21945/135326"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 23,
+      "note": "=38329/60941"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Meshing",
+      "elemId": 24,
+      "relatedElemId": 4,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Meshing",
+      "elemId": 25,
+      "relatedElemId": 4,
+      "note": "split into 2 segments"
+    }
+  ]
+}
