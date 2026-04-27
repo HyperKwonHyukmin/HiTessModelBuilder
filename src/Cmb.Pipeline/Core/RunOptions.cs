@@ -4,7 +4,7 @@ public sealed record Tolerances(
     double NodeMergeMm              = 1.0,
     double IntersectionSnapMm       = 5.0,
     double ZeroLengthMm             = 0.01,
-    double UboltSnapMaxDistMm       = 50.0,
+    double UboltSnapMaxDistMm       = 300.0,
     double ShortElemMinMm           = 5.0,
     double SpatialCellSizeMm        = 200.0,
     double MeshingMaxLengthStructure = 2000.0,
@@ -16,11 +16,16 @@ public sealed record Tolerances(
     double CollinearMergeLateralMm  = 1.0,
     double GroupConnectLocalTolMm    = 40.0,
     double GroupConnectExtraMarginMm = 50.0,
-    double ExtendExtraMarginMm      = 100.0,
-    double ExtendCoplanarTolMm      = 10.0,
-    double ExtendSnapLateralMm      = 2.0,
-    int    ExtendMaxIterations      = 10,
-    int    MaxConvergenceIterations = 50);
+    double ExtendExtraMarginMm          = 100.0,
+    double ExtendCoplanarTolMm          = 10.0,
+    double ExtendSnapLateralMm          = 2.0,
+    int    ExtendMaxIterations          = 10,
+    int    MaxConvergenceIterations     = 50,
+    double FreeEndRbeExtraMarginMm      = 25.0,
+    double FreeEndRbeEndpointMarginMm   = 5.0,
+    double RigidProximityMergeMm        = 50.0,
+    double RigidFreeNodeSnapMm          = 100.0,
+    double RigidArmObstacleDistanceMm   = 1.0);
 
 public sealed record RunOptions(
     Tolerances Tolerances,

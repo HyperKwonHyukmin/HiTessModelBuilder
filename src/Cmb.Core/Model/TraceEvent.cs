@@ -7,6 +7,7 @@ public enum TraceAction
     NodeMerged,
     NodeMoved,
     ElementRemoved,
+    ElementPreserved,
 }
 
 public sealed record TraceEvent(

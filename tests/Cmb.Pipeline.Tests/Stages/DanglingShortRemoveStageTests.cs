@@ -134,4 +134,62 @@ public class DanglingShortRemoveStageTests
         act.Should().NotThrow();
         ctx.Diagnostics.Should().BeEmpty();
     }
+
+    // ── 보호 로직 케이스 ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void RemovesDanglingShortElement_WithoutProtection()
+    {
+        // 일반 dangling short는 여전히 제거됨 (기존 동작 회귀)
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0), N(2, 30)]);
+        model.Elements.Add(E(10, 1, 2)); // 30mm < 50mm, N1 degree=1 (dangling)
+
+        new DanglingShortRemoveStage().Execute(MakeCtx(model));
+
+        model.Elements.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void PreservesShortElement_WhenEndpointHasPointMass()
+    {
+        // PointMass 매달린 endpoint를 가진 element는 보존
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0), N(2, 30)]);
+        model.Elements.Add(E(10, 1, 2));          // 30mm, dangling candidate
+        model.PointMasses.Add(new PointMass(100, 2, 1.0)); // N2에 PointMass 부착
+
+        new DanglingShortRemoveStage().Execute(MakeCtx(model));
+
+        model.Elements.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void PreservesShortElement_WhenEndpointInRbeDependents()
+    {
+        // RBE DependentNodeIds에 속한 endpoint를 가진 element는 보존
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0), N(2, 30), N(3, 500), N(4, 600)]);
+        model.Elements.Add(E(10, 1, 2));     // 30mm, dangling candidate
+        model.Elements.Add(E(11, 3, 4));     // 100mm, 일반 element (non-dangling)
+        model.Rigids.Add(new RigidElement(20, 3, new[] { 2 })); // RBE: indep=N3, dep=N2 → N2 보호
+
+        new DanglingShortRemoveStage().Execute(MakeCtx(model));
+
+        model.Elements.Should().HaveCount(2); // 10은 보존, 11도 유지
+    }
+
+    [Fact]
+    public void PreservesShortElement_WhenEndpointIsRbeIndependent()
+    {
+        // RBE IndependentNodeId에 해당하는 endpoint를 가진 element는 보존
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0), N(2, 30), N(3, 500)]);
+        model.Elements.Add(E(10, 1, 2));     // 30mm, dangling
+        model.Rigids.Add(new RigidElement(20, 2, new[] { 3 })); // RBE: indep=N2 → N2 보호
+
+        new DanglingShortRemoveStage().Execute(MakeCtx(model));
+
+        model.Elements.Should().ContainSingle();
+    }
 }

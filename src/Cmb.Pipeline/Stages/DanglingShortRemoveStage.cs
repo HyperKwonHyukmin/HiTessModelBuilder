@@ -23,8 +23,13 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
             degree[e.EndNodeId]   = degree.GetValueOrDefault(e.EndNodeId)   + 1;
         }
 
+        var pointMassNodes = new HashSet<int>(model.PointMasses.Select(pm => pm.NodeId));
+        var rigidNodes     = new HashSet<int>(
+            model.Rigids.SelectMany(r => r.DependentNodeIds.Append(r.IndependentNodeId)));
+
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
         var toRemove = new List<int>();
+        int preservedMass = 0, preservedRbe = 0;
 
         foreach (var e in model.Elements)
         {
@@ -36,7 +41,20 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
             if (dA != 1 && dB != 1) continue;
 
             if (nA.Position.DistanceTo(nB.Position) < thresh)
+            {
+                bool protectedByMass = pointMassNodes.Contains(e.StartNodeId) || pointMassNodes.Contains(e.EndNodeId);
+                bool protectedByRbe  = rigidNodes.Contains(e.StartNodeId)     || rigidNodes.Contains(e.EndNodeId);
+                if (protectedByMass || protectedByRbe)
+                {
+                    preservedMass += protectedByMass ? 1 : 0;
+                    preservedRbe  += (protectedByRbe && !protectedByMass) ? 1 : 0;
+                    ctx.AddTrace(TraceAction.ElementPreserved, Name,
+                        elementId: e.Id, note: $"preserved (mass={protectedByMass}, rbe={protectedByRbe})");
+                    continue;
+                }
+
                 toRemove.Add(e.Id);
+            }
         }
 
         foreach (int id in toRemove)
@@ -49,6 +67,10 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
         if (toRemove.Count > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_REMOVED",
                 $"{toRemove.Count} dangling short element(s) (< {thresh} mm) removed.");
+
+        if (preservedMass + preservedRbe > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_PRESERVED",
+                $"{preservedMass + preservedRbe} short element(s) preserved (PointMass={preservedMass}, RBE={preservedRbe}).");
 
         return true;
     }
