@@ -59,4 +59,19 @@ public class FeModelJsonSchemaV12Tests
         var doc  = JsonDocument.Parse(json);
         doc.RootElement.GetProperty("diagnostics").GetArrayLength().Should().Be(0);
     }
+
+    [Fact]
+    public void ToJson_ElementHasCorrectLengthMm()
+    {
+        var m = new FeModel();
+        m.Nodes.Add(new Node(1, new Point3(0, 0, 0)));
+        m.Nodes.Add(new Node(2, new Point3(300, 0, 0)));
+        m.Sections.Add(new BeamSection(10, BeamSectionKind.Rod, [25.0], 1));
+        m.Materials.Add(new Material(1, "S", 200000, 0.3, 7.85e-6));
+        m.Elements.Add(new BeamElement(1, 1, 2, 10, EntityCategory.Structure, Vector3.UnitZ));
+
+        var doc  = JsonDocument.Parse(m.ToJson());
+        var elem = doc.RootElement.GetProperty("elements").EnumerateArray().First();
+        elem.GetProperty("lengthMm").GetDouble().Should().BeApproximately(300.0, 0.001);
+    }
 }

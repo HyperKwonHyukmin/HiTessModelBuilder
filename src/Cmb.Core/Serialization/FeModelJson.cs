@@ -54,6 +54,7 @@ public sealed class BeamElementDto
     [JsonPropertyName("propertyId")]                                                public int PropertyId { get; set; }
     [JsonPropertyName("category")]                                                  public string Category { get; set; } = "";
     [JsonPropertyName("orientation")]                                               public double[] Orientation { get; set; } = [0, 0, 1];
+    [JsonPropertyName("lengthMm")]                                                  public double LengthMm { get; set; }
     [JsonPropertyName("sourceName")]    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SourceName { get; set; }
     [JsonPropertyName("parentElemId")]  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? ParentElemId { get; set; }
 }
@@ -243,79 +244,93 @@ public static class FeModelJson
         ["trace"]        = "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)",
     };
 
-    private static FeModelDto ToDto(FeModel model, string phase, string stageName) => new()
+    private static FeModelDto ToDto(FeModel model, string phase, string stageName)
     {
-        Keys = SchemaKeys,
-        Meta = new MetaDto
+        var nodeById = model.Nodes.ToDictionary(n => n.Id);
+
+        return new FeModelDto
         {
-            Phase = phase,
-            StageName = stageName,
-            Timestamp = DateTime.UtcNow.ToString("o"),
-            Unit = model.LengthUnit,
-        },
-        Nodes = model.Nodes.Select(n => new NodeDto
-        {
-            Id = n.Id,
-            X = n.Position.X,
-            Y = n.Position.Y,
-            Z = n.Position.Z,
-            Tags = FlagsToStringList(n.Tags),
-        }).ToList(),
-        Elements = model.Elements.Select(e => new BeamElementDto
-        {
-            Id = e.Id,
-            Type = "BEAM",
-            StartNode = e.StartNodeId,
-            EndNode = e.EndNodeId,
-            PropertyId = e.PropertyId,
-            Category = e.Category.ToString(),
-            Orientation = [e.Orientation.X, e.Orientation.Y, e.Orientation.Z],
-            SourceName = e.SourceName,
-            ParentElemId = e.ParentElementId,
-        }).ToList(),
-        Rigids = model.Rigids.Select(r => new RigidElementDto
-        {
-            Id = r.Id,
-            IndependentNode = r.IndependentNodeId,
-            DependentNodes = r.DependentNodeIds.ToList(),
-            Remark = r.Remark,
-            SourceName = r.SourceName,
-        }).ToList(),
-        Properties = model.Sections.Select(s => new BeamSectionDto
-        {
-            Id = s.Id,
-            Kind = s.Kind.ToString(),
-            Dims = s.Dims,
-            MaterialId = s.MaterialId,
-        }).ToList(),
-        Materials = model.Materials.Select(m => new MaterialDto
-        {
-            Id = m.Id,
-            Name = m.Name,
-            E = m.E,
-            Nu = m.Nu,
-            Rho = m.Rho,
-        }).ToList(),
-        PointMasses = model.PointMasses.Select(p => new PointMassDto
-        {
-            Id = p.Id,
-            NodeId = p.NodeId,
-            Mass = p.Mass,
-            SourceName = p.SourceName,
-        }).ToList(),
-        Trace = model.TraceLog.Count > 0
-            ? model.TraceLog.Select(t => new TraceEventDto
+            Keys = SchemaKeys,
+            Meta = new MetaDto
             {
-                Action = t.Action.ToString(),
-                Stage = t.StageName,
-                ElemId = t.ElementId,
-                NodeId = t.NodeId,
-                RelatedElemId = t.RelatedElementId,
-                RelatedNodeId = t.RelatedNodeId,
-                Note = t.Note,
-            }).ToList()
-            : null,
-    };
+                Phase = phase,
+                StageName = stageName,
+                Timestamp = DateTime.UtcNow.ToString("o"),
+                Unit = model.LengthUnit,
+            },
+            Nodes = model.Nodes.Select(n => new NodeDto
+            {
+                Id = n.Id,
+                X = n.Position.X,
+                Y = n.Position.Y,
+                Z = n.Position.Z,
+                Tags = FlagsToStringList(n.Tags),
+            }).ToList(),
+            Elements = model.Elements.Select(e =>
+            {
+                double len = 0.0;
+                if (nodeById.TryGetValue(e.StartNodeId, out var sn) &&
+                    nodeById.TryGetValue(e.EndNodeId, out var en))
+                    len = Math.Round(sn.Position.DistanceTo(en.Position), 3);
+
+                return new BeamElementDto
+                {
+                    Id = e.Id,
+                    Type = "BEAM",
+                    StartNode = e.StartNodeId,
+                    EndNode = e.EndNodeId,
+                    PropertyId = e.PropertyId,
+                    Category = e.Category.ToString(),
+                    Orientation = [e.Orientation.X, e.Orientation.Y, e.Orientation.Z],
+                    LengthMm = len,
+                    SourceName = e.SourceName,
+                    ParentElemId = e.ParentElementId,
+                };
+            }).ToList(),
+            Rigids = model.Rigids.Select(r => new RigidElementDto
+            {
+                Id = r.Id,
+                IndependentNode = r.IndependentNodeId,
+                DependentNodes = r.DependentNodeIds.ToList(),
+                Remark = r.Remark,
+                SourceName = r.SourceName,
+            }).ToList(),
+            Properties = model.Sections.Select(s => new BeamSectionDto
+            {
+                Id = s.Id,
+                Kind = s.Kind.ToString(),
+                Dims = s.Dims,
+                MaterialId = s.MaterialId,
+            }).ToList(),
+            Materials = model.Materials.Select(m => new MaterialDto
+            {
+                Id = m.Id,
+                Name = m.Name,
+                E = m.E,
+                Nu = m.Nu,
+                Rho = m.Rho,
+            }).ToList(),
+            PointMasses = model.PointMasses.Select(p => new PointMassDto
+            {
+                Id = p.Id,
+                NodeId = p.NodeId,
+                Mass = p.Mass,
+                SourceName = p.SourceName,
+            }).ToList(),
+            Trace = model.TraceLog.Count > 0
+                ? model.TraceLog.Select(t => new TraceEventDto
+                {
+                    Action = t.Action.ToString(),
+                    Stage = t.StageName,
+                    ElemId = t.ElementId,
+                    NodeId = t.NodeId,
+                    RelatedElemId = t.RelatedElementId,
+                    RelatedNodeId = t.RelatedNodeId,
+                    Note = t.Note,
+                }).ToList()
+                : null,
+        };
+    }
 
     // ── DTO → FeModel ─────────────────────────────────────────────────────────
 
