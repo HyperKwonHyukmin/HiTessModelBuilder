@@ -24,6 +24,9 @@ public class UboltRbeStageTests
     private static BeamElement E(int id, int start, int end)
         => new(id, start, end, 1, EntityCategory.Structure, Up);
 
+    private static BeamElement E(int id, int start, int end, int propertyId, EntityCategory category)
+        => new(id, start, end, propertyId, category, Up);
+
     // Helper: UBOLT marker (no deps, remark="UBOLT")
     private static RigidElement Ubolt(int id, int indepNode, string? sourceName = null)
         => new(id, indepNode, [], "UBOLT", sourceName);
@@ -206,5 +209,48 @@ public class UboltRbeStageTests
         new UboltRbeStage().Execute(MakeCtx(model));
 
         model.Rigids.Should().AllSatisfy(r => r.DependentNodeIds.Should().HaveCount(1));
+    }
+
+    [Fact]
+    public void Ubolt_PreservesCm_WhenSnapped()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 30)]);
+        model.Elements.Add(E(10, 1, 2));
+        model.Rigids.Add(new RigidElement(20, 3, [], "UBOLT", cm: "123"));
+
+        new UboltRbeStage().Execute(MakeCtx(model));
+
+        model.Rigids.First(r => r.Id == 20).Cm.Should().Be("123");
+    }
+
+    [Fact]
+    public void BoxUbolt_ConnectsFourDirections()
+    {
+        var model = new FeModel();
+        model.Materials.Add(Material.DefaultSteel);
+        model.Sections.Add(new BeamSection(1, BeamSectionKind.H, [100, 10, 100, 10], 1));
+        model.Sections.Add(new BeamSection(2, BeamSectionKind.Tube, [50, 45], 1));
+
+        model.Nodes.AddRange([
+            N(1, -100,  100,   0), N(2, 100,  100,   0),
+            N(3, -100, -100,   0), N(4, 100, -100,   0),
+            N(5, -100,    0, 100), N(6, 100,    0, 100),
+            N(7, -100,    0,-100), N(8, 100,    0,-100),
+            N(9,    0,    0,   0), N(10, 100,   0,   0)
+        ]);
+        model.Elements.AddRange([
+            E(11, 1, 2, 1, EntityCategory.Structure),
+            E(12, 3, 4, 1, EntityCategory.Structure),
+            E(13, 5, 6, 1, EntityCategory.Structure),
+            E(14, 7, 8, 1, EntityCategory.Structure),
+            E(15, 9, 10, 2, EntityCategory.Pipe)
+        ]);
+        model.Rigids.Add(new RigidElement(20, 9, [], "UBOLT", cm: "123456", detailRemark: "BOX"));
+
+        new UboltRbeStage().Execute(MakeCtx(model));
+
+        var rbe = model.Rigids.First(r => r.Id == 20);
+        rbe.DependentNodeIds.Should().HaveCount(4);
     }
 }

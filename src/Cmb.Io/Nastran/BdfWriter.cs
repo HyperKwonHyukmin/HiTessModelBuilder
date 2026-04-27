@@ -122,7 +122,7 @@ public static class BdfWriter
             sb.Append(BdfField.L("RBE2"));
             sb.Append(BdfField.R(r.Id));
             sb.Append(BdfField.R(r.IndependentNodeId));
-            sb.Append(BdfField.R("123456"));
+            sb.Append(BdfField.R(r.Cm));
             int fieldsUsed = 4;
 
             foreach (int dep in r.DependentNodeIds)

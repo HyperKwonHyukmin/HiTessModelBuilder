@@ -183,7 +183,8 @@ public sealed class CollinearNodeMergeStage : IPipelineStage
                 .ToList();
 
             if (indep != rigid.IndependentNodeId || !deps.SequenceEqual(rigid.DependentNodeIds))
-                model.Rigids[i] = new RigidElement(rigid.Id, indep, deps, rigid.Remark, rigid.SourceName);
+                model.Rigids[i] = new RigidElement(rigid.Id, indep, deps,
+                    rigid.Remark, rigid.SourceName, rigid.Cm, rigid.DetailRemark);
         }
     }
 

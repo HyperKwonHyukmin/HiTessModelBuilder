@@ -73,6 +73,8 @@ public sealed class RigidElementDto
     [JsonPropertyName("independentNode")]                                             public int IndependentNode { get; set; }
     [JsonPropertyName("dependentNodes")]                                              public List<int> DependentNodes { get; set; } = [];
     [JsonPropertyName("remark")]                                                      public string Remark { get; set; } = "";
+    [JsonPropertyName("cm")]                                                          public string Cm { get; set; } = "123456";
+    [JsonPropertyName("detailRemark")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? DetailRemark { get; set; }
     [JsonPropertyName("sourceName")]  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SourceName { get; set; }
 }
 
@@ -324,7 +326,7 @@ public static class FeModelJson
         ["meta"]         = "스테이지 메타 (phase, stageName, timestamp, unit, schemaVersion)",
         ["nodes"]        = "노드 배열 (id, x, y, z, tags[])",
         ["elements"]     = "빔 요소 배열 (id, type, startNode, endNode, propertyId, category, orientation[])",
-        ["rigids"]       = "RBE2 배열 (id, independentNode, dependentNodes[], remark)",
+        ["rigids"]       = "RBE2 배열 (id, independentNode, dependentNodes[], remark, cm)",
         ["properties"]   = "빔 단면 배열 (id, kind, dims[], materialId)",
         ["materials"]    = "재료 배열 (id, name, E, nu, rho)",
         ["pointMasses"]  = "집중질량 배열 (id, nodeId, mass)",
@@ -409,6 +411,8 @@ public static class FeModelJson
                 IndependentNode = r.IndependentNodeId,
                 DependentNodes = r.DependentNodeIds.ToList(),
                 Remark = r.Remark,
+                Cm = r.Cm,
+                DetailRemark = r.DetailRemark,
                 SourceName = r.SourceName,
             }).ToList(),
             Properties = model.Sections.Select(s => new BeamSectionDto
@@ -470,7 +474,8 @@ public static class FeModelJson
         }
 
         foreach (var r in dto.Rigids)
-            model.Rigids.Add(new Model.RigidElement(r.Id, r.IndependentNode, r.DependentNodes, r.Remark, r.SourceName));
+            model.Rigids.Add(new Model.RigidElement(r.Id, r.IndependentNode, r.DependentNodes,
+                r.Remark, r.SourceName, r.Cm, r.DetailRemark));
 
         foreach (var s in dto.Properties)
         {

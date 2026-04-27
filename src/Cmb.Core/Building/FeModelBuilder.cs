@@ -164,7 +164,8 @@ public sealed class FeModelBuilder
                 if (row.Pos.Length >= 3)
                 {
                     int n = Node(row.Pos[0], row.Pos[1], row.Pos[2]);
-                    var rbe = new RigidElement(elemAlloc.Next(), n, [], remark: "UBOLT", sourceName: row.Name);
+                    var rbe = new RigidElement(elemAlloc.Next(), n, [], remark: "UBOLT",
+                        sourceName: row.Name, cm: row.Rest ?? "123456", detailRemark: row.Remark);
                     model.Rigids.Add(rbe);
                     model.AddTrace(TraceAction.ElementCreated, "initial", elementId: rbe.Id, note: row.Name);
                 }

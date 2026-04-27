@@ -133,6 +133,19 @@ public class BdfWriterTests
         rbeLine.Should().Contain("123456");
     }
 
+    [Fact]
+    public void Write_Rbe2_UsesRigidCm()
+    {
+        var m = MinimalModel();
+        m.Rigids.Add(new RigidElement(1, 1, [2], "UBOLT", cm: "123"));
+
+        var bdf = WriteBdf(m);
+        var rbeLine = bdf.Split(Environment.NewLine).First(l => l.StartsWith("RBE2"));
+
+        rbeLine.Should().Contain("     123");
+        rbeLine.Should().NotContain("123456");
+    }
+
     // ── SPC1 ─────────────────────────────────────────────────────────────────
 
     [Fact]
