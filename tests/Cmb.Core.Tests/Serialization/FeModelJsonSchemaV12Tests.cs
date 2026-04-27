@@ -160,4 +160,27 @@ public class FeModelJsonSchemaV12Tests
         tags.Should().NotContain("FreeEnd");
         tags.Should().NotContain("Orphan");
     }
+
+    [Fact]
+    public void ToJson_WithStageDeltas_IncludesDeltas()
+    {
+        var m = MinimalModel();
+        var deltas = new StageDeltasDto
+        {
+            FromStage       = "NodeEquivalence",
+            ToStage         = "Intersection",
+            ElemCountBefore = 100,
+            ElemCountAfter  = 112,
+            NodeCountBefore = 80,
+            NodeCountAfter  = 90,
+        };
+
+        var doc = JsonDocument.Parse(m.ToJson(stageDeltas: deltas));
+        var sd  = doc.RootElement.GetProperty("stageDeltas");
+
+        sd.GetProperty("fromStage").GetString().Should().Be("NodeEquivalence");
+        sd.GetProperty("toStage").GetString().Should().Be("Intersection");
+        sd.GetProperty("netElementDelta").GetInt32().Should().Be(12);
+        sd.GetProperty("netNodeDelta").GetInt32().Should().Be(10);
+    }
 }

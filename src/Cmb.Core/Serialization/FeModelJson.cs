@@ -23,6 +23,8 @@ public sealed class FeModelDto
     [JsonPropertyName("healthMetrics")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HealthMetricsDto? HealthMetrics { get; set; }
     [JsonPropertyName("diagnostics")] public List<DiagnosticDto> Diagnostics { get; set; } = [];
+    [JsonPropertyName("stageDeltas")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StageDeltasDto? StageDeltas { get; set; }
     [JsonPropertyName("trace")]       [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<TraceEventDto>? Trace { get; set; }
 }
@@ -178,6 +180,18 @@ public sealed class DiagnosticCountsDto
     [JsonPropertyName("byCode")]  public Dictionary<string,int> ByCode  { get; set; } = [];
 }
 
+public sealed class StageDeltasDto
+{
+    [JsonPropertyName("fromStage")]       public string FromStage       { get; set; } = "";
+    [JsonPropertyName("toStage")]         public string ToStage         { get; set; } = "";
+    [JsonPropertyName("elemCountBefore")] public int    ElemCountBefore { get; set; }
+    [JsonPropertyName("elemCountAfter")]  public int    ElemCountAfter  { get; set; }
+    [JsonPropertyName("nodeCountBefore")] public int    NodeCountBefore { get; set; }
+    [JsonPropertyName("nodeCountAfter")]  public int    NodeCountAfter  { get; set; }
+    [JsonPropertyName("netElementDelta")] public int    NetElementDelta => ElemCountAfter - ElemCountBefore;
+    [JsonPropertyName("netNodeDelta")]    public int    NetNodeDelta    => NodeCountAfter - NodeCountBefore;
+}
+
 // ── Source Generator Context ──────────────────────────────────────────────────
 
 [JsonSerializable(typeof(FeModelDto))]
@@ -188,6 +202,7 @@ public sealed class DiagnosticCountsDto
 [JsonSerializable(typeof(BBoxDto))]
 [JsonSerializable(typeof(HealthIssuesDto))]
 [JsonSerializable(typeof(DiagnosticCountsDto))]
+[JsonSerializable(typeof(StageDeltasDto))]
 [JsonSerializable(typeof(TraceEventDto))]
 [JsonSerializable(typeof(DiagnosticDto))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
@@ -215,12 +230,14 @@ public static class FeModelJson
         HealthMetricsDto? healthMetrics = null,
         IReadOnlyList<DiagnosticDto>? stageDiagnostics = null,
         int stageIndex = 0,
-        long processingDurationMs = 0L)
+        long processingDurationMs = 0L,
+        StageDeltasDto? stageDeltas = null)
     {
         var dto = ToDto(model, phase, stageName, stageIndex, processingDurationMs);
         dto.Connectivity  = connectivity;
         dto.HealthMetrics = healthMetrics;
         dto.Diagnostics   = stageDiagnostics is { Count: > 0 } ? [..stageDiagnostics] : [];
+        dto.StageDeltas   = stageDeltas;
         return JsonSerializer.Serialize(dto, _writeOptions);
     }
 
@@ -245,6 +262,7 @@ public static class FeModelJson
         ["connectivity"]   = "연결성 분석 (groupCount, largestGroupNodeCount, largestGroupElementCount, largestGroupNodeRatio, isolatedNodeCount, groups[])",
         ["healthMetrics"]  = "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
         ["diagnostics"]    = "스테이지 진단 메시지 배열 (severity, code, message, elemId?, nodeId?)",
+        ["stageDeltas"]    = "이전 스테이지 대비 변화량 (fromStage, toStage, elemCountBefore, elemCountAfter, nodeCountBefore, nodeCountAfter, netElementDelta, netNodeDelta) — 옵션",
         ["trace"]        = "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)",
     };
 

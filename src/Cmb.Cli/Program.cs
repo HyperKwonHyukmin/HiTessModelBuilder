@@ -230,13 +230,23 @@ static Command BuildBuildFullCommand()
                     ElemId   = d.ElementId,
                     NodeId   = d.NodeId,
                 }).ToList();
+                var deltasDto = new StageDeltasDto
+                {
+                    FromStage       = delta.FromStage,
+                    ToStage         = stageName,
+                    ElemCountBefore = delta.ElemCountBefore,
+                    ElemCountAfter  = delta.ElemCountAfter,
+                    NodeCountBefore = delta.NodeCountBefore,
+                    NodeCountAfter  = delta.NodeCountAfter,
+                };
                 var prefix   = Path.Combine(outDir, $"{idx:D2}_{stageName}");
                 var jsonFile = prefix + ".json";
                 File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
                     connectivity: connectivity, healthMetrics: healthMetrics,
                     stageDiagnostics: diagnosticDtos,
                     stageIndex: idx,
-                    processingDurationMs: durationMs));
+                    processingDurationMs: durationMs,
+                    stageDeltas: deltasDto));
 
                 var bdfFile = prefix + ".bdf";
                 using (var writer = new StreamWriter(bdfFile))
