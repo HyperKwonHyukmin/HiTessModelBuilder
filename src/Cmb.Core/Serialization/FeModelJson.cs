@@ -186,6 +186,7 @@ public sealed class DiagnosticCountsDto
 [JsonSerializable(typeof(HealthIssuesDto))]
 [JsonSerializable(typeof(DiagnosticCountsDto))]
 [JsonSerializable(typeof(TraceEventDto))]
+[JsonSerializable(typeof(DiagnosticDto))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(Dictionary<string, int>))]
 [JsonSerializable(typeof(Dictionary<string, double>))]
