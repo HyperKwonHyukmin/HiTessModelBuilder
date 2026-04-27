@@ -251,7 +251,7 @@ static Command BuildBuildFullCommand()
                     bool singleGroup = connectivity.GroupCount <= 1;
                     bool noOrphan    = healthMetrics.Issues.OrphanNodes == 0;
                     bool noShort     = healthMetrics.Issues.ShortElements == 0;
-                    int boundaryCount = m.Nodes.Count(n => n.Tags.HasFlag(NodeTags.Boundary));
+                    int boundaryCount = m.Nodes.Count(n => n.HasTag(NodeTags.Boundary));
 
                     validationResult = new ValidationResultDto
                     {
