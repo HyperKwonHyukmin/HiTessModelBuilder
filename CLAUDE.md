@@ -84,7 +84,9 @@ docs/             PRD.md, ROADMAP.md, architecture.md, json-schema.md
 | B | `cmb build-raw` | `out/model/*.initial.json` + `*.bdf` | 알고리즘 적용 전 원본 모델 |
 | C | `cmb build-full` | `out/stages/{idx:D2}_{name}.json` | 스테이지별 변환 결과 |
 
-JSON `meta` 필드: `phase`, `stageName`, `timestamp`, `unit="mm"`, `schemaVersion="1.0"`.
+JSON `meta` 필드: `phase`, `stageName`, `stageIndex`, `processingDurationMs`, `timestamp`, `unit="mm"`, `schemaVersion="1.2"`.
+
+**스테이지별 선택 필드** (옵션, null이면 JSON에서 생략): `connectivity`, `healthMetrics`, `diagnostics[]`, `stageDeltas`, `validationResult` (FinalValidation 전용), `stageHistory` (마지막 스테이지 전용).
 
 ---
 
@@ -113,7 +115,8 @@ SanityPreprocess → Meshing → NodeEquivalence → Intersection → DanglingSh
 | `NodeOnSegmentTolMm` | 0.5 mm | 노드-세그먼트 on-segment 판정 |
 | `DanglingShortLengthMm` | 50.0 mm | dangling 짧은 가지 제거 기준 |
 | `CollinearMergeDistanceMm` | 50.0 mm | Collinear 노드 병합 거리 |
-| `GroupConnectSnapTolMm` | 50.0 mm | 분리 그룹 → master 연결 최대 거리 |
+| `GroupConnectLocalTolMm` | 40.0 mm | Meta-group 구성 시 인접 slave 간 최대 거리 |
+| `GroupConnectExtraMarginMm` | 50.0 mm | 단면 최대 치수 + 여유 = 병진 이동 허용 threshold |
 | `ExtendExtraMarginMm` | 100.0 mm | 자유단 연장 시 단면 치수 외 여유 |
 | `ExtendCoplanarTolMm` | 10.0 mm | ray-segment 공면 판정 상한 |
 | `ExtendSnapLateralMm` | 2.0 mm | pSeg 모드 전환 임계 (설계 오차 흡수) |
