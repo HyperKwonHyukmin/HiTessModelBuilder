@@ -217,7 +217,7 @@ static Command BuildBuildFullCommand()
 
         int idx = 0;
         var report = PipelineRunner.Run(model, stages, options, logger,
-            onStageComplete: (stageName, m, stageDiagnostics) =>
+            onStageComplete: (stageName, m, stageDiagnostics, durationMs, delta) =>
             {
                 idx++;
                 var connectivity  = ConnectivityAnalyzer.Analyze(m);
@@ -234,7 +234,9 @@ static Command BuildBuildFullCommand()
                 var jsonFile = prefix + ".json";
                 File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
                     connectivity: connectivity, healthMetrics: healthMetrics,
-                    stageDiagnostics: diagnosticDtos));
+                    stageDiagnostics: diagnosticDtos,
+                    stageIndex: idx,
+                    processingDurationMs: durationMs));
 
                 var bdfFile = prefix + ".bdf";
                 using (var writer = new StreamWriter(bdfFile))

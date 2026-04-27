@@ -164,7 +164,7 @@ public class PipelineRunnerTests
         var called = new List<string>();
         var stages = new IPipelineStage[] { new FakeStage("A"), new FakeStage("B") };
         PipelineRunner.Run(EmptyModel(), stages, DefaultOptions, NullLogger.Instance,
-            (name, _, _) => called.Add(name));
+            (name, _, _, _, _) => called.Add(name));
 
         called.Should().Equal("A", "B");
     }

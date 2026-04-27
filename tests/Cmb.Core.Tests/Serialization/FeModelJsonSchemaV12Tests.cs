@@ -74,4 +74,14 @@ public class FeModelJsonSchemaV12Tests
         var elem = doc.RootElement.GetProperty("elements").EnumerateArray().First();
         elem.GetProperty("lengthMm").GetDouble().Should().BeApproximately(300.0, 0.001);
     }
+
+    [Fact]
+    public void ToJson_MetaHasStageIndexAndDurationMs()
+    {
+        var json = MinimalModel().ToJson(stageIndex: 3, processingDurationMs: 42L);
+        var doc  = JsonDocument.Parse(json);
+        var meta = doc.RootElement.GetProperty("meta");
+        meta.GetProperty("stageIndex").GetInt32().Should().Be(3);
+        meta.GetProperty("processingDurationMs").GetInt64().Should().Be(42L);
+    }
 }

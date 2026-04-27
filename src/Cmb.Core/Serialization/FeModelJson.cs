@@ -29,11 +29,13 @@ public sealed class FeModelDto
 
 public sealed class MetaDto
 {
-    [JsonPropertyName("phase")]         public string Phase { get; set; } = "";
-    [JsonPropertyName("stageName")]     public string StageName { get; set; } = "";
-    [JsonPropertyName("timestamp")]     public string Timestamp { get; set; } = "";
-    [JsonPropertyName("unit")]          public string Unit { get; set; } = "mm";
-    [JsonPropertyName("schemaVersion")] public string SchemaVersion { get; set; } = "1.2";
+    [JsonPropertyName("phase")]                public string Phase                { get; set; } = "";
+    [JsonPropertyName("stageName")]            public string StageName            { get; set; } = "";
+    [JsonPropertyName("stageIndex")]           public int    StageIndex           { get; set; }
+    [JsonPropertyName("timestamp")]            public string Timestamp            { get; set; } = "";
+    [JsonPropertyName("processingDurationMs")] public long   ProcessingDurationMs { get; set; }
+    [JsonPropertyName("unit")]                 public string Unit                 { get; set; } = "mm";
+    [JsonPropertyName("schemaVersion")]        public string SchemaVersion        { get; set; } = "1.2";
 }
 
 public sealed class NodeDto
@@ -211,9 +213,11 @@ public static class FeModelJson
         string stageName = "",
         ConnectivityDto? connectivity = null,
         HealthMetricsDto? healthMetrics = null,
-        IReadOnlyList<DiagnosticDto>? stageDiagnostics = null)
+        IReadOnlyList<DiagnosticDto>? stageDiagnostics = null,
+        int stageIndex = 0,
+        long processingDurationMs = 0L)
     {
-        var dto = ToDto(model, phase, stageName);
+        var dto = ToDto(model, phase, stageName, stageIndex, processingDurationMs);
         dto.Connectivity  = connectivity;
         dto.HealthMetrics = healthMetrics;
         dto.Diagnostics   = stageDiagnostics is { Count: > 0 } ? [..stageDiagnostics] : [];
@@ -244,7 +248,8 @@ public static class FeModelJson
         ["trace"]        = "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)",
     };
 
-    private static FeModelDto ToDto(FeModel model, string phase, string stageName)
+    private static FeModelDto ToDto(FeModel model, string phase, string stageName,
+        int stageIndex = 0, long processingDurationMs = 0L)
     {
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
 
@@ -253,10 +258,13 @@ public static class FeModelJson
             Keys = SchemaKeys,
             Meta = new MetaDto
             {
-                Phase = phase,
-                StageName = stageName,
-                Timestamp = DateTime.UtcNow.ToString("o"),
-                Unit = model.LengthUnit,
+                Phase                = phase,
+                StageName            = stageName,
+                StageIndex           = stageIndex,
+                Timestamp            = DateTime.UtcNow.ToString("o"),
+                ProcessingDurationMs = processingDurationMs,
+                Unit                 = model.LengthUnit,
+                SchemaVersion        = "1.2",
             },
             Nodes = model.Nodes.Select(n => new NodeDto
             {
