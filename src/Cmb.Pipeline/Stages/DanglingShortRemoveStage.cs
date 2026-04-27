@@ -57,12 +57,11 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
             }
         }
 
+        var toRemoveSet = new HashSet<int>(toRemove);
         foreach (int id in toRemove)
-        {
-            model.Elements.RemoveAll(e => e.Id == id);
             ctx.AddTrace(TraceAction.ElementRemoved, Name,
                 elementId: id, note: $"dangling short (< {thresh} mm)");
-        }
+        model.Elements.RemoveAll(e => toRemoveSet.Contains(e.Id));
 
         if (toRemove.Count > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_REMOVED",
