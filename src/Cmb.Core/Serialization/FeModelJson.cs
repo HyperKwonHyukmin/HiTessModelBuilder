@@ -332,6 +332,7 @@ public static class FeModelJson
         ["healthMetrics"]  = "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
         ["diagnostics"]    = "스테이지 진단 메시지 배열 (severity, code, message, elemId?, nodeId?)",
         ["stageDeltas"]    = "이전 스테이지 대비 변화량 (fromStage, toStage, elemCountBefore, elemCountAfter, nodeCountBefore, nodeCountAfter, netElementDelta, netNodeDelta) — 옵션",
+        ["stageHistory"]   = "스테이지별 처리 이력 배열 (stageIndex, stage, timestamp, processingDurationMs, elementCount, nodeCount, issueCount) — 마지막 스테이지에만 포함",
         ["trace"]        = "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)",
     };
 

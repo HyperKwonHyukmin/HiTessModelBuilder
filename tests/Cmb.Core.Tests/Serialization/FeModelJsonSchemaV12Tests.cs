@@ -215,4 +215,54 @@ public class FeModelJsonSchemaV12Tests
         var doc = JsonDocument.Parse(MinimalModel().ToJson());
         doc.RootElement.TryGetProperty("validationResult", out _).Should().BeFalse();
     }
+
+    [Fact]
+    public void ToJson_WithStageHistory_IncludesItInOutput()
+    {
+        var history = new List<StageHistoryEntryDto>
+        {
+            new()
+            {
+                StageIndex           = 1,
+                Stage                = "Meshing",
+                Timestamp            = "2026-01-01T00:00:00Z",
+                ProcessingDurationMs = 150L,
+                ElementCount         = 42,
+                NodeCount            = 30,
+                IssueCount           = new StageHistoryIssueCountDto { Error = 0, Warning = 1, Info = 3 },
+            },
+            new()
+            {
+                StageIndex           = 2,
+                Stage                = "NodeEquivalence",
+                Timestamp            = "2026-01-01T00:00:01Z",
+                ProcessingDurationMs = 80L,
+                ElementCount         = 42,
+                NodeCount            = 28,
+                IssueCount           = new StageHistoryIssueCountDto { Error = 0, Warning = 0, Info = 2 },
+            },
+        };
+
+        var doc = JsonDocument.Parse(MinimalModel().ToJson(stageHistory: history));
+        var sh  = doc.RootElement.GetProperty("stageHistory");
+
+        sh.GetArrayLength().Should().Be(2);
+        var first = sh[0];
+        first.GetProperty("stageIndex").GetInt32().Should().Be(1);
+        first.GetProperty("stage").GetString().Should().Be("Meshing");
+        first.GetProperty("processingDurationMs").GetInt64().Should().Be(150L);
+        first.GetProperty("elementCount").GetInt32().Should().Be(42);
+        first.GetProperty("nodeCount").GetInt32().Should().Be(30);
+        var ic = first.GetProperty("issueCount");
+        ic.GetProperty("error").GetInt32().Should().Be(0);
+        ic.GetProperty("warning").GetInt32().Should().Be(1);
+        ic.GetProperty("info").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
+    public void ToJson_WithoutStageHistory_FieldOmitted()
+    {
+        var doc = JsonDocument.Parse(MinimalModel().ToJson());
+        doc.RootElement.TryGetProperty("stageHistory", out _).Should().BeFalse();
+    }
 }

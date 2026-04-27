@@ -288,7 +288,9 @@ static Command BuildBuildFullCommand()
                     },
                 });
 
-                bool isLastStage = stages.LastOrDefault()?.Name == stageName
+                // stageHistory is written only on the planned last stage (normal end or --stopat).
+                // If a stage fails and aborts early, the failing stage's JSON will not include stageHistory.
+                bool isLastStage = stages[^1].Name == stageName
                                    || (stopAt is not null &&
                                        string.Equals(stageName, stopAt, StringComparison.OrdinalIgnoreCase));
 
