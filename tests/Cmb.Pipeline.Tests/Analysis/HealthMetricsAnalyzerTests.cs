@@ -252,4 +252,54 @@ public class HealthMetricsAnalyzerTests
         result.DiagnosticCounts.Info.Should().Be(0);
         result.DiagnosticCounts.ByCode.Should().BeEmpty();
     }
+
+    // ── ElementQuality ────────────────────────────────────────────────────────
+
+    private static FeModel BuildThreeElementModel()
+    {
+        // 길이 100, 200, 300 mm 3개 요소
+        var m = new FeModel();
+        m.Nodes.Add(new Node(1, new Point3(0,   0, 0)));
+        m.Nodes.Add(new Node(2, new Point3(100, 0, 0)));
+        m.Nodes.Add(new Node(3, new Point3(300, 0, 0)));
+        m.Nodes.Add(new Node(4, new Point3(600, 0, 0)));
+        m.Sections.Add(new BeamSection(10, BeamSectionKind.Rod, [25.0], 1));
+        m.Materials.Add(new Material(1, "S", 200000, 0.3, 7.85e-6));
+        m.Elements.Add(new BeamElement(1, 1, 2, 10, EntityCategory.Structure, Vector3.UnitZ));
+        m.Elements.Add(new BeamElement(2, 2, 3, 10, EntityCategory.Structure, Vector3.UnitZ));
+        m.Elements.Add(new BeamElement(3, 3, 4, 10, EntityCategory.Structure, Vector3.UnitZ));
+        return m;
+    }
+
+    [Fact]
+    public void Analyze_ElementQuality_CorrectMinMaxMean()
+    {
+        var result = HealthMetricsAnalyzer.Analyze(BuildThreeElementModel());
+
+        result.ElementQuality.Should().NotBeNull();
+        result.ElementQuality!.LengthDistribution.Min.Should().BeApproximately(100.0, 0.01);
+        result.ElementQuality.LengthDistribution.Max.Should().BeApproximately(300.0, 0.01);
+        result.ElementQuality.LengthDistribution.Mean.Should().BeApproximately(200.0, 0.01);
+    }
+
+    [Fact]
+    public void Analyze_ElementQuality_ShortElementCount()
+    {
+        var m = BuildThreeElementModel();
+        // 길이 0.5mm 요소 추가 (ShortElemMinMm 기본값 5.0mm 기준)
+        m.Nodes.Add(new Node(10, new Point3(1000,   0, 0)));
+        m.Nodes.Add(new Node(11, new Point3(1000.5, 0, 0)));
+        m.Elements.Add(new BeamElement(10, 10, 11, 10, EntityCategory.Structure, Vector3.UnitZ));
+
+        var result = HealthMetricsAnalyzer.Analyze(m, tolerances: new Tolerances());
+        result.ElementQuality!.ShortElementCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void Analyze_EmptyModel_ElementQualityIsNull()
+    {
+        var m = new FeModel();
+        var result = HealthMetricsAnalyzer.Analyze(m);
+        result.ElementQuality.Should().BeNull();
+    }
 }

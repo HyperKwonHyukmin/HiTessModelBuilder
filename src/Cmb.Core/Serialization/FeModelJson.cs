@@ -134,11 +134,32 @@ public sealed class ConnectivityGroupDto
     [JsonPropertyName("elementCount")] public int ElementCount { get; set; }
 }
 
+public sealed class LengthDistributionDto
+{
+    [JsonPropertyName("min")]    public double Min    { get; set; }
+    [JsonPropertyName("max")]    public double Max    { get; set; }
+    [JsonPropertyName("mean")]   public double Mean   { get; set; }
+    [JsonPropertyName("median")] public double Median { get; set; }
+    [JsonPropertyName("p10")]    public double P10    { get; set; }
+    [JsonPropertyName("p90")]    public double P90    { get; set; }
+}
+
+public sealed class ElementQualityDto
+{
+    [JsonPropertyName("lengthDistribution")]      public LengthDistributionDto LengthDistribution      { get; set; } = new();
+    [JsonPropertyName("shortElementCount")]        public int                   ShortElementCount        { get; set; }
+    [JsonPropertyName("shortElementThresholdMm")]  public double                ShortElementThresholdMm  { get; set; }
+    [JsonPropertyName("aspectRatioOk")]            public bool                  AspectRatioOk            { get; set; } = true;
+}
+
 public sealed class HealthMetricsDto
 {
     [JsonPropertyName("totals")]          public HealthTotalsDto      Totals          { get; set; } = new();
     [JsonPropertyName("issues")]          public HealthIssuesDto      Issues          { get; set; } = new();
     [JsonPropertyName("diagnosticCounts")] public DiagnosticCountsDto DiagnosticCounts { get; set; } = new();
+    [JsonPropertyName("elementQuality")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ElementQualityDto? ElementQuality { get; set; }
 }
 
 public sealed class HealthTotalsDto
@@ -202,6 +223,8 @@ public sealed class StageDeltasDto
 [JsonSerializable(typeof(BBoxDto))]
 [JsonSerializable(typeof(HealthIssuesDto))]
 [JsonSerializable(typeof(DiagnosticCountsDto))]
+[JsonSerializable(typeof(ElementQualityDto))]
+[JsonSerializable(typeof(LengthDistributionDto))]
 [JsonSerializable(typeof(StageDeltasDto))]
 [JsonSerializable(typeof(TraceEventDto))]
 [JsonSerializable(typeof(DiagnosticDto))]

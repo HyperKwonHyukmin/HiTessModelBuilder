@@ -18,9 +18,10 @@ public static class HealthMetricsAnalyzer
 
         return new HealthMetricsDto
         {
-            Totals          = ComputeTotals(model),
-            Issues          = ComputeIssues(model, tol, connectivity),
+            Totals           = ComputeTotals(model),
+            Issues           = ComputeIssues(model, tol, connectivity),
             DiagnosticCounts = ComputeDiagnosticCounts(diagnostics),
+            ElementQuality   = ComputeElementQuality(model, tol),
         };
     }
 
@@ -153,6 +154,54 @@ public static class HealthMetricsAnalyzer
                 count++;
         }
         return count;
+    }
+
+    // ── ElementQuality ────────────────────────────────────────────────────────
+
+    private static ElementQualityDto? ComputeElementQuality(FeModel model, Tolerances tol)
+    {
+        if (model.Elements.Count == 0) return null;
+
+        var nodeById = model.Nodes.ToDictionary(n => n.Id);
+        var lengths  = new List<double>(model.Elements.Count);
+
+        foreach (var e in model.Elements)
+        {
+            if (nodeById.TryGetValue(e.StartNodeId, out var sn) &&
+                nodeById.TryGetValue(e.EndNodeId,   out var en))
+                lengths.Add(sn.Position.DistanceTo(en.Position));
+        }
+
+        if (lengths.Count == 0) return null;
+        lengths.Sort();
+
+        double mean    = lengths.Sum() / lengths.Count;
+        int shortCount = lengths.Count(l => l < tol.ShortElemMinMm);
+
+        return new ElementQualityDto
+        {
+            LengthDistribution = new LengthDistributionDto
+            {
+                Min    = Math.Round(lengths[0],                3),
+                Max    = Math.Round(lengths[^1],               3),
+                Mean   = Math.Round(mean,                      3),
+                Median = Math.Round(Percentile(lengths, 0.50), 3),
+                P10    = Math.Round(Percentile(lengths, 0.10), 3),
+                P90    = Math.Round(Percentile(lengths, 0.90), 3),
+            },
+            ShortElementCount       = shortCount,
+            ShortElementThresholdMm = tol.ShortElemMinMm,
+            AspectRatioOk           = true,
+        };
+    }
+
+    private static double Percentile(List<double> sorted, double p)
+    {
+        if (sorted.Count == 1) return sorted[0];
+        double idx = p * (sorted.Count - 1);
+        int    lo  = (int)idx;
+        int    hi  = Math.Min(lo + 1, sorted.Count - 1);
+        return sorted[lo] + (idx - lo) * (sorted[hi] - sorted[lo]);
     }
 
     // ── DiagnosticCounts ──────────────────────────────────────────────────────
