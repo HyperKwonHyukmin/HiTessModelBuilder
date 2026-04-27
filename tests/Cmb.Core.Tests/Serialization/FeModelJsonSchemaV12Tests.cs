@@ -128,12 +128,13 @@ public class FeModelJsonSchemaV12Tests
         var m = new FeModel();
         for (int i = 1; i <= 4; i++)
             m.Nodes.Add(new Node(i, new Point3(i * 100, 0, 0)));
+        // Node 2 has NodeTags.Intersection set (as IntersectionStage would do in the real pipeline)
+        m.Nodes.First(n => n.Id == 2).AddTag(NodeTags.Intersection);
         m.Sections.Add(new BeamSection(10, BeamSectionKind.Rod, [25.0], 1));
         m.Materials.Add(new Material(1, "S", 200000, 0.3, 7.85e-6));
         m.Elements.Add(new BeamElement(1, 1, 2, 10, EntityCategory.Structure, Vector3.UnitZ));
         m.Elements.Add(new BeamElement(2, 2, 3, 10, EntityCategory.Structure, Vector3.UnitZ));
         m.Elements.Add(new BeamElement(3, 2, 4, 10, EntityCategory.Structure, Vector3.UnitZ));
-        // Node 2: degree 3 → Intersection
 
         var doc  = JsonDocument.Parse(m.ToJson());
         var node2Tags = doc.RootElement.GetProperty("nodes").EnumerateArray()

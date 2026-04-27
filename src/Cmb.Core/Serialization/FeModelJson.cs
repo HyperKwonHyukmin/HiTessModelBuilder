@@ -374,7 +374,10 @@ public static class FeModelJson
 
                 if (deg == 0 && !isBound)             tags.Add("Orphan");
                 if (deg == 1 && !isBound)             tags.Add("FreeEnd");
-                if (deg >= 3)                          tags.Add("Intersection");
+                // "Intersection" is already emitted by FlagsToStringList when NodeTags.Intersection is set.
+                // Do NOT add it here from degree alone: "Intersection" is a valid NodeTags enum member and
+                // adding it as a computed string would corrupt FromJson round-trips on models where the
+                // flag was not explicitly set.
                 if (uboltAnchorIds.Contains(n.Id))    tags.Add("UboltAnchor");
 
                 return new NodeDto { Id = n.Id, X = n.Position.X, Y = n.Position.Y, Z = n.Position.Z, Tags = tags };
