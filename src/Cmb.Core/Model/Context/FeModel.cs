@@ -48,4 +48,38 @@ public sealed class FeModel
         int? relatedNodeId = null,
         string? note = null)
         => TraceLog.Add(new Model.TraceEvent(action, stageName, elementId, nodeId, relatedElementId, relatedNodeId, note));
+
+    /// <summary>
+    /// RBE2와 PointMass의 노드 참조를 일괄 재매핑한다.
+    /// oldToRep[oldId] = newId 매핑. 키에 없는 ID는 그대로 유지.
+    /// 재매핑 후 dep 리스트가 비어있는 RBE2는 삭제한다.
+    /// </summary>
+    public void RemapNodeReferences(IDictionary<int, int> oldToRep)
+    {
+        int Map(int id) => oldToRep.TryGetValue(id, out var v) ? v : id;
+
+        var newRigids = new List<Model.RigidElement>(Rigids.Count);
+        foreach (var r in Rigids)
+        {
+            int newIndep = Map(r.IndependentNodeId);
+            var newDeps  = r.DependentNodeIds.Select(Map);
+            var rebuilt  = new Model.RigidElement(r.Id, newIndep, newDeps, r.Remark, r.SourceName, r.Cm, r.DetailRemark);
+            if (rebuilt.DependentNodeIds.Count > 0)
+                newRigids.Add(rebuilt);
+        }
+        Rigids.Clear();
+        Rigids.AddRange(newRigids);
+
+        var newPointMasses = new List<Model.PointMass>(PointMasses.Count);
+        foreach (var pm in PointMasses)
+        {
+            int newNodeId = Map(pm.NodeId);
+            var rebuilt = newNodeId != pm.NodeId
+                ? new Model.PointMass(pm.Id, newNodeId, pm.Mass, pm.SourceName)
+                : pm;
+            newPointMasses.Add(rebuilt);
+        }
+        PointMasses.Clear();
+        PointMasses.AddRange(newPointMasses);
+    }
 }
