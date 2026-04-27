@@ -33,7 +33,7 @@ public sealed class MetaDto
     [JsonPropertyName("stageName")]     public string StageName { get; set; } = "";
     [JsonPropertyName("timestamp")]     public string Timestamp { get; set; } = "";
     [JsonPropertyName("unit")]          public string Unit { get; set; } = "mm";
-    [JsonPropertyName("schemaVersion")] public string SchemaVersion { get; set; } = "1.1";
+    [JsonPropertyName("schemaVersion")] public string SchemaVersion { get; set; } = "1.2";
 }
 
 public sealed class NodeDto
@@ -107,9 +107,9 @@ public sealed class DiagnosticDto
 {
     [JsonPropertyName("severity")] public string Severity { get; set; } = "";
     [JsonPropertyName("code")]     public string Code { get; set; } = "";
-    [JsonPropertyName("msg")]      public string Msg { get; set; } = "";
-    [JsonPropertyName("elemId")]   public int? ElemId { get; set; }
-    [JsonPropertyName("nodeId")]   public int? NodeId { get; set; }
+    [JsonPropertyName("message")]  public string Message { get; set; } = "";
+    [JsonPropertyName("elemId")]   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? ElemId { get; set; }
+    [JsonPropertyName("nodeId")]   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? NodeId { get; set; }
 }
 
 public sealed class ConnectivityDto
@@ -208,11 +208,13 @@ public static class FeModelJson
         string phase = "",
         string stageName = "",
         ConnectivityDto? connectivity = null,
-        HealthMetricsDto? healthMetrics = null)
+        HealthMetricsDto? healthMetrics = null,
+        IReadOnlyList<DiagnosticDto>? stageDiagnostics = null)
     {
         var dto = ToDto(model, phase, stageName);
         dto.Connectivity  = connectivity;
         dto.HealthMetrics = healthMetrics;
+        dto.Diagnostics   = stageDiagnostics is { Count: > 0 } ? [..stageDiagnostics] : [];
         return JsonSerializer.Serialize(dto, _writeOptions);
     }
 
@@ -236,7 +238,7 @@ public static class FeModelJson
         ["pointMasses"]  = "집중질량 배열 (id, nodeId, mass)",
         ["connectivity"]   = "연결성 분석 (groupCount, largestGroupNodeCount, largestGroupElementCount, largestGroupNodeRatio, isolatedNodeCount, groups[])",
         ["healthMetrics"]  = "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
-        ["diagnostics"]    = "스테이지 진단 메시지 배열 (severity, code, msg, elemId?, nodeId?)",
+        ["diagnostics"]    = "스테이지 진단 메시지 배열 (severity, code, message, elemId?, nodeId?)",
         ["trace"]        = "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)",
     };
 
@@ -249,7 +251,6 @@ public static class FeModelJson
             StageName = stageName,
             Timestamp = DateTime.UtcNow.ToString("o"),
             Unit = model.LengthUnit,
-            SchemaVersion = "1.1",
         },
         Nodes = model.Nodes.Select(n => new NodeDto
         {

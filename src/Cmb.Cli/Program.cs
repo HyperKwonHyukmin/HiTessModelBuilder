@@ -222,10 +222,19 @@ static Command BuildBuildFullCommand()
                 idx++;
                 var connectivity  = ConnectivityAnalyzer.Analyze(m);
                 var healthMetrics = HealthMetricsAnalyzer.Analyze(m, stageDiagnostics, options.Tolerances);
+                var diagnosticDtos = stageDiagnostics.Select(d => new DiagnosticDto
+                {
+                    Severity = d.Severity.ToString().ToLowerInvariant(),
+                    Code     = d.Code,
+                    Message  = d.Message,
+                    ElemId   = d.ElementId,
+                    NodeId   = d.NodeId,
+                }).ToList();
                 var prefix   = Path.Combine(outDir, $"{idx:D2}_{stageName}");
                 var jsonFile = prefix + ".json";
                 File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
-                    connectivity: connectivity, healthMetrics: healthMetrics));
+                    connectivity: connectivity, healthMetrics: healthMetrics,
+                    stageDiagnostics: diagnosticDtos));
 
                 var bdfFile = prefix + ".bdf";
                 using (var writer = new StreamWriter(bdfFile))

@@ -37,7 +37,7 @@ public class FeModelJsonTests
         json.Should().Contain("\"properties\"");
         json.Should().Contain("\"materials\"");
         json.Should().Contain("\"schemaVersion\"");
-        json.Should().Contain("\"1.1\"");
+        json.Should().Contain("\"1.2\"");
     }
 
     [Fact]

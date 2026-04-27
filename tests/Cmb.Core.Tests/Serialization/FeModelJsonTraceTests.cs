@@ -100,9 +100,9 @@ public class FeModelJsonTraceTests
     // ── schema version ────────────────────────────────────────────────────────
 
     [Fact]
-    public void ToJson_SchemaVersion_Is1_1()
+    public void ToJson_SchemaVersion_Is1_2()
     {
         var json = MinimalModel().ToJson();
-        json.Should().Contain("\"schemaVersion\": \"1.1\"");
+        json.Should().Contain("\"schemaVersion\": \"1.2\"");
     }
 }
