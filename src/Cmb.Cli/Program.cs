@@ -216,6 +216,7 @@ static Command BuildBuildFullCommand()
         ];
 
         int idx = 0;
+        var stageHistory = new List<StageHistoryEntryDto>();
         var report = PipelineRunner.Run(model, stages, options, logger,
             onStageComplete: (stageName, m, stageDiagnostics, durationMs, delta) =>
             {
@@ -271,13 +272,34 @@ static Command BuildBuildFullCommand()
                     };
                 }
 
+                stageHistory.Add(new StageHistoryEntryDto
+                {
+                    StageIndex           = idx,
+                    Stage                = stageName,
+                    Timestamp            = DateTime.UtcNow.ToString("o"),
+                    ProcessingDurationMs = durationMs,
+                    ElementCount         = m.Elements.Count,
+                    NodeCount            = m.Nodes.Count,
+                    IssueCount           = new StageHistoryIssueCountDto
+                    {
+                        Error   = stageDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Error),
+                        Warning = stageDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning),
+                        Info    = stageDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Info),
+                    },
+                });
+
+                bool isLastStage = stages.LastOrDefault()?.Name == stageName
+                                   || (stopAt is not null &&
+                                       string.Equals(stageName, stopAt, StringComparison.OrdinalIgnoreCase));
+
                 File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
                     connectivity: connectivity, healthMetrics: healthMetrics,
                     stageDiagnostics: diagnosticDtos,
                     stageIndex: idx,
                     processingDurationMs: durationMs,
                     stageDeltas: deltasDto,
-                    validationResult: validationResult));
+                    validationResult: validationResult,
+                    stageHistory: isLastStage ? stageHistory : null));
 
                 var bdfFile = prefix + ".bdf";
                 using (var writer = new StreamWriter(bdfFile))
