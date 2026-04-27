@@ -241,12 +241,43 @@ static Command BuildBuildFullCommand()
                 };
                 var prefix   = Path.Combine(outDir, $"{idx:D2}_{stageName}");
                 var jsonFile = prefix + ".json";
+
+                ValidationResultDto? validationResult = null;
+                if (stageName == "FinalValidation")
+                {
+                    int errCount  = stageDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Error);
+                    int warnCount = stageDiagnostics.Count(d => d.Severity == DiagnosticSeverity.Warning);
+                    bool passed   = errCount == 0;
+                    bool singleGroup = connectivity.GroupCount <= 1;
+                    bool noOrphan    = healthMetrics.Issues.OrphanNodes == 0;
+                    bool noShort     = healthMetrics.Issues.ShortElements == 0;
+                    int boundaryCount = m.Nodes.Count(n => n.Tags.HasFlag(NodeTags.Boundary));
+
+                    validationResult = new ValidationResultDto
+                    {
+                        Passed       = passed,
+                        ErrorCount   = errCount,
+                        WarningCount = warnCount,
+                        Summary      = passed
+                            ? $"모델이 유효합니다. 경고 {warnCount}개."
+                            : $"모델에 오류 {errCount}개가 있습니다.",
+                        Checklist    =
+                        [
+                            new() { Check = "connectivity",     Passed = singleGroup,       Detail = singleGroup ? "단일 연결 그룹" : $"{connectivity.GroupCount}개 그룹 분리" },
+                            new() { Check = "noZeroLength",      Passed = noShort,           Detail = noShort ? "길이=0 요소 없음" : $"{healthMetrics.Issues.ShortElements}개 짧은 요소" },
+                            new() { Check = "noOrphanNodes",     Passed = noOrphan,          Detail = noOrphan ? "고립 노드 없음" : $"{healthMetrics.Issues.OrphanNodes}개 고립 노드" },
+                            new() { Check = "boundaryCondition", Passed = boundaryCount > 0, Detail = $"경계조건 노드 {boundaryCount}개" },
+                        ],
+                    };
+                }
+
                 File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
                     connectivity: connectivity, healthMetrics: healthMetrics,
                     stageDiagnostics: diagnosticDtos,
                     stageIndex: idx,
                     processingDurationMs: durationMs,
-                    stageDeltas: deltasDto));
+                    stageDeltas: deltasDto,
+                    validationResult: validationResult));
 
                 var bdfFile = prefix + ".bdf";
                 using (var writer = new StreamWriter(bdfFile))

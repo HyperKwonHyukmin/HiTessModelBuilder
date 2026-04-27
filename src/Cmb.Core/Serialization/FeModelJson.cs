@@ -25,6 +25,8 @@ public sealed class FeModelDto
     [JsonPropertyName("diagnostics")] public List<DiagnosticDto> Diagnostics { get; set; } = [];
     [JsonPropertyName("stageDeltas")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StageDeltasDto? StageDeltas { get; set; }
+    [JsonPropertyName("validationResult")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ValidationResultDto? ValidationResult { get; set; }
     [JsonPropertyName("trace")]       [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<TraceEventDto>? Trace { get; set; }
 }
@@ -213,6 +215,22 @@ public sealed class StageDeltasDto
     [JsonPropertyName("netNodeDelta")]    public int    NetNodeDelta    => NodeCountAfter - NodeCountBefore;
 }
 
+public sealed class ValidationCheckDto
+{
+    [JsonPropertyName("check")]  public string Check  { get; set; } = "";
+    [JsonPropertyName("passed")] public bool   Passed { get; set; }
+    [JsonPropertyName("detail")] public string Detail { get; set; } = "";
+}
+
+public sealed class ValidationResultDto
+{
+    [JsonPropertyName("passed")]       public bool   Passed       { get; set; }
+    [JsonPropertyName("errorCount")]   public int    ErrorCount   { get; set; }
+    [JsonPropertyName("warningCount")] public int    WarningCount { get; set; }
+    [JsonPropertyName("summary")]      public string Summary      { get; set; } = "";
+    [JsonPropertyName("checklist")]    public List<ValidationCheckDto> Checklist { get; set; } = [];
+}
+
 // ── Source Generator Context ──────────────────────────────────────────────────
 
 [JsonSerializable(typeof(FeModelDto))]
@@ -226,6 +244,8 @@ public sealed class StageDeltasDto
 [JsonSerializable(typeof(ElementQualityDto))]
 [JsonSerializable(typeof(LengthDistributionDto))]
 [JsonSerializable(typeof(StageDeltasDto))]
+[JsonSerializable(typeof(ValidationResultDto))]
+[JsonSerializable(typeof(ValidationCheckDto))]
 [JsonSerializable(typeof(TraceEventDto))]
 [JsonSerializable(typeof(DiagnosticDto))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
@@ -254,13 +274,15 @@ public static class FeModelJson
         IReadOnlyList<DiagnosticDto>? stageDiagnostics = null,
         int stageIndex = 0,
         long processingDurationMs = 0L,
-        StageDeltasDto? stageDeltas = null)
+        StageDeltasDto? stageDeltas = null,
+        ValidationResultDto? validationResult = null)
     {
         var dto = ToDto(model, phase, stageName, stageIndex, processingDurationMs);
-        dto.Connectivity  = connectivity;
-        dto.HealthMetrics = healthMetrics;
-        dto.Diagnostics   = stageDiagnostics is { Count: > 0 } ? [..stageDiagnostics] : [];
-        dto.StageDeltas   = stageDeltas;
+        dto.Connectivity     = connectivity;
+        dto.HealthMetrics    = healthMetrics;
+        dto.Diagnostics      = stageDiagnostics is { Count: > 0 } ? [..stageDiagnostics] : [];
+        dto.StageDeltas      = stageDeltas;
+        dto.ValidationResult = validationResult;
         return JsonSerializer.Serialize(dto, _writeOptions);
     }
 

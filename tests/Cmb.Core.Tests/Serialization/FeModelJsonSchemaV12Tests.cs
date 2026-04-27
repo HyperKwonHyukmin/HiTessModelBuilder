@@ -183,4 +183,36 @@ public class FeModelJsonSchemaV12Tests
         sd.GetProperty("netElementDelta").GetInt32().Should().Be(12);
         sd.GetProperty("netNodeDelta").GetInt32().Should().Be(10);
     }
+
+    [Fact]
+    public void ToJson_WithValidationResult_IncludesItInOutput()
+    {
+        var vr = new ValidationResultDto
+        {
+            Passed       = true,
+            ErrorCount   = 0,
+            WarningCount = 2,
+            Summary      = "모델이 유효합니다.",
+            Checklist    =
+            [
+                new() { Check = "connectivity", Passed = true, Detail = "단일 연결 그룹" },
+            ],
+        };
+
+        var doc = JsonDocument.Parse(MinimalModel().ToJson(validationResult: vr));
+        var vrd = doc.RootElement.GetProperty("validationResult");
+
+        vrd.GetProperty("passed").GetBoolean().Should().BeTrue();
+        vrd.GetProperty("errorCount").GetInt32().Should().Be(0);
+        vrd.GetProperty("warningCount").GetInt32().Should().Be(2);
+        vrd.GetProperty("checklist").GetArrayLength().Should().Be(1);
+        vrd.GetProperty("checklist")[0].GetProperty("check").GetString().Should().Be("connectivity");
+    }
+
+    [Fact]
+    public void ToJson_WithoutValidationResult_FieldOmitted()
+    {
+        var doc = JsonDocument.Parse(MinimalModel().ToJson());
+        doc.RootElement.TryGetProperty("validationResult", out _).Should().BeFalse();
+    }
 }
