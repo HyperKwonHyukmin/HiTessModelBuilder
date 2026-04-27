@@ -253,6 +253,18 @@ public static class FeModelJson
     {
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
 
+        // degree 계산 (JSON 직렬화 시점에 NodeDto.Tags에만 반영, Node.Tags 불변)
+        var nodeDegree = new Dictionary<int, int>();
+        foreach (var e in model.Elements)
+        {
+            nodeDegree[e.StartNodeId] = nodeDegree.GetValueOrDefault(e.StartNodeId) + 1;
+            nodeDegree[e.EndNodeId]   = nodeDegree.GetValueOrDefault(e.EndNodeId)   + 1;
+        }
+        var uboltAnchorIds = model.Rigids
+            .Where(r => r.Remark == "UBOLT")
+            .Select(r => r.IndependentNodeId)
+            .ToHashSet();
+
         return new FeModelDto
         {
             Keys = SchemaKeys,
@@ -266,13 +278,18 @@ public static class FeModelJson
                 Unit                 = model.LengthUnit,
                 SchemaVersion        = "1.2",
             },
-            Nodes = model.Nodes.Select(n => new NodeDto
+            Nodes = model.Nodes.Select(n =>
             {
-                Id = n.Id,
-                X = n.Position.X,
-                Y = n.Position.Y,
-                Z = n.Position.Z,
-                Tags = FlagsToStringList(n.Tags),
+                var tags      = FlagsToStringList(n.Tags);
+                bool isBound  = n.Tags.HasFlag(NodeTags.Boundary);
+                int  deg      = nodeDegree.GetValueOrDefault(n.Id, 0);
+
+                if (deg == 0 && !isBound)             tags.Add("Orphan");
+                if (deg == 1 && !isBound)             tags.Add("FreeEnd");
+                if (deg >= 3)                          tags.Add("Intersection");
+                if (uboltAnchorIds.Contains(n.Id))    tags.Add("UboltAnchor");
+
+                return new NodeDto { Id = n.Id, X = n.Position.X, Y = n.Position.Y, Z = n.Position.Z, Tags = tags };
             }).ToList(),
             Elements = model.Elements.Select(e =>
             {

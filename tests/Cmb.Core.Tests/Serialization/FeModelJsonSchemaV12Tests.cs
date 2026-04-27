@@ -84,4 +84,80 @@ public class FeModelJsonSchemaV12Tests
         meta.GetProperty("stageIndex").GetInt32().Should().Be(3);
         meta.GetProperty("processingDurationMs").GetInt64().Should().Be(42L);
     }
+
+    [Fact]
+    public void ToJson_FreeEndNode_GetsTagFreeEnd()
+    {
+        var m = new FeModel();
+        m.Nodes.Add(new Node(1, new Point3(0, 0, 0)));
+        m.Nodes.Add(new Node(2, new Point3(100, 0, 0)));
+        m.Nodes.Add(new Node(3, new Point3(200, 0, 0)));
+        m.Sections.Add(new BeamSection(10, BeamSectionKind.Rod, [25.0], 1));
+        m.Materials.Add(new Material(1, "S", 200000, 0.3, 7.85e-6));
+        m.Elements.Add(new BeamElement(1, 1, 2, 10, EntityCategory.Structure, Vector3.UnitZ));
+        m.Elements.Add(new BeamElement(2, 2, 3, 10, EntityCategory.Structure, Vector3.UnitZ));
+
+        var doc   = JsonDocument.Parse(m.ToJson());
+        var nodes = doc.RootElement.GetProperty("nodes").EnumerateArray()
+                       .ToDictionary(n => n.GetProperty("id").GetInt32(),
+                                     n => n.GetProperty("tags").EnumerateArray()
+                                           .Select(t => t.GetString()!).ToList());
+
+        nodes[1].Should().Contain("FreeEnd");   // degree 1
+        nodes[2].Should().NotContain("FreeEnd"); // degree 2
+        nodes[3].Should().Contain("FreeEnd");   // degree 1
+    }
+
+    [Fact]
+    public void ToJson_OrphanNode_GetsTagOrphan()
+    {
+        var m = new FeModel();
+        m.Nodes.Add(new Node(1, new Point3(0, 0, 0)));   // element 없음 → degree 0
+
+        var doc  = JsonDocument.Parse(m.ToJson());
+        var tags = doc.RootElement.GetProperty("nodes").EnumerateArray().First()
+                      .GetProperty("tags").EnumerateArray()
+                      .Select(t => t.GetString()!).ToList();
+
+        tags.Should().Contain("Orphan");
+    }
+
+    [Fact]
+    public void ToJson_IntersectionNode_GetsTagIntersection()
+    {
+        var m = new FeModel();
+        for (int i = 1; i <= 4; i++)
+            m.Nodes.Add(new Node(i, new Point3(i * 100, 0, 0)));
+        m.Sections.Add(new BeamSection(10, BeamSectionKind.Rod, [25.0], 1));
+        m.Materials.Add(new Material(1, "S", 200000, 0.3, 7.85e-6));
+        m.Elements.Add(new BeamElement(1, 1, 2, 10, EntityCategory.Structure, Vector3.UnitZ));
+        m.Elements.Add(new BeamElement(2, 2, 3, 10, EntityCategory.Structure, Vector3.UnitZ));
+        m.Elements.Add(new BeamElement(3, 2, 4, 10, EntityCategory.Structure, Vector3.UnitZ));
+        // Node 2: degree 3 → Intersection
+
+        var doc  = JsonDocument.Parse(m.ToJson());
+        var node2Tags = doc.RootElement.GetProperty("nodes").EnumerateArray()
+            .First(n => n.GetProperty("id").GetInt32() == 2)
+            .GetProperty("tags").EnumerateArray()
+            .Select(t => t.GetString()!).ToList();
+
+        node2Tags.Should().Contain("Intersection");
+    }
+
+    [Fact]
+    public void ToJson_BoundaryNode_NeverGetsFreeEndOrOrphan()
+    {
+        var m = new FeModel();
+        var n = new Node(1, new Point3(0, 0, 0));
+        n.AddTag(NodeTags.Boundary);
+        m.Nodes.Add(n);
+
+        var doc  = JsonDocument.Parse(m.ToJson());
+        var tags = doc.RootElement.GetProperty("nodes").EnumerateArray().First()
+                      .GetProperty("tags").EnumerateArray()
+                      .Select(t => t.GetString()!).ToList();
+
+        tags.Should().NotContain("FreeEnd");
+        tags.Should().NotContain("Orphan");
+    }
 }
