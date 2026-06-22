@@ -200,4 +200,60 @@ public class FinalValidationStageTests
         ctx.Diagnostics.Where(d => d.Code == "FREE_END_NODE")
             .Should().NotContain(d => d.NodeId == 2);
     }
+
+    [Fact]
+    public void Execute_RecalculatesBeamOrientationPerpendicularToAxis()
+    {
+        var model = new FeModel();
+        var n1 = N(1, 0, 0, 0);   n1.AddTag(NodeTags.Boundary);
+        var n2 = N(2, 0, 0, 100); n2.AddTag(NodeTags.Boundary);
+        model.Nodes.AddRange([n1, n2]);
+        model.Elements.Add(new BeamElement(10, 1, 2, 1, EntityCategory.Pipe, Vector3.UnitZ));
+        model.Sections.Add(Section(1));
+        model.Materials.Add(Steel());
+
+        var result = new FinalValidationStage().Execute(MakeCtx(model));
+
+        result.Should().BeTrue();
+        model.Elements[0].Orientation.Should().Be(Vector3.UnitY);
+    }
+
+    [Fact]
+    public void RigidReciprocalDependency_RemovesNewestRigidAndReturnsTrue()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0)]);
+        model.Rigids.Add(new RigidElement(10, 1, [2], "TEST"));
+        model.Rigids.Add(new RigidElement(11, 2, [1], "TEST"));
+
+        var ctx = MakeCtx(model);
+        var result = new FinalValidationStage().Execute(ctx);
+
+        result.Should().BeTrue();
+        model.Rigids.Should().ContainSingle(r => r.Id == 10);
+        ctx.Diagnostics.Should().ContainSingle(d =>
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.Code == "RBE2_CIRCULAR_DEPENDENCY_REMOVED" &&
+            d.Message.Contains("N1 -> N2 -> N1"));
+    }
+
+    [Fact]
+    public void RigidTransitiveDependencyCycle_RemovesNewestRigidAndReturnsTrue()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 200, 0)]);
+        model.Rigids.Add(new RigidElement(10, 1, [2], "TEST"));
+        model.Rigids.Add(new RigidElement(11, 2, [3], "TEST"));
+        model.Rigids.Add(new RigidElement(12, 3, [1], "TEST"));
+
+        var ctx = MakeCtx(model);
+        var result = new FinalValidationStage().Execute(ctx);
+
+        result.Should().BeTrue();
+        model.Rigids.Select(r => r.Id).Should().BeEquivalentTo([10, 11]);
+        ctx.Diagnostics.Should().ContainSingle(d =>
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.Code == "RBE2_CIRCULAR_DEPENDENCY_REMOVED" &&
+            d.Message.Contains("N1 -> N2 -> N3 -> N1"));
+    }
 }

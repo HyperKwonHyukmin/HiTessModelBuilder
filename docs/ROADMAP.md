@@ -1,4 +1,4 @@
-# ClaudeModelBuilder ROADMAP
+# HiTessModelBuilder ROADMAP
 
 > **참조 PRD**: `docs/PRD.md`
 > **대상**: AM(Aveva Marine) 3D CSV → FEM 1D Beam → Nastran BDF 변환 CLI 도구 신규 작성
@@ -35,7 +35,7 @@
 
 | 모듈/클래스 | 요구사항 ID | 작업 내용 | 병렬 가능 |
 |-------------|-------------|-----------|-----------|
-| `ClaudeModelBuilder.sln`, `Directory.Build.props`, 4개 src + 4개 tests 프로젝트 | FR-A001 | `.sln` 및 프로젝트 파일 생성, `Nullable=enable` / `TreatWarningsAsErrors=true` 전역 적용, 테스트 프로젝트가 대응 src 프로젝트를 참조하도록 설정 | ❌ (시작점) |
+| `HiTessModelBuilder.sln`, `Directory.Build.props`, 4개 src + 4개 tests 프로젝트 | FR-A001 | `.sln` 및 프로젝트 파일 생성, `Nullable=enable` / `TreatWarningsAsErrors=true` 전역 적용, 테스트 프로젝트가 대응 src 프로젝트를 참조하도록 설정 | ❌ (시작점) |
 | `Cmb.Core/Geometry/Point3.cs` | FR-A002 | `readonly struct Point3 : IEquatable<Point3>` 구현. `X`, `Y`, `Z` 프로퍼티, `DistanceTo(Point3)`, `+`/`-` 연산자(Vector3 교차), 생성자에서 NaN/Infinity 검증 | ✅ (FR-A001 완료 후 병렬 가능) |
 | `Cmb.Core/Geometry/Vector3.cs` | FR-A002 | `readonly struct Vector3 : IEquatable<Vector3>` 구현. `Length`, `Normalize()`, `Dot`, `Cross`, `+`/`-`/`*` 연산자, `static Zero` | ✅ (FR-A001 완료 후 병렬 가능) |
 | `Cmb.Core/Geometry/Segment3.cs` | FR-A002 | `readonly struct Segment3` 구현. `Start`/`End`, `Length`, `Midpoint`, `ClosestPointTo(Point3)` (t ∈ [0,1] clamp), `DistanceTo(Point3)` | ✅ (FR-A001 완료 후 병렬 가능) |

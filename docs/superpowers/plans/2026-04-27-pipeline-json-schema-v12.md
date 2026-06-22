@@ -187,7 +187,7 @@ File.WriteAllText(jsonFile, m.ToJson(phase: "C", stageName: stageName,
 - [ ] **Step 1-7: 빌드 + 테스트 통과 확인**
 
 ```
-dotnet build ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln
 dotnet test tests/Cmb.Core.Tests --filter "FullyQualifiedName~FeModelJsonSchemaV12Tests"
 ```
 Expected: 3개 PASS
@@ -195,7 +195,7 @@ Expected: 3개 PASS
 - [ ] **Step 1-8: 전체 테스트 회귀 없음 확인**
 
 ```
-dotnet test ClaudeModelBuilder.sln
+dotnet test HiTessModelBuilder.sln
 ```
 
 - [ ] **Step 1-9: 커밋**
@@ -292,7 +292,7 @@ private static FeModelDto ToDto(FeModel model, string phase, string stageName)
 - [ ] **Step 2-5: 빌드 + 테스트 통과**
 
 ```
-dotnet build ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln
 dotnet test tests/Cmb.Core.Tests --filter "FullyQualifiedName~FeModelJsonSchemaV12Tests"
 ```
 
@@ -507,8 +507,8 @@ onStageComplete: (stageName, m, stageDiagnostics, durationMs, delta) =>
 - [ ] **Step 3-8: 빌드 + 테스트 통과**
 
 ```
-dotnet build ClaudeModelBuilder.sln
-dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln
+dotnet test HiTessModelBuilder.sln
 ```
 Expected: 전체 테스트 PASS
 
@@ -655,7 +655,7 @@ Nodes = model.Nodes.Select(n =>
 - [ ] **Step 4-4: 빌드 + 테스트 통과**
 
 ```
-dotnet build ClaudeModelBuilder.sln && dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln && dotnet test HiTessModelBuilder.sln
 ```
 Expected: 전체 GREEN
 
@@ -763,7 +763,7 @@ File.WriteAllText(jsonFile, m.ToJson(..., stageDeltas: deltasDto));
 - [ ] **Step 5-5: 빌드 + 테스트 통과 + 커밋**
 
 ```
-dotnet build ClaudeModelBuilder.sln && dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln && dotnet test HiTessModelBuilder.sln
 git add src/Cmb.Core/Serialization/FeModelJson.cs src/Cmb.Cli/Program.cs tests/Cmb.Core.Tests/Serialization/FeModelJsonSchemaV12Tests.cs
 git commit -m "✨ feat: add stageDeltas to JSON output"
 ```
@@ -952,7 +952,7 @@ private static double Percentile(List<double> sorted, double p)
 - [ ] **Step 6-5: 빌드 + 테스트 통과 + 커밋**
 
 ```
-dotnet build ClaudeModelBuilder.sln && dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln && dotnet test HiTessModelBuilder.sln
 git add src/Cmb.Core/Serialization/FeModelJson.cs src/Cmb.Pipeline/Analysis/HealthMetricsAnalyzer.cs tests/Cmb.Pipeline.Tests/Analysis/HealthMetricsAnalyzerTests.cs
 git commit -m "✨ feat: add elementQuality distribution stats to healthMetrics"
 ```
@@ -1053,7 +1053,7 @@ File.WriteAllText(jsonFile, m.ToJson(..., validationResult: validationResult));
 - [ ] **Step 7-4: 빌드 + 전체 테스트 + 커밋**
 
 ```
-dotnet build ClaudeModelBuilder.sln && dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln && dotnet test HiTessModelBuilder.sln
 git add src/Cmb.Core/Serialization/FeModelJson.cs src/Cmb.Cli/Program.cs
 git commit -m "✨ feat: add validationResult to FinalValidation stage JSON"
 ```
@@ -1152,7 +1152,7 @@ File.WriteAllText(jsonFile, m.ToJson(...,
 - [ ] **Step 8-4: 빌드 + 전체 테스트 + 커밋**
 
 ```
-dotnet build ClaudeModelBuilder.sln && dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln && dotnet test HiTessModelBuilder.sln
 git add src/Cmb.Core/Serialization/FeModelJson.cs src/Cmb.Cli/Program.cs
 git commit -m "✨ feat: add stageHistory to final stage JSON output"
 ```
@@ -1194,7 +1194,7 @@ Read src/Cmb.Core/Model/Context/FeModel.cs
 - [ ] **Step 9-4: 빌드 + 전체 테스트**
 
 ```
-dotnet build ClaudeModelBuilder.sln && dotnet test ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln && dotnet test HiTessModelBuilder.sln
 ```
 
 - [ ] **Step 9-5: 필요한 수정이 있었으면 커밋**

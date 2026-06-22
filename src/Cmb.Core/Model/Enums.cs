@@ -8,6 +8,7 @@ public enum NodeTags
     Intersection = 2,
     Merged       = 4,
     Boundary     = 8,
+    Spc          = 16,
 }
 
 public enum BeamSectionKind

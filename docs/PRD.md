@@ -1,4 +1,4 @@
-# ClaudeModelBuilder PRD
+# HiTessModelBuilder PRD
 
 ## 1. 프로젝트 개요
 
@@ -40,7 +40,7 @@ AM(Aveva Marine) 3D 설계에서 추출한 Beam류(H, L, Rod, Tube 등) CSV 데�
 ## 2. 솔루션 구조 및 프로젝트 레이아웃
 
 ```
-ClaudeModelBuilder.sln
+HiTessModelBuilder.sln
 Directory.Build.props          (Nullable=enable, TreatWarningsAsErrors=true)
 src/
   Cmb.Core/                    classlib  도메인 모델, 기하 primitive, JSON 직렬화

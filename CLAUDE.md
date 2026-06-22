@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-AM(Aveva Marine) 3D 설계 CSV → FEM 1D Beam → Nastran BDF 변환 CLI 도구 (`cmb`). .NET 8, C# 12.
+HiTessModelBuilder는 AM(Aveva Marine) 3D 설계 CSV → FEM 1D Beam → Nastran BDF 변환 CLI 도구 (`cmb`)이다. .NET 8, C# 12.
 
 **레거시 참조 프로젝트** (`C:\Coding\Csharp\Projects\HiTessModelBuilder_26_01\HiTessModelBuilder_26_01`): **읽기 전용 참조만 허용. 절대 수정 금지.**
 
@@ -14,10 +14,10 @@ AM(Aveva Marine) 3D 설계 CSV → FEM 1D Beam → Nastran BDF 변환 CLI 도구
 
 ```bash
 # 전체 빌드
-dotnet build ClaudeModelBuilder.sln
+dotnet build HiTessModelBuilder.sln
 
 # 전체 테스트
-dotnet test ClaudeModelBuilder.sln
+dotnet test HiTessModelBuilder.sln
 
 # 단일 테스트 프로젝트
 dotnet test tests/Cmb.Core.Tests
@@ -36,7 +36,7 @@ dotnet run --project src/Cmb.Cli -- build-full --input samples/hitess_mini --out
 ## 솔루션 구조
 
 ```
-ClaudeModelBuilder.sln
+HiTessModelBuilder.sln
 Directory.Build.props          ← Nullable=enable, TreatWarningsAsErrors=true, LangVersion=latest
 src/
   Cmb.Core/       도메인 모델, 기하 primitive, JSON 직렬화 (외부 NuGet 의존 없음, BCL만)
@@ -64,7 +64,7 @@ docs/             PRD.md, ROADMAP.md, architecture.md, json-schema.md
 - `BeamElement`: `int Id`, `StartNodeId`, `EndNodeId`, `PropertyId`, `EntityCategory`, `Vector3 Orientation`
 - `RigidElement`: `IndependentNodeId`, `DependentNodeIds` — Nastran RBE2
 - `PointMass`: U-bolt 또는 Equipment 집중 질량
-- `NodeTags [Flags]`: `None=0 | Weld=1 | Intersection=2 | Merged=4 | Boundary=8`
+- `NodeTags [Flags]`: `None=0 | Weld=1 | Intersection=2 | Merged=4 | Boundary=8 | Spc=16` — `Spc`는 최종 BDF SPC1에 포함된 노드. final JSON뿐 아니라 phase JSON도 후처리로 동일하게 반영됨.
 - `EntityCategory`: `Structure | Pipe | Equipment`
 - `BeamSectionKind`: `H | L | Rod | Tube | Box | Channel | Bar`
 
@@ -92,14 +92,26 @@ JSON `meta` 필드: `phase`, `stageName`, `stageIndex`, `processingDurationMs`, 
 
 ## Pipeline 스테이지 순서 (Phase C)
 
-```
-SanityPreprocess → Meshing → NodeEquivalence → Intersection → DanglingShortRemove
-→ CollinearNodeMerge → ExtendToIntersect → SplitByExistingNodes
-→ GroupConnect → SplitByExistingNodes → UboltRbe → SplitByExistingNodes
-→ FinalValidation
-```
+18개 sub-stage가 6개 **phase**로 묶여 출력됨. 기본 출력: `{idx:D2}_{phaseName}.{json|bdf}`. 디버깅 시 `--verbose-dump` → `detail/` 하위에 sub-stage별 추가 dump.
 
-`SplitByExistingNodes`는 세 번 실행됨 (ExtendToIntersect pSeg 노드, GroupConnect snap 노드, UboltRbe snap 노드 처리).
+| Phase (출력 파일) | Sub-stages (실행 순서) |
+|-------------------|----------------------|
+| `01_Preprocess` | SanityPreprocess → **Meshing** |
+| `02_ElementSplit` | NodeEquivalence → Intersection → **DanglingShortRemove** |
+| `03_NodeMerge` | **CollinearNodeMerge** |
+| `04_Connectivity` | ExtendToIntersect → Split → GroupConnect → Split → BoxUboltConnection → **Split** |
+| `05_RigidPostProc` | PointMassReattach → RigidProximityMerge → FreeEndRbe → **Split** |
+| `06_Validation` | UboltAnchorVerticalize → OrphanNodeRemove → **FinalValidation** |
+
+- `SplitByExistingNodes`는 4번 실행됨 (ExtendToIntersect, GroupConnect, BoxUboltConnection, FreeEndRbe 후속 처리).
+- `UboltRbeStage`는 `PreconnectInitialUbolts()` 헬퍼에서 pipeline 시작 전 1회 실행 (별도 dump 없음).
+- `BoxUboltConnection`은 BOX 단면 U-bolt RBE2의 dependent를 owner pipe local frame(top/bottom/left/right) 4방향 가장 가까운 구조 부재로 연결.
+- `PointMassReattach`는 element/rigid에 참조되지 않는 공중 노드에 붙은 PointMass(CONM2)를 `PointMassReattachMaxDistMm` 반경 내 가장 가까운 pipe 노드로 재연결 후 고립 노드 제거.
+- `RigidProximityMerge`는 50mm 이내 RBE2를 단일 RBE2로 통합 (HiTess `RigidProximityMergeModifier` 이식).
+- `RigidElementNormalizer.MergeSharedDependentNodes`는 GroupConnect/BoxUbolt 후 같은 dep를 공유하는 RBE2를 1개로 통합 (cm 자유도는 union, PointMass>UBOLT>shared-dep 우선순위로 master 선택, 기본 cm은 `"123456"` — 부분 자유도 보존이 필요하면 `RigidElementNormalizer.cs:58-60` 정책 검토).
+- `OrphanNodeRemove`는 element/rigid(indep+dep)/PointMass 어디에도 참조되지 않는 노드를 모두 삭제하고 `TraceAction.NodeRemoved` 로 lifecycle 추적. Boundary 태그가 있는 노드는 SPC seed 보존을 위해 제외.
+
+Phase 경계 테이블 (`Program.cs:phaseBoundaries`)은 0-based stage index로 관리 → stage 추가 시 해당 index에 entry 추가.
 
 ### 핵심 Tolerance (`RunOptions.Tolerances`)
 
@@ -107,7 +119,7 @@ SanityPreprocess → Meshing → NodeEquivalence → Intersection → DanglingSh
 |------|--------|------|
 | `NodeMergeMm` | 1.0 mm | 동일 노드 판정 |
 | `IntersectionSnapMm` | 5.0 mm | 교차점 snap |
-| `UboltSnapMaxDistMm` | 50.0 mm | U-bolt snap 최대 거리 |
+| `UboltSnapMaxDistMm` | 300.0 mm | U-bolt snap 기본 검색 반경 (HiTess `MaxSearchRadius`와 동일) |
 | `ShortElemMinMm` | 5.0 mm | dangling 단축 요소 제거 기준 |
 | `SpatialCellSizeMm` | 200.0 mm | 공간 해시 셀 크기 |
 | `MeshingMaxLengthStructure` | 2000.0 mm | Structure 분할 기준 |
@@ -120,7 +132,18 @@ SanityPreprocess → Meshing → NodeEquivalence → Intersection → DanglingSh
 | `ExtendExtraMarginMm` | 100.0 mm | 자유단 연장 시 단면 치수 외 여유 |
 | `ExtendCoplanarTolMm` | 10.0 mm | ray-segment 공면 판정 상한 |
 | `ExtendSnapLateralMm` | 2.0 mm | pSeg 모드 전환 임계 (설계 오차 흡수) |
+| `ExtendObstacleTolMm` | 1.0 mm | extend 경로 obstacle 검출 거리 임계 |
+| `ExtendMinElemLengthMm` | 5.0 mm | extend 후 stub 생성 방지 — 이동 후 elemA 최소 길이 |
 | `ExtendMaxIterations` | 10 | ExtendToIntersect 수렴 루프 상한 |
+| `MaxConvergenceIterations` | 50 | Intersection / DanglingShortRemove 수렴 루프 상한 |
+| `FreeEndRbeExtraMarginMm` | 25.0 mm | 자유단 RBE 브릿지 interior projection 여유 |
+| `FreeEndRbeEndpointMarginMm` | 5.0 mm | 자유단 RBE endpoint capture (tRaw≈0/≈1) 여유 |
+| `RigidProximityMergeMm` | 50.0 mm | 인접 RBE2 클러스터 병합 임계 (HiTess `RigidProximityMergeModifier`와 동일) |
+| `GroupConnectNoiseLengthMm` | 500.0 mm | GroupConnect 노이즈 단일 element 삭제 길이 임계 |
+| `GroupConnectNoiseMaxDimMm` | 100.0 mm | GroupConnect 노이즈 단일 element 단면 최대 치수 임계 |
+| `BoxUboltMaxSearchMm` | 2000.0 mm | BoxUbolt 4방향 후보 검색 최대 반경 |
+| `BoxUboltAxialSafetyMm` | 10.0 mm | BoxUbolt exclusion zone axial 여유 |
+| `PointMassReattachMaxDistMm` | 2000.0 mm | 공중 PointMass 노드 → 최근접 pipe 노드 검색 최대 거리 |
 
 **Tolerance는 `RunOptions.Tolerances` 레코드에만 정의. 코드 내 하드코딩 금지.**
 

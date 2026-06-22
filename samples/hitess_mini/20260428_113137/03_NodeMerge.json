@@ -1,0 +1,1554 @@
+{
+  "_keys": {
+    "meta": "스테이지 메타 (phase, stageName, timestamp, unit, schemaVersion)",
+    "nodes": "노드 배열 (id, x, y, z, tags[])",
+    "elements": "빔 요소 배열 (id, type, startNode, endNode, propertyId, category, orientation[])",
+    "rigids": "RBE2 배열 (id, independentNode, dependentNodes[], remark, cm)",
+    "properties": "빔 단면 배열 (id, kind, dims[], materialId)",
+    "materials": "재료 배열 (id, name, E, nu, rho)",
+    "pointMasses": "집중질량 배열 (id, nodeId, mass)",
+    "connectivity": "연결성 분석 (groupCount, largestGroupNodeCount, largestGroupElementCount, largestGroupNodeRatio, isolatedNodeCount, groups[])",
+    "healthMetrics": "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
+    "elementQuality": "요소 품질 분포 요약 (lengthDistribution, shortElementCount, shortElementThresholdMm, aspectRatioOk)",
+    "diagnostics": "스테이지 진단 메시지 배열 (severity, code, message, elemId?, nodeId?)",
+    "stageDeltas": "이전 스테이지 대비 변화량 (fromStage, toStage, elemCountBefore, elemCountAfter, nodeCountBefore, nodeCountAfter, netElementDelta, netNodeDelta) — 옵션",
+    "stageHistory": "스테이지별 처리 이력 배열 (stageIndex, stage, timestamp, processingDurationMs, elementCount, nodeCount, issueCount) — 마지막 스테이지에만 포함",
+    "trace": "변환 추적 이벤트 배열 — 옵션 (action, stage, elemId?, nodeId?, relatedElemId?, relatedNodeId?, note?)"
+  },
+  "meta": {
+    "phase": "C",
+    "stageName": "NodeMerge",
+    "stageIndex": 3,
+    "timestamp": "2026-04-28T02:31:37.8881822Z",
+    "processingDurationMs": 2,
+    "unit": "mm",
+    "schemaVersion": "1.2"
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "x": 90072,
+      "y": 4908,
+      "z": 38610,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 2,
+      "x": 90072,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 3,
+      "x": 90080,
+      "y": 4908,
+      "z": 38766,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 4,
+      "x": 90225,
+      "y": 4908,
+      "z": 38766,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 5,
+      "x": 90080,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 6,
+      "x": 88793,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 7,
+      "x": 79558,
+      "y": 10610,
+      "z": 38655,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 8,
+      "x": 79558,
+      "y": 10890,
+      "z": 35451,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 9,
+      "x": 78964,
+      "y": 9780,
+      "z": 38660,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 10,
+      "x": 78964,
+      "y": 10555,
+      "z": 38660,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 11,
+      "x": 81420,
+      "y": 3975,
+      "z": 36844,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 12,
+      "x": 81420,
+      "y": 3975,
+      "z": 35527,
+      "tags": [
+        "Weld",
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 13,
+      "x": 82435,
+      "y": 4050,
+      "z": 38531,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 14,
+      "x": 83497,
+      "y": 4050,
+      "z": 38531,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 15,
+      "x": 76600,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 16,
+      "x": 77100,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 17,
+      "x": 76850,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 18,
+      "x": 78655,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 19,
+      "x": 78750,
+      "y": 8870,
+      "z": 37252,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 20,
+      "x": 78703,
+      "y": 8952,
+      "z": 37252,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 21,
+      "x": 78737,
+      "y": 8917,
+      "z": 37252,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 22,
+      "x": 78750,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 23,
+      "x": 77578,
+      "y": 8965,
+      "z": 37252,
+      "tags": [
+        "Boundary",
+        "UboltAnchor"
+      ]
+    },
+    {
+      "id": 24,
+      "x": 90940,
+      "y": 2435,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 25,
+      "x": 91023,
+      "y": 2435,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 26,
+      "x": 90858,
+      "y": 2435,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 27,
+      "x": 92064,
+      "y": 3407,
+      "z": 38850,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 28,
+      "x": 92064,
+      "y": 3345,
+      "z": 38850,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 29,
+      "x": 90428,
+      "y": 2435,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 30,
+      "x": 90275,
+      "y": 2435,
+      "z": 37252,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 31,
+      "x": 90351,
+      "y": 2435,
+      "z": 37252,
+      "tags": []
+    },
+    {
+      "id": 32,
+      "x": 90351,
+      "y": 2435,
+      "z": 37319,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 33,
+      "x": 81616,
+      "y": 6245,
+      "z": 38069,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 34,
+      "x": 81006,
+      "y": 6245,
+      "z": 37968,
+      "tags": [
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 35,
+      "x": 92064,
+      "y": 3715,
+      "z": 38850,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 36,
+      "x": 112100,
+      "y": -7685,
+      "z": 31045,
+      "tags": [
+        "Orphan"
+      ]
+    },
+    {
+      "id": 37,
+      "x": 79558,
+      "y": 10750,
+      "z": 37053,
+      "tags": []
+    },
+    {
+      "id": 38,
+      "x": 90072,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "Intersection",
+        "FreeEnd"
+      ]
+    },
+    {
+      "id": 39,
+      "x": 90072,
+      "y": 4908,
+      "z": 39616,
+      "tags": [
+        "Intersection",
+        "Orphan"
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "id": 1,
+      "type": "BEAM",
+      "startNode": 1,
+      "endNode": 2,
+      "propertyId": 1,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "lengthMm": 1006,
+      "sourceName": "=268454733/2974123_0",
+      "parentElemId": null
+    },
+    {
+      "id": 2,
+      "type": "BEAM",
+      "startNode": 3,
+      "endNode": 4,
+      "propertyId": 2,
+      "category": "Structure",
+      "orientation": [
+        0,
+        -1,
+        0
+      ],
+      "lengthMm": 145,
+      "sourceName": "=268454733/2974298_0",
+      "parentElemId": null
+    },
+    {
+      "id": 5,
+      "type": "BEAM",
+      "startNode": 9,
+      "endNode": 10,
+      "propertyId": 5,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "lengthMm": 775,
+      "sourceName": "=268454733/2967647",
+      "parentElemId": null
+    },
+    {
+      "id": 6,
+      "type": "BEAM",
+      "startNode": 11,
+      "endNode": 12,
+      "propertyId": 6,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "lengthMm": 1317,
+      "sourceName": "=21945/499850",
+      "parentElemId": null
+    },
+    {
+      "id": 7,
+      "type": "BEAM",
+      "startNode": 13,
+      "endNode": 14,
+      "propertyId": 7,
+      "category": "Structure",
+      "orientation": [
+        0,
+        1,
+        0
+      ],
+      "lengthMm": 1062,
+      "sourceName": "=21945/499957",
+      "parentElemId": null
+    },
+    {
+      "id": 8,
+      "type": "BEAM",
+      "startNode": 15,
+      "endNode": 16,
+      "propertyId": 8,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 500,
+      "sourceName": "=21945/52134",
+      "parentElemId": null
+    },
+    {
+      "id": 18,
+      "type": "BEAM",
+      "startNode": 27,
+      "endNode": 28,
+      "propertyId": 9,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 62,
+      "sourceName": "=21945/52194",
+      "parentElemId": null
+    },
+    {
+      "id": 20,
+      "type": "BEAM",
+      "startNode": 29,
+      "endNode": 31,
+      "propertyId": 8,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 77,
+      "sourceName": "=21945/52154",
+      "parentElemId": null
+    },
+    {
+      "id": 21,
+      "type": "BEAM",
+      "startNode": 31,
+      "endNode": 30,
+      "propertyId": 8,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 76,
+      "sourceName": "=21945/52154",
+      "parentElemId": null
+    },
+    {
+      "id": 22,
+      "type": "BEAM",
+      "startNode": 31,
+      "endNode": 32,
+      "propertyId": 10,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 67,
+      "sourceName": "=21945/52154",
+      "parentElemId": null
+    },
+    {
+      "id": 24,
+      "type": "BEAM",
+      "startNode": 33,
+      "endNode": 34,
+      "propertyId": 11,
+      "category": "Pipe",
+      "orientation": [
+        0,
+        0,
+        1
+      ],
+      "lengthMm": 618.305,
+      "sourceName": "=21945/52369",
+      "parentElemId": null
+    },
+    {
+      "id": 28,
+      "type": "BEAM",
+      "startNode": 7,
+      "endNode": 37,
+      "propertyId": 4,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "lengthMm": 1608.106,
+      "sourceName": "=268454733/2967350",
+      "parentElemId": 4
+    },
+    {
+      "id": 29,
+      "type": "BEAM",
+      "startNode": 37,
+      "endNode": 8,
+      "propertyId": 4,
+      "category": "Structure",
+      "orientation": [
+        1,
+        0,
+        0
+      ],
+      "lengthMm": 1608.106,
+      "sourceName": "=268454733/2967350",
+      "parentElemId": 4
+    },
+    {
+      "id": 31,
+      "type": "BEAM",
+      "startNode": 38,
+      "endNode": 6,
+      "propertyId": 3,
+      "category": "Structure",
+      "orientation": [
+        0,
+        0,
+        -1
+      ],
+      "lengthMm": 1279,
+      "sourceName": "=268454733/2974189_0",
+      "parentElemId": 3
+    }
+  ],
+  "rigids": [
+    {
+      "id": 15,
+      "independentNode": 23,
+      "dependentNodes": [],
+      "remark": "UBOLT",
+      "cm": "3",
+      "sourceName": "=21945/496593"
+    },
+    {
+      "id": 16,
+      "independentNode": 24,
+      "dependentNodes": [
+        25,
+        26
+      ],
+      "remark": "VALV",
+      "cm": "123456",
+      "sourceName": "=21945/52169"
+    }
+  ],
+  "properties": [
+    {
+      "id": 1,
+      "kind": "Bar",
+      "dims": [
+        65,
+        16
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 2,
+      "kind": "Rod",
+      "dims": [
+        9.5
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 3,
+      "kind": "Tube",
+      "dims": [
+        21.35,
+        18.1
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 4,
+      "kind": "Bar",
+      "dims": [
+        65,
+        9
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 5,
+      "kind": "L",
+      "dims": [
+        75,
+        75,
+        9,
+        9
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 6,
+      "kind": "L",
+      "dims": [
+        150,
+        150,
+        15,
+        15
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 7,
+      "kind": "H",
+      "dims": [
+        84,
+        16,
+        100,
+        6
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 8,
+      "kind": "Tube",
+      "dims": [
+        36.5,
+        33.45
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 9,
+      "kind": "Tube",
+      "dims": [
+        24.15,
+        20.47
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 10,
+      "kind": "Tube",
+      "dims": [
+        24.15,
+        21.38
+      ],
+      "materialId": 1
+    },
+    {
+      "id": 11,
+      "kind": "Tube",
+      "dims": [
+        330,
+        323.65
+      ],
+      "materialId": 1
+    }
+  ],
+  "materials": [
+    {
+      "id": 1,
+      "name": "Steel",
+      "E": 206000,
+      "nu": 0.3,
+      "rho": 7.85E-09
+    }
+  ],
+  "pointMasses": [
+    {
+      "id": 9,
+      "nodeId": 17,
+      "mass": 2.6575,
+      "sourceName": "=21945/52134"
+    },
+    {
+      "id": 13,
+      "nodeId": 22,
+      "mass": 0.78,
+      "sourceName": "=21945/52138"
+    },
+    {
+      "id": 14,
+      "nodeId": 23,
+      "mass": 3.0968,
+      "sourceName": "=21945/496593"
+    },
+    {
+      "id": 17,
+      "nodeId": 24,
+      "mass": 14.3,
+      "sourceName": "=21945/52169"
+    },
+    {
+      "id": 19,
+      "nodeId": 28,
+      "mass": 1.72,
+      "sourceName": "=21945/52194"
+    },
+    {
+      "id": 23,
+      "nodeId": 31,
+      "mass": 1.419,
+      "sourceName": "=21945/52154"
+    },
+    {
+      "id": 25,
+      "nodeId": 33,
+      "mass": 62.5,
+      "sourceName": "=21945/52369"
+    },
+    {
+      "id": 26,
+      "nodeId": 35,
+      "mass": 1.3478,
+      "sourceName": "=21945/135326"
+    },
+    {
+      "id": 27,
+      "nodeId": 36,
+      "mass": 1,
+      "sourceName": "=38329/60941"
+    }
+  ],
+  "connectivity": {
+    "groupCount": 13,
+    "largestGroupNodeCount": 4,
+    "largestGroupElementCount": 3,
+    "largestGroupNodeRatio": 0.1026,
+    "isolatedNodeCount": 10,
+    "groups": [
+      {
+        "id": 0,
+        "nodeCount": 4,
+        "elementCount": 3,
+        "nodeIds": [
+          29,
+          31,
+          30,
+          32
+        ],
+        "elementIds": [
+          20,
+          21,
+          22
+        ]
+      },
+      {
+        "id": 1,
+        "nodeCount": 3,
+        "elementCount": 2,
+        "nodeIds": [
+          7,
+          37,
+          8
+        ],
+        "elementIds": [
+          28,
+          29
+        ]
+      },
+      {
+        "id": 2,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          1,
+          2
+        ],
+        "elementIds": [
+          1
+        ]
+      },
+      {
+        "id": 3,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          3,
+          4
+        ],
+        "elementIds": [
+          2
+        ]
+      },
+      {
+        "id": 4,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          9,
+          10
+        ],
+        "elementIds": [
+          5
+        ]
+      },
+      {
+        "id": 5,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          11,
+          12
+        ],
+        "elementIds": [
+          6
+        ]
+      },
+      {
+        "id": 6,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          13,
+          14
+        ],
+        "elementIds": [
+          7
+        ]
+      },
+      {
+        "id": 7,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          15,
+          16
+        ],
+        "elementIds": [
+          8
+        ]
+      },
+      {
+        "id": 8,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          27,
+          28
+        ],
+        "elementIds": [
+          18
+        ]
+      },
+      {
+        "id": 9,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          33,
+          34
+        ],
+        "elementIds": [
+          24
+        ]
+      },
+      {
+        "id": 10,
+        "nodeCount": 2,
+        "elementCount": 1,
+        "nodeIds": [
+          38,
+          6
+        ],
+        "elementIds": [
+          31
+        ]
+      },
+      {
+        "id": 11,
+        "nodeCount": 1,
+        "elementCount": 0,
+        "nodeIds": [
+          23
+        ],
+        "elementIds": []
+      },
+      {
+        "id": 12,
+        "nodeCount": 3,
+        "elementCount": 0,
+        "nodeIds": [
+          24,
+          25,
+          26
+        ],
+        "elementIds": []
+      }
+    ]
+  },
+  "healthMetrics": {
+    "totals": {
+      "nodeCount": 39,
+      "elementCount": 14,
+      "rigidCount": 2,
+      "pointMassCount": 9,
+      "elementsByCategory": {
+        "Structure": 8,
+        "Pipe": 6
+      },
+      "totalLengthMm": 10200.52,
+      "lengthByCategoryMm": {
+        "Structure": 8800.21,
+        "Pipe": 1400.3
+      },
+      "bbox": {
+        "minX": 76600,
+        "minY": -7685,
+        "minZ": 31045,
+        "maxX": 112100,
+        "maxY": 10890,
+        "maxZ": 39616
+      }
+    },
+    "issues": {
+      "freeEndNodes": 23,
+      "orphanNodes": 6,
+      "shortElements": 0,
+      "unresolvedUbolts": 0,
+      "disconnectedGroups": 12
+    },
+    "diagnosticCounts": {
+      "error": 0,
+      "warning": 47,
+      "info": 0,
+      "byCode": {
+        "FREE_END_NODE": 23,
+        "BEAM_ISOLATED_NODE": 14,
+        "GROUP_NOT_CONNECTED": 10
+      }
+    },
+    "elementQuality": {
+      "lengthDistribution": {
+        "min": 62,
+        "max": 1608.106,
+        "mean": 728.608,
+        "median": 696.652,
+        "p10": 69.7,
+        "p90": 1520.774
+      },
+      "shortElementCount": 0,
+      "shortElementThresholdMm": 5,
+      "aspectRatioOk": true
+    }
+  },
+  "elementQuality": {
+    "lengthDistribution": {
+      "min": 62,
+      "max": 1608.106,
+      "mean": 728.608,
+      "median": 696.652,
+      "p10": 69.7,
+      "p90": 1520.774
+    },
+    "shortElementCount": 0,
+    "shortElementThresholdMm": 5,
+    "aspectRatioOk": true
+  },
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 1 is connected to exactly one BEAM element.",
+      "nodeId": 1
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 2 is connected to exactly one BEAM element.",
+      "nodeId": 2
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 3 is connected to exactly one BEAM element.",
+      "nodeId": 3
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 4 is connected to exactly one BEAM element.",
+      "nodeId": 4
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 5 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 5
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 6 is connected to exactly one BEAM element.",
+      "nodeId": 6
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 7 is connected to exactly one BEAM element.",
+      "nodeId": 7
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 8 is connected to exactly one BEAM element.",
+      "nodeId": 8
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 9 is connected to exactly one BEAM element.",
+      "nodeId": 9
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 10 is connected to exactly one BEAM element.",
+      "nodeId": 10
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 11 is connected to exactly one BEAM element.",
+      "nodeId": 11
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 12 is connected to exactly one BEAM element.",
+      "nodeId": 12
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 13 is connected to exactly one BEAM element.",
+      "nodeId": 13
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 14 is connected to exactly one BEAM element.",
+      "nodeId": 14
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 15 is connected to exactly one BEAM element.",
+      "nodeId": 15
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 16 is connected to exactly one BEAM element.",
+      "nodeId": 16
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 17 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 17
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 18 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 18
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 19 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 19
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 20 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 20
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 21 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 21
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 22 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 22
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 23 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 23
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 24 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 24
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 25 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 25
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 26 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 26
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 27 is connected to exactly one BEAM element.",
+      "nodeId": 27
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 28 is connected to exactly one BEAM element.",
+      "nodeId": 28
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 29 is connected to exactly one BEAM element.",
+      "nodeId": 29
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 30 is connected to exactly one BEAM element.",
+      "nodeId": 30
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 32 is connected to exactly one BEAM element.",
+      "nodeId": 32
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 33 is connected to exactly one BEAM element.",
+      "nodeId": 33
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 34 is connected to exactly one BEAM element.",
+      "nodeId": 34
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 35 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 35
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 36 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 36
+    },
+    {
+      "severity": "warning",
+      "code": "FREE_END_NODE",
+      "message": "Node 38 is connected to exactly one BEAM element.",
+      "nodeId": 38
+    },
+    {
+      "severity": "warning",
+      "code": "BEAM_ISOLATED_NODE",
+      "message": "Node 39 is not connected to any BEAM element (still referenced by rigid/PointMass if any).",
+      "nodeId": 39
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 1 (3 nodes, 2 elements) is not connected to the largest group.",
+      "groupId": 1
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 2 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 2
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 3 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 3
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 4 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 4
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 5 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 5
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 6 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 6
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 7 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 7
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 8 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 8
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 9 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 9
+    },
+    {
+      "severity": "warning",
+      "code": "GROUP_NOT_CONNECTED",
+      "message": "Group 10 (2 nodes, 1 elements) is not connected to the largest group.",
+      "groupId": 10
+    }
+  ],
+  "stageDeltas": {
+    "fromStage": "DanglingShortRemove",
+    "toStage": "NodeMerge",
+    "elementsCreated": 0,
+    "elementsRemoved": 0,
+    "elementsSplit": 0,
+    "nodesMerged": 0,
+    "nodesMoved": 0,
+    "elemCountBefore": 14,
+    "elemCountAfter": 14,
+    "nodeCountBefore": 39,
+    "nodeCountAfter": 39,
+    "netElementDelta": 0,
+    "netNodeDelta": 0
+  },
+  "trace": [
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 1,
+      "note": "=268454733/2974123_0"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 2,
+      "note": "=268454733/2974298_0"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 3,
+      "note": "=268454733/2974189_0"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 4,
+      "note": "=268454733/2967350"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 5,
+      "note": "=268454733/2967647"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 6,
+      "note": "=21945/499850"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 7,
+      "note": "=21945/499957"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 8,
+      "note": "=21945/52134"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 9,
+      "note": "=21945/52134"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 10,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 11,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 12,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 13,
+      "note": "=21945/52138"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 14,
+      "note": "=21945/496593"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 15,
+      "note": "=21945/496593"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 16,
+      "note": "=21945/52169"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 17,
+      "note": "=21945/52169"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 18,
+      "note": "=21945/52194"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 19,
+      "note": "=21945/52194"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 20,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 21,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 22,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 23,
+      "note": "=21945/52154"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 24,
+      "note": "=21945/52369"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 25,
+      "note": "=21945/52369"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 26,
+      "note": "=21945/135326"
+    },
+    {
+      "action": "ElementCreated",
+      "stage": "initial",
+      "elemId": 27,
+      "note": "=38329/60941"
+    },
+    {
+      "action": "NodeMoved",
+      "stage": "UboltRbe",
+      "nodeId": 23,
+      "note": "UBOLT fallback — marked Boundary"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Meshing",
+      "elemId": 28,
+      "relatedElemId": 4,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Meshing",
+      "elemId": 29,
+      "relatedElemId": 4,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Intersection",
+      "elemId": 30,
+      "relatedElemId": 3,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementSplit",
+      "stage": "Intersection",
+      "elemId": 31,
+      "relatedElemId": 3,
+      "note": "split into 2 segments"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 10,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 12,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 30,
+      "note": "dangling short (< 50 mm)"
+    },
+    {
+      "action": "ElementRemoved",
+      "stage": "DanglingShortRemove",
+      "elemId": 11,
+      "note": "dangling short (< 50 mm)"
+    }
+  ]
+}

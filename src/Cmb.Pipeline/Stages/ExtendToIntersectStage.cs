@@ -21,22 +21,30 @@ public sealed class ExtendToIntersectStage : IPipelineStage
         model.SyncIdCounters();
         if (model.Elements.Count < 2) return true;
 
-        var tol      = ctx.Options.Tolerances;
-        double margin  = tol.ExtendExtraMarginMm;
-        double coplTol = tol.ExtendCoplanarTolMm;
-        double snapTol = tol.ExtendSnapLateralMm;
-        int    maxIter = tol.ExtendMaxIterations;
-        double cell    = tol.SpatialCellSizeMm;
+        var tol         = ctx.Options.Tolerances;
+        double margin   = tol.ExtendExtraMarginMm;
+        double coplTol  = tol.ExtendCoplanarTolMm;
+        double snapTol  = tol.ExtendSnapLateralMm;
+        double obsTol   = tol.ExtendObstacleTolMm;
+        double minElem  = tol.ExtendMinElemLengthMm;
+        int    maxIter  = tol.ExtendMaxIterations;
+        double cell     = tol.SpatialCellSizeMm;
 
         var alreadyMoved = new HashSet<int>(); // ping-pong 방지: 이미 이동한 노드는 재이동 금지
         int totalMoved = 0;
+        int rejectedShort = 0;
         for (int iter = 0; iter < maxIter; iter++)
         {
-            int moved = ExtendOnce(ctx, margin, coplTol, snapTol, cell, alreadyMoved);
+            int moved = ExtendOnce(ctx, margin, coplTol, snapTol, obsTol, minElem,
+                cell, alreadyMoved, ref rejectedShort);
             totalMoved += moved;
             if (moved == 0) break;
             RemoveDegenerateElements(ctx);
         }
+
+        if (rejectedShort > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "EXTEND_REJECTED_SHORT",
+                $"{rejectedShort} extension(s) rejected to avoid creating short stub element(s) (< {minElem} mm).");
 
         if (totalMoved > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "EXTEND_TO_INTERSECT",
@@ -49,8 +57,10 @@ public sealed class ExtendToIntersectStage : IPipelineStage
 
     private static int ExtendOnce(
         StageContext ctx,
-        double margin, double coplTol, double snapTol, double cellSize,
-        HashSet<int> alreadyMoved)
+        double margin, double coplTol, double snapTol,
+        double obsTol, double minElem, double cellSize,
+        HashSet<int> alreadyMoved,
+        ref int rejectedShort)
     {
         var model    = ctx.Model;
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
@@ -138,8 +148,16 @@ public sealed class ExtendToIntersectStage : IPipelineStage
             // pSeg(lateral ≤ snapTol) 또는 pRay(lateral ≤ coplTol)
             var newPos = bestLat <= snapTol ? bestPSeg : bestPRay;
 
-            if (HasObstacle(nodeById, elemHash, elemById, elemA.Id, bestBId, pFree, newPos))
+            if (HasObstacle(nodeById, elemHash, elemById, elemA.Id, bestBId, pFree, newPos, obsTol))
                 continue;
+
+            // 이동 후 elemA가 minElem 미만으로 짧아지면 stub 생성 방지를 위해 거부
+            double newElemLen = newPos.DistanceTo(otherNode.Position);
+            if (newElemLen < minElem)
+            {
+                rejectedShort++;
+                continue;
+            }
 
             moves[freeNodeId] = newPos;
         }
@@ -169,10 +187,9 @@ public sealed class ExtendToIntersectStage : IPipelineStage
         ElementSpatialHash           elemHash,
         Dictionary<int, BeamElement> elemById,
         int elemAId, int elemBId,
-        Point3 pFrom, Point3 pTo)
+        Point3 pFrom, Point3 pTo,
+        double obsTol)
     {
-        const double obsTol = 1.0;
-
         var boxMin = new Point3(
             Math.Min(pFrom.X, pTo.X) - obsTol,
             Math.Min(pFrom.Y, pTo.Y) - obsTol,
@@ -205,22 +222,22 @@ public sealed class ExtendToIntersectStage : IPipelineStage
     {
         var model    = ctx.Model;
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
-        var toRemove = new List<int>();
+        var toRemoveSet = new HashSet<int>();
 
         foreach (var e in model.Elements)
         {
-            if (e.StartNodeId == e.EndNodeId) { toRemove.Add(e.Id); continue; }
+            if (e.StartNodeId == e.EndNodeId) { toRemoveSet.Add(e.Id); continue; }
             if (!nodeById.TryGetValue(e.StartNodeId, out var nA)) continue;
             if (!nodeById.TryGetValue(e.EndNodeId,   out var nB)) continue;
             if (nA.Position.DistanceTo(nB.Position) < 1e-9)
-                toRemove.Add(e.Id);
+                toRemoveSet.Add(e.Id);
         }
 
-        foreach (int id in toRemove)
-        {
-            model.Elements.RemoveAll(e => e.Id == id);
+        if (toRemoveSet.Count == 0) return;
+
+        foreach (int id in toRemoveSet)
             ctx.AddTrace(TraceAction.ElementRemoved, "ExtendToIntersect",
                 elementId: id, note: "degenerate after extend");
-        }
+        model.Elements.RemoveAll(e => toRemoveSet.Contains(e.Id));
     }
 }

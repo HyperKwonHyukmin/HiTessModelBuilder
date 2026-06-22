@@ -28,19 +28,22 @@ public class FeModelJsonSchemaV12Tests
         {
             new() { Severity = "warning", Code = "FREE_END_NODE", Message = "Node 1 is a free end.", NodeId = 1 },
             new() { Severity = "error",   Code = "SHORT_ELEMENT", Message = "Element 1 is too short.", ElemId = 1 },
+            new() { Severity = "warning", Code = "GROUP_NOT_CONNECTED", Message = "Group 1 is disconnected.", GroupId = 1 },
         };
 
         var json = model.ToJson(phase: "C", stageName: "Test", stageDiagnostics: diags);
         var doc  = JsonDocument.Parse(json);
 
         var arr = doc.RootElement.GetProperty("diagnostics").EnumerateArray().ToList();
-        arr.Should().HaveCount(2);
+        arr.Should().HaveCount(3);
         arr[0].GetProperty("code").GetString().Should().Be("FREE_END_NODE");
         arr[0].GetProperty("severity").GetString().Should().Be("warning");
         arr[0].GetProperty("message").GetString().Should().Contain("free end");
         arr[0].GetProperty("nodeId").GetInt32().Should().Be(1);
         arr[1].GetProperty("code").GetString().Should().Be("SHORT_ELEMENT");
         arr[1].GetProperty("elemId").GetInt32().Should().Be(1);
+        arr[2].GetProperty("code").GetString().Should().Be("GROUP_NOT_CONNECTED");
+        arr[2].GetProperty("groupId").GetInt32().Should().Be(1);
     }
 
     [Fact]
@@ -73,6 +76,16 @@ public class FeModelJsonSchemaV12Tests
         var doc  = JsonDocument.Parse(m.ToJson());
         var elem = doc.RootElement.GetProperty("elements").EnumerateArray().First();
         elem.GetProperty("lengthMm").GetDouble().Should().BeApproximately(300.0, 0.001);
+    }
+
+    [Fact]
+    public void ToJson_OriginalElement_IncludesParentElemIdNull()
+    {
+        var doc  = JsonDocument.Parse(MinimalModel().ToJson());
+        var elem = doc.RootElement.GetProperty("elements").EnumerateArray().First();
+
+        elem.TryGetProperty("parentElemId", out var parent).Should().BeTrue();
+        parent.ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
@@ -170,6 +183,11 @@ public class FeModelJsonSchemaV12Tests
         {
             FromStage       = "NodeEquivalence",
             ToStage         = "Intersection",
+            ElementsCreated = 7,
+            ElementsRemoved = 3,
+            ElementsSplit   = 2,
+            NodesMerged     = 5,
+            NodesMoved      = 1,
             ElemCountBefore = 100,
             ElemCountAfter  = 112,
             NodeCountBefore = 80,
@@ -181,8 +199,34 @@ public class FeModelJsonSchemaV12Tests
 
         sd.GetProperty("fromStage").GetString().Should().Be("NodeEquivalence");
         sd.GetProperty("toStage").GetString().Should().Be("Intersection");
+        sd.GetProperty("elementsCreated").GetInt32().Should().Be(7);
+        sd.GetProperty("elementsRemoved").GetInt32().Should().Be(3);
+        sd.GetProperty("elementsSplit").GetInt32().Should().Be(2);
+        sd.GetProperty("nodesMerged").GetInt32().Should().Be(5);
+        sd.GetProperty("nodesMoved").GetInt32().Should().Be(1);
         sd.GetProperty("netElementDelta").GetInt32().Should().Be(12);
         sd.GetProperty("netNodeDelta").GetInt32().Should().Be(10);
+    }
+
+    [Fact]
+    public void ToJson_WithHealthMetrics_WritesTopLevelElementQuality()
+    {
+        var metrics = new HealthMetricsDto
+        {
+            ElementQuality = new ElementQualityDto
+            {
+                LengthDistribution = new LengthDistributionDto { Min = 1, Max = 10, Mean = 5, Median = 5, P10 = 2, P90 = 9 },
+                ShortElementCount = 1,
+                ShortElementThresholdMm = 5,
+                AspectRatioOk = true,
+            },
+        };
+
+        var doc = JsonDocument.Parse(MinimalModel().ToJson(healthMetrics: metrics));
+        var quality = doc.RootElement.GetProperty("elementQuality");
+
+        quality.GetProperty("shortElementCount").GetInt32().Should().Be(1);
+        quality.GetProperty("lengthDistribution").GetProperty("max").GetDouble().Should().Be(10);
     }
 
     [Fact]

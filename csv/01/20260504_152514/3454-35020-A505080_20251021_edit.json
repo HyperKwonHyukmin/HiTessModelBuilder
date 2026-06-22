@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1.0",
+  "stageRef": {
+    "phase": "C",
+    "stageName": "Final",
+    "sourceTimestamp": "2026-05-04T06:25:23.0337157Z"
+  },
+  "createdAt": "2026-05-06T01:25:36.963Z",
+  "createdBy": "viewer",
+  "intents": [
+    {
+      "id": "09774b81-8f36-44c8-a0d5-e76296b1de63",
+      "kind": "deleteGroup",
+      "createdAt": "2026-05-06T01:25:11.858Z",
+      "params": {
+        "groupId": 1,
+        "memberNodeCount": 72
+      },
+      "validation": {
+        "status": "ok",
+        "warnings": [],
+        "errors": []
+      }
+    },
+    {
+      "id": "a50cd122-1f93-42b6-b0a6-472062a53d8d",
+      "kind": "deleteGroup",
+      "createdAt": "2026-05-06T01:25:12.216Z",
+      "params": {
+        "groupId": 2,
+        "memberNodeCount": 70
+      },
+      "validation": {
+        "status": "ok",
+        "warnings": [],
+        "errors": []
+      }
+    },
+    {
+      "id": "68870b7e-1e6a-453b-86b6-f35bc2d16998",
+      "kind": "deleteGroup",
+      "createdAt": "2026-05-06T01:25:12.568Z",
+      "params": {
+        "groupId": 3,
+        "memberNodeCount": 43
+      },
+      "validation": {
+        "status": "ok",
+        "warnings": [],
+        "errors": []
+      }
+    },
+    {
+      "id": "a2067aab-9ddd-4a4a-87b7-9c6444859c07",
+      "kind": "deleteGroup",
+      "createdAt": "2026-05-06T01:25:12.913Z",
+      "params": {
+        "groupId": 4,
+        "memberNodeCount": 12
+      },
+      "validation": {
+        "status": "ok",
+        "warnings": [],
+        "errors": []
+      }
+    },
+    {
+      "id": "830dfcf5-95a7-4199-be6d-33ddd71282a5",
+      "kind": "addRigid",
+      "createdAt": "2026-05-06T01:25:30.028Z",
+      "params": {
+        "independentNode": 1852,
+        "dependentNodes": [
+          2679
+        ],
+        "remark": "UBOLT",
+        "cm": "123456"
+      },
+      "validation": {
+        "status": "ok",
+        "warnings": [],
+        "errors": []
+      }
+    }
+  ]
+}

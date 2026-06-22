@@ -12,6 +12,7 @@ public sealed class NodeEquivalenceStage : IPipelineStage
     public bool Execute(StageContext ctx)
     {
         var model = ctx.Model;
+        model.SyncIdCounters();
         double tol = ctx.Options.Tolerances.NodeMergeMm;
         double tolSq = tol * tol;
 
@@ -46,6 +47,7 @@ public sealed class NodeEquivalenceStage : IPipelineStage
 
         RemapElements(ctx, nodeRemap);
         RemapRigids(model, nodeRemap);
+        RemapPointMasses(model, nodeRemap);
         RemoveNodes(ctx, nodeRemap, tol);
 
         ctx.AddDiagnostic(DiagnosticSeverity.Info, "NODES_MERGED",
@@ -57,8 +59,8 @@ public sealed class NodeEquivalenceStage : IPipelineStage
     private static void RemapElements(StageContext ctx, Dictionary<int, int> nodeRemap)
     {
         var model = ctx.Model;
-        var toRemove = new List<int>();
-        var toReplace = new List<(int Index, BeamElement Updated)>();
+        var toRemoveSet = new HashSet<int>();
+        var toCreate = new List<(int ParentId, BeamElement Created)>();
 
         for (int i = 0; i < model.Elements.Count; i++)
         {
@@ -68,30 +70,36 @@ public sealed class NodeEquivalenceStage : IPipelineStage
 
             if (start == end)
             {
-                toRemove.Add(elem.Id);
+                toRemoveSet.Add(elem.Id);
                 ctx.AddTrace(TraceAction.ElementRemoved, "NodeEquivalence",
                     elementId: elem.Id, note: "degenerate after node merge");
             }
             else if (start != elem.StartNodeId || end != elem.EndNodeId)
             {
-                toReplace.Add((i, new BeamElement(elem.Id, start, end, elem.PropertyId,
-                    elem.Category, elem.Orientation, elem.SourceName, elem.ParentElementId)));
+                int childId = model.AllocElemId();
+                toRemoveSet.Add(elem.Id);
+                toCreate.Add((elem.Id, new BeamElement(childId, start, end, elem.PropertyId,
+                    elem.Category, elem.Orientation, elem.SourceName, elem.Id)));
+                ctx.AddTrace(TraceAction.ElementRemoved, "NodeEquivalence",
+                    elementId: elem.Id, note: "node merge changed element endpoints");
             }
         }
 
-        foreach (int id in toRemove)
-            model.Elements.RemoveAll(e => e.Id == id);
+        if (toRemoveSet.Count > 0)
+            model.Elements.RemoveAll(e => toRemoveSet.Contains(e.Id));
 
-        // Apply replacements after removals (indices may have shifted — use FindIndex)
-        foreach (var (_, updated) in toReplace)
+        foreach (var (parentId, created) in toCreate)
         {
-            int idx = model.Elements.FindIndex(e => e.Id == updated.Id);
-            if (idx >= 0) model.Elements[idx] = updated;
+            model.Elements.Add(created);
+            ctx.AddTrace(TraceAction.ElementCreated, "NodeEquivalence",
+                elementId: created.Id, relatedElementId: parentId,
+                note: "recreated after node merge");
         }
     }
 
     private static void RemapRigids(FeModel model, Dictionary<int, int> nodeRemap)
     {
+        var toRemove = new List<int>();
         for (int i = 0; i < model.Rigids.Count; i++)
         {
             var rigid = model.Rigids[i];
@@ -102,27 +110,62 @@ public sealed class NodeEquivalenceStage : IPipelineStage
                 .Distinct()
                 .ToList();
 
+            if (deps.Count == 0 && !IsDeferredBoxUbolt(rigid))
+            {
+                toRemove.Add(rigid.Id);
+                continue;
+            }
+
             if (indep != rigid.IndependentNodeId || !deps.SequenceEqual(rigid.DependentNodeIds))
                 model.Rigids[i] = new RigidElement(rigid.Id, indep, deps,
                     rigid.Remark, rigid.SourceName, rigid.Cm, rigid.DetailRemark);
+        }
+
+        if (toRemove.Count > 0)
+        {
+            var removeSet = toRemove.ToHashSet();
+            model.Rigids.RemoveAll(r => removeSet.Contains(r.Id));
+        }
+    }
+
+    private static bool IsDeferredBoxUbolt(RigidElement rigid)
+        => rigid.Remark == "UBOLT" &&
+           string.Equals(rigid.DetailRemark, "BOX", StringComparison.OrdinalIgnoreCase);
+
+    private static void RemapPointMasses(FeModel model, Dictionary<int, int> nodeRemap)
+    {
+        for (int i = 0; i < model.PointMasses.Count; i++)
+        {
+            var pm = model.PointMasses[i];
+            if (nodeRemap.TryGetValue(pm.NodeId, out int newId))
+                model.PointMasses[i] = new PointMass(pm.Id, newId, pm.Mass, pm.SourceName);
         }
     }
 
     private static void RemoveNodes(StageContext ctx, Dictionary<int, int> nodeRemap, double tol)
     {
         var model = ctx.Model;
+        var nodeById = model.Nodes.ToDictionary(n => n.Id);
+
         foreach (var (removedId, keepId) in nodeRemap)
         {
             // Transfer tags (e.g. NodeTags.Weld) from removed node to kept node
-            var removed = model.Nodes.Find(n => n.Id == removedId);
-            var kept    = model.Nodes.Find(n => n.Id == keepId);
-            if (removed is not null && kept is not null && removed.Tags != NodeTags.None)
-                kept.AddTag(removed.Tags);
+            if (nodeById.TryGetValue(removedId, out var removed) &&
+                nodeById.TryGetValue(keepId, out var kept))
+            {
+                if (removed.Tags != NodeTags.None)
+                    kept.AddTag(removed.Tags);
+                kept.AddTag(NodeTags.Merged);
+            }
 
             ctx.AddTrace(TraceAction.NodeMerged, "NodeEquivalence",
                 nodeId: removedId, relatedNodeId: keepId,
                 note: $"merged within {tol} mm");
-            model.Nodes.RemoveAll(n => n.Id == removedId);
+            ctx.AddDiagnostic(DiagnosticSeverity.Warning, "DUPLICATE_NODE",
+                $"Node {removedId} duplicates node {keepId} within {tol} mm tolerance and was merged.",
+                nodeId: removedId);
         }
+
+        model.Nodes.RemoveAll(n => nodeRemap.ContainsKey(n.Id));
     }
 }

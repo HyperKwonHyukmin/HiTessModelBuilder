@@ -34,7 +34,9 @@ public sealed record RawEquipRow(
     string Name,
     double[] Pos,
     double[] Cog,
-    double Mass
+    double Mass,
+    double[]? InterPos = null,
+    double Wvol = 0.0
 );
 
 public sealed record ParseSkip(

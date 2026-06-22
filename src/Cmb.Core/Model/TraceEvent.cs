@@ -8,6 +8,8 @@ public enum TraceAction
     NodeMoved,
     ElementRemoved,
     ElementPreserved,
+    NodeCreated,
+    NodeRemoved,
 }
 
 public sealed record TraceEvent(

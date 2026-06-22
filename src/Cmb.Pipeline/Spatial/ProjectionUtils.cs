@@ -87,6 +87,17 @@ public static class ProjectionUtils
     }
 
     /// <summary>
+    /// Parameter t of the foot of perpendicular on the INFINITE line through AB,
+    /// without clamping. t∈(-∞,∞). Used to detect endpoint-external captures (tRaw&gt;1).
+    /// </summary>
+    public static double ProjectParamOnInfiniteLine(Point3 p, Point3 a, Point3 b)
+    {
+        var ab = b - a;
+        double len2 = ab.LengthSquared;
+        return len2 < 1e-12 ? 0.0 : Vector3.Dot(p - a, ab) / len2;
+    }
+
+    /// <summary>
     /// True when segments AB and CD are nearly parallel (sin of angle < 1e-4).
     /// </summary>
     public static bool IsNearlyParallel(Point3 a, Point3 b, Point3 c, Point3 d)

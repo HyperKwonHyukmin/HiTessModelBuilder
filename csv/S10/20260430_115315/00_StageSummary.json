@@ -1,0 +1,288 @@
+{
+  "_keys": {
+    "meta": "단계 요약 메타 정보 (schemaVersion, timestamp, unit, purpose)",
+    "summary": "전체 phase 실행 요약 (stageCount, firstStage, lastStage, final counts, diagnostic totals, massProperties)",
+    "summary.massProperties": "최종 모델 전체 질량/무게중심 — totalMassTon(beam+point 합), beamMassTon, pointMassTon, centerOfGravityMm[x,y,z]",
+    "stages": "phase별 FEM 상태 및 변화량 요약 배열. 상세 노드/요소 목록은 각 phase JSON에서 확인",
+    "stages.stageIndex": "phase 출력 번호. 파일명 접두 번호와 동일",
+    "stages.stageName": "phase 이름",
+    "stages.jsonFile": "해당 phase 상세 JSON 파일명",
+    "stages.bdfFile": "해당 phase BDF 파일명",
+    "stages.processingDurationMs": "phase boundary를 생성한 마지막 내부 stage 처리 시간(ms)",
+    "stages.counts": "phase 완료 시점의 nodes/elements/rigids/pointMasses 개수",
+    "stages.delta": "이전 phase 대비 created/removed/split/merged/moved 및 net 변화량",
+    "stages.connectivity": "phase 완료 시점 연결성 요약",
+    "stages.health": "phase 완료 시점 주요 건전성 지표",
+    "stages.diagnostics": "phase JSON에 포함된 진단 severity별 개수"
+  },
+  "meta": {
+    "schemaVersion": "1.0",
+    "timestamp": "2026-04-30T02:53:15.9195439Z",
+    "unit": "mm",
+    "purpose": "Phase-level algorithm summary index. Detailed FEM state remains in each phase JSON."
+  },
+  "summary": {
+    "stageCount": 6,
+    "firstStage": "Preprocess",
+    "lastStage": "Validation",
+    "finalNodeCount": 2173,
+    "finalElementCount": 2181,
+    "finalRigidCount": 303,
+    "finalPointMassCount": 209,
+    "totalErrors": 7,
+    "totalWarnings": 3927,
+    "totalInfos": 61,
+    "massProperties": {
+      "totalMassTon": 7.4912823406794535,
+      "beamMassTon": 7.078822340679465,
+      "pointMassTon": 0.4124599999999999,
+      "centerOfGravityMm": [
+        50283.29525187904,
+        3966.690679696803,
+        9489.490025990744
+      ]
+    }
+  },
+  "stages": [
+    {
+      "stageIndex": 1,
+      "stageName": "Preprocess",
+      "jsonFile": "01_Preprocess.json",
+      "bdfFile": "01_Preprocess.bdf",
+      "processingDurationMs": 16,
+      "counts": {
+        "nodes": 1986,
+        "elements": 1756,
+        "rigids": 274,
+        "pointMasses": 209
+      },
+      "delta": {
+        "elementsCreated": 0,
+        "elementsRemoved": 13,
+        "elementsSplit": 227,
+        "nodesMerged": 0,
+        "nodesMoved": 0,
+        "netElementDelta": 105,
+        "netNodeDelta": 118
+      },
+      "connectivity": {
+        "groupCount": 85,
+        "largestGroupElementCount": 1463,
+        "largestGroupNodeRatio": 0.7996,
+        "isolatedNodeCount": 13
+      },
+      "health": {
+        "freeEndCount": 561,
+        "orphanNodeCount": 1,
+        "shortElementCount": 0,
+        "unresolvedUboltCount": 0,
+        "disconnectedGroupCount": 84
+      },
+      "diagnostics": {
+        "error": 0,
+        "warning": 796,
+        "info": 9
+      }
+    },
+    {
+      "stageIndex": 2,
+      "stageName": "ElementSplit",
+      "jsonFile": "02_ElementSplit.json",
+      "bdfFile": "02_ElementSplit.bdf",
+      "processingDurationMs": 1,
+      "counts": {
+        "nodes": 2064,
+        "elements": 1886,
+        "rigids": 274,
+        "pointMasses": 209
+      },
+      "delta": {
+        "elementsCreated": 10,
+        "elementsRemoved": 55,
+        "elementsSplit": 317,
+        "nodesMerged": 10,
+        "nodesMoved": 0,
+        "netElementDelta": 130,
+        "netNodeDelta": 78
+      },
+      "connectivity": {
+        "groupCount": 32,
+        "largestGroupElementCount": 1782,
+        "largestGroupNodeRatio": 0.907,
+        "isolatedNodeCount": 58
+      },
+      "health": {
+        "freeEndCount": 497,
+        "orphanNodeCount": 46,
+        "shortElementCount": 7,
+        "unresolvedUboltCount": 0,
+        "disconnectedGroupCount": 31
+      },
+      "diagnostics": {
+        "error": 7,
+        "warning": 701,
+        "info": 4
+      }
+    },
+    {
+      "stageIndex": 3,
+      "stageName": "NodeMerge",
+      "jsonFile": "03_NodeMerge.json",
+      "bdfFile": "03_NodeMerge.bdf",
+      "processingDurationMs": 14,
+      "counts": {
+        "nodes": 1734,
+        "elements": 1588,
+        "rigids": 274,
+        "pointMasses": 209
+      },
+      "delta": {
+        "elementsCreated": 161,
+        "elementsRemoved": 459,
+        "elementsSplit": 0,
+        "nodesMerged": 330,
+        "nodesMoved": 0,
+        "netElementDelta": -298,
+        "netNodeDelta": -330
+      },
+      "connectivity": {
+        "groupCount": 30,
+        "largestGroupElementCount": 1498,
+        "largestGroupNodeRatio": 0.8991,
+        "isolatedNodeCount": 58
+      },
+      "health": {
+        "freeEndCount": 393,
+        "orphanNodeCount": 46,
+        "shortElementCount": 0,
+        "unresolvedUboltCount": 0,
+        "disconnectedGroupCount": 29
+      },
+      "diagnostics": {
+        "error": 0,
+        "warning": 589,
+        "info": 1
+      }
+    },
+    {
+      "stageIndex": 4,
+      "stageName": "Connectivity",
+      "jsonFile": "04_Connectivity.json",
+      "bdfFile": "04_Connectivity.bdf",
+      "processingDurationMs": 120,
+      "counts": {
+        "nodes": 1697,
+        "elements": 1656,
+        "rigids": 274,
+        "pointMasses": 209
+      },
+      "delta": {
+        "elementsCreated": 61,
+        "elementsRemoved": 103,
+        "elementsSplit": 204,
+        "nodesMerged": 35,
+        "nodesMoved": 84,
+        "netElementDelta": 68,
+        "netNodeDelta": -37
+      },
+      "connectivity": {
+        "groupCount": 7,
+        "largestGroupElementCount": 1619,
+        "largestGroupNodeRatio": 0.9476,
+        "isolatedNodeCount": 48
+      },
+      "health": {
+        "freeEndCount": 307,
+        "orphanNodeCount": 41,
+        "shortElementCount": 0,
+        "unresolvedUboltCount": 0,
+        "disconnectedGroupCount": 6
+      },
+      "diagnostics": {
+        "error": 0,
+        "warning": 450,
+        "info": 33
+      }
+    },
+    {
+      "stageIndex": 5,
+      "stageName": "RigidPostProc",
+      "jsonFile": "05_RigidPostProc.json",
+      "bdfFile": "05_RigidPostProc.bdf",
+      "processingDurationMs": 2,
+      "counts": {
+        "nodes": 1709,
+        "elements": 1675,
+        "rigids": 303,
+        "pointMasses": 209
+      },
+      "delta": {
+        "elementsCreated": 29,
+        "elementsRemoved": 0,
+        "elementsSplit": 38,
+        "nodesMerged": 7,
+        "nodesMoved": 0,
+        "netElementDelta": 19,
+        "netNodeDelta": 12
+      },
+      "connectivity": {
+        "groupCount": 4,
+        "largestGroupElementCount": 1668,
+        "largestGroupNodeRatio": 0.9702,
+        "isolatedNodeCount": 41
+      },
+      "health": {
+        "freeEndCount": 276,
+        "orphanNodeCount": 41,
+        "shortElementCount": 0,
+        "unresolvedUboltCount": 0,
+        "disconnectedGroupCount": 3
+      },
+      "diagnostics": {
+        "error": 0,
+        "warning": 716,
+        "info": 10
+      }
+    },
+    {
+      "stageIndex": 6,
+      "stageName": "Validation",
+      "jsonFile": "06_Validation.json",
+      "bdfFile": "06_Validation.bdf",
+      "processingDurationMs": 9,
+      "counts": {
+        "nodes": 2173,
+        "elements": 2181,
+        "rigids": 303,
+        "pointMasses": 209
+      },
+      "delta": {
+        "elementsCreated": 3,
+        "elementsRemoved": 3,
+        "elementsSplit": 968,
+        "nodesMerged": 1,
+        "nodesMoved": 0,
+        "netElementDelta": 506,
+        "netNodeDelta": 464
+      },
+      "connectivity": {
+        "groupCount": 3,
+        "largestGroupElementCount": 2177,
+        "largestGroupNodeRatio": 0.9972,
+        "isolatedNodeCount": 0
+      },
+      "health": {
+        "freeEndCount": 275,
+        "orphanNodeCount": 0,
+        "shortElementCount": 0,
+        "unresolvedUboltCount": 0,
+        "disconnectedGroupCount": 2
+      },
+      "diagnostics": {
+        "error": 0,
+        "warning": 675,
+        "info": 4
+      }
+    }
+  ]
+}

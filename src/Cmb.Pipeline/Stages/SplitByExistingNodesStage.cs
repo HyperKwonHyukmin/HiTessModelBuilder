@@ -21,10 +21,11 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
 
     public bool Execute(StageContext ctx)
     {
-        var model    = ctx.Model;
+        var model      = ctx.Model;
         model.SyncIdCounters();
-        double tol   = ctx.Options.Tolerances.NodeOnSegmentTolMm;
-        double cell  = ctx.Options.Tolerances.SpatialCellSizeMm;
+        double tol     = ctx.Options.Tolerances.NodeOnSegmentTolMm;
+        double cell    = ctx.Options.Tolerances.SpatialCellSizeMm;
+        double minChild = ctx.Options.Tolerances.ShortElemMinMm;
 
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
         var elemById = model.Elements.ToDictionary(e => e.Id);
@@ -73,11 +74,16 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
             MergeClose(list, MergeTolAlong);
         }
 
-        int splitCount = ApplySplits(ctx, splitMap, nodeById);
+        int rejectedShort = 0;
+        int splitCount = ApplySplits(ctx, splitMap, nodeById, elemById, minChild, ref rejectedShort);
 
         if (splitCount > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "SPLIT_BY_EXISTING_NODES",
                 $"{splitCount} element(s) split at existing intermediate node(s).");
+
+        if (rejectedShort > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "SPLIT_REJECTED_SHORT",
+                $"{rejectedShort} split candidate(s) skipped to avoid creating child segment(s) below {minChild} mm.");
 
         return true;
     }
@@ -87,26 +93,58 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
     private static int ApplySplits(
         StageContext ctx,
         Dictionary<int, List<(int nodeId, double u, double s)>> splitMap,
-        Dictionary<int, Node> nodeById)
+        Dictionary<int, Node> nodeById,
+        Dictionary<int, BeamElement> elemById,
+        double minChildLen,
+        ref int rejectedShort)
     {
         var model      = ctx.Model;
         int splitCount = 0;
+        var toRemove   = new HashSet<int>();
+        var toAdd      = new List<BeamElement>();
 
         foreach (var (eid, hits) in splitMap)
         {
-            var elem = model.Elements.Find(e => e.Id == eid);
-            if (elem is null) continue;
+            if (!elemById.TryGetValue(eid, out var elem)) continue;
+            if (!nodeById.TryGetValue(elem.StartNodeId, out var nA)) continue;
+            if (!nodeById.TryGetValue(elem.EndNodeId,   out var nB)) continue;
 
-            // 체인 구성: StartNode → hit nodes (u 순) → EndNode
-            var seen  = new HashSet<int> { elem.StartNodeId };
-            var chain = new List<int>    { elem.StartNodeId };
+            // 체인 구성: 직전 노드와 minChildLen 미만 거리인 hit는 skip하여 짧은 child 생성 방지
+            var seen   = new HashSet<int> { elem.StartNodeId };
+            var chain  = new List<int>    { elem.StartNodeId };
+            var lastPos = nA.Position;
+            int localRejected = 0;
 
             foreach (var (nid, _, _) in hits)
             {
                 if (nid == elem.StartNodeId || nid == elem.EndNodeId) continue;
-                if (seen.Add(nid)) chain.Add(nid);
+                if (!seen.Add(nid)) continue;
+                if (!nodeById.TryGetValue(nid, out var hitNode)) continue;
+
+                double gap = hitNode.Position.DistanceTo(lastPos);
+                if (gap < minChildLen)
+                {
+                    localRejected++;
+                    continue;
+                }
+
+                chain.Add(nid);
+                lastPos = hitNode.Position;
             }
+
+            // 마지막 hit과 EndNode 사이 거리도 검사
+            while (chain.Count > 1)
+            {
+                int lastHitId = chain[^1];
+                if (!nodeById.TryGetValue(lastHitId, out var lastHit)) break;
+                if (lastHit.Position.DistanceTo(nB.Position) >= minChildLen) break;
+                chain.RemoveAt(chain.Count - 1);
+                seen.Remove(lastHitId);
+                localRejected++;
+            }
+
             chain.Add(elem.EndNodeId);
+            rejectedShort += localRejected;
 
             // 유효 세그먼트 목록 생성
             var segs = new List<(int n1, int n2)>();
@@ -122,19 +160,12 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
 
             if (segs.Count <= 1) continue; // 실제 분할 없음
 
-            model.Elements.RemoveAll(e => e.Id == eid);
+            toRemove.Add(eid);
 
-            // 첫 번째 세그먼트는 원본 ID 재사용
-            model.Elements.Add(new BeamElement(eid, segs[0].n1, segs[0].n2,
-                elem.PropertyId, elem.Category, elem.Orientation,
-                elem.SourceName, elem.ParentElementId));
-            ctx.AddTrace(TraceAction.ElementSplit, "SplitByExistingNodes",
-                elementId: eid, note: $"split into {segs.Count} at existing node(s)");
-
-            for (int i = 1; i < segs.Count; i++)
+            for (int i = 0; i < segs.Count; i++)
             {
                 int childId = model.AllocElemId();
-                model.Elements.Add(new BeamElement(childId, segs[i].n1, segs[i].n2,
+                toAdd.Add(new BeamElement(childId, segs[i].n1, segs[i].n2,
                     elem.PropertyId, elem.Category, elem.Orientation,
                     elem.SourceName, eid));
                 ctx.AddTrace(TraceAction.ElementSplit, "SplitByExistingNodes",
@@ -144,6 +175,10 @@ public sealed class SplitByExistingNodesStage : IPipelineStage
 
             splitCount++;
         }
+
+        if (toRemove.Count > 0)
+            model.Elements.RemoveAll(e => toRemove.Contains(e.Id));
+        model.Elements.AddRange(toAdd);
 
         return splitCount;
     }

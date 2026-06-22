@@ -27,7 +27,7 @@
 ### 솔루션 레이아웃
 
 ```
-ClaudeModelBuilder.sln
+HiTessModelBuilder.sln
 Directory.Build.props       ← 전역 설정 파일. 새 프로젝트 추가 시 이 파일에서 상속됨
 src/
   Cmb.Core/                 ← 도메인 모델, 기하, JSON 직렬화. 외부 의존 없음
@@ -143,7 +143,7 @@ if (iterations >= ctx.Options.Tolerances.MaxConvergenceIterations)
 - BDF Writer 변경: `Verify.Xunit` 스냅샷 골든 테스트 업데이트.
 - 새 Stage: `samples/hitess_mini` fixture 기반 입력/출력 수치 테스트 작성.
 - 통합 테스트: `Cmb.Integration.Tests/` — 전체 파이프라인 end-to-end.
-- 테스트 실행: `dotnet test tests/Cmb.Core.Tests` 또는 `dotnet test ClaudeModelBuilder.sln`.
+- 테스트 실행: `dotnet test tests/Cmb.Core.Tests` 또는 `dotnet test HiTessModelBuilder.sln`.
 - **테스트 없이 스테이지를 완료 처리하지 마라.**
 
 ---

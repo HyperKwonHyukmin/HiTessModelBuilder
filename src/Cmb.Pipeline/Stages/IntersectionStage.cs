@@ -17,13 +17,11 @@ public sealed class IntersectionStage : IPipelineStage
     public bool Execute(StageContext ctx)
     {
         ctx.Model.SyncIdCounters();
-        int totalSplits = 0;
-        for (int iter = 0; iter < ctx.Options.Tolerances.MaxConvergenceIterations; iter++)
-        {
-            int splits = RunOnePass(ctx);
-            totalSplits += splits;
-            if (splits == 0) break;
-        }
+        // HiTess ElementIntersectionSplitModifier 와 동일하게 단 1회 pass 실행.
+        // 분할 후 새로 생긴 sub-element 들은 원래 교차점이 이미 공유 노드로 잡혀있어
+        // 추가 분할이 필요하지 않다. 수렴 루프를 돌리면 같은 pair 가 매 iteration 마다
+        // 재검사되면서 dense 한 모델(예: csv/02)에서 cascading 폭발이 발생한다.
+        int totalSplits = RunOnePass(ctx);
 
         if (totalSplits > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "INTERSECTIONS_SPLIT",
@@ -34,9 +32,10 @@ public sealed class IntersectionStage : IPipelineStage
 
     private static int RunOnePass(StageContext ctx)
     {
-        var model   = ctx.Model;
-        double tol  = ctx.Options.Tolerances.IntersectionSnapMm;
+        var model    = ctx.Model;
+        double tol   = ctx.Options.Tolerances.IntersectionSnapMm;
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
+        var elemById = model.Elements.ToDictionary(e => e.Id);
 
         var spatialHash = new ElementSpatialHash(model.Elements, nodeById,
             ctx.Options.Tolerances.SpatialCellSizeMm, tol);
@@ -45,17 +44,15 @@ public sealed class IntersectionStage : IPipelineStage
         var visited  = new HashSet<(int, int)>();
         var posMap   = new Dictionary<(long, long, long), int>(); // dedup intersection nodes
 
-        foreach (int eid in model.Elements.Select(e => e.Id).ToList())
+        foreach (var elem in elemById.Values)
         {
-            var elem = model.Elements.Find(e => e.Id == eid);
-            if (elem is null) continue;
+            int eid = elem.Id;
             if (!nodeById.TryGetValue(elem.StartNodeId, out var nA)) continue;
             if (!nodeById.TryGetValue(elem.EndNodeId,   out var nB)) continue;
 
             foreach (int otherId in spatialHash.QueryCandidates(eid))
             {
-                var other = model.Elements.Find(e => e.Id == otherId);
-                if (other is null) continue;
+                if (!elemById.TryGetValue(otherId, out var other)) continue;
 
                 int lo = Math.Min(eid, otherId), hi = Math.Max(eid, otherId);
                 if (!visited.Add((lo, hi))) continue;
@@ -82,10 +79,14 @@ public sealed class IntersectionStage : IPipelineStage
                 if (!posMap.TryGetValue(key, out int nid))
                 {
                     nid = model.AllocNodeId();
-                    var newNode = new Node(nid, X);
+                    // Tag intersection-origin nodes so downstream stages can identify them
+                    var newNode = new Node(nid, X, NodeTags.Intersection);
                     model.Nodes.Add(newNode);
                     nodeById[nid] = newNode;
                     posMap[key] = nid;
+                    ctx.AddTrace(TraceAction.NodeCreated, "Intersection",
+                        nodeId: nid, relatedElementId: eid,
+                        note: $"intersection of E{eid}↔E{otherId}");
                 }
 
                 AddSplit(splitMap, eid,     nid, s);
@@ -95,21 +96,23 @@ public sealed class IntersectionStage : IPipelineStage
 
         if (splitMap.Count == 0) return 0;
 
-        return ApplySplit(ctx, splitMap, nodeById);
+        return ApplySplit(ctx, splitMap, nodeById, elemById);
     }
 
     private static int ApplySplit(
         StageContext ctx,
         Dictionary<int, List<(int nodeId, double u)>> splitMap,
-        Dictionary<int, Node> nodeById)
+        Dictionary<int, Node> nodeById,
+        Dictionary<int, BeamElement> elemById)
     {
         var model      = ctx.Model;
         int splitCount = 0;
+        var toRemove   = new HashSet<int>();
+        var toAdd      = new List<BeamElement>();
 
         foreach (var (eid, rawHits) in splitMap)
         {
-            var elem = model.Elements.Find(e => e.Id == eid);
-            if (elem is null) continue;
+            if (!elemById.TryGetValue(eid, out var elem)) continue;
             if (!nodeById.TryGetValue(elem.StartNodeId, out var nA)) continue;
             if (!nodeById.TryGetValue(elem.EndNodeId,   out var nB)) continue;
 
@@ -143,20 +146,12 @@ public sealed class IntersectionStage : IPipelineStage
 
             if (segs.Count <= 1) continue; // no actual split
 
-            model.Elements.RemoveAll(e => e.Id == eid);
+            toRemove.Add(eid);
 
-            // First segment reuses original ID
-            model.Elements.Add(new BeamElement(eid, segs[0].n1, segs[0].n2,
-                elem.PropertyId, elem.Category, elem.Orientation,
-                elem.SourceName, elem.ParentElementId));
-            ctx.AddTrace(TraceAction.ElementSplit, "Intersection",
-                elementId: eid, relatedElementId: elem.ParentElementId ?? eid,
-                note: $"split into {segs.Count} segments");
-
-            for (int i = 1; i < segs.Count; i++)
+            for (int i = 0; i < segs.Count; i++)
             {
                 int childId = model.AllocElemId();
-                model.Elements.Add(new BeamElement(childId, segs[i].n1, segs[i].n2,
+                toAdd.Add(new BeamElement(childId, segs[i].n1, segs[i].n2,
                     elem.PropertyId, elem.Category, elem.Orientation,
                     elem.SourceName, eid));
                 ctx.AddTrace(TraceAction.ElementSplit, "Intersection",
@@ -166,6 +161,10 @@ public sealed class IntersectionStage : IPipelineStage
 
             splitCount++;
         }
+
+        if (toRemove.Count > 0)
+            model.Elements.RemoveAll(e => toRemove.Contains(e.Id));
+        model.Elements.AddRange(toAdd);
 
         return splitCount;
     }

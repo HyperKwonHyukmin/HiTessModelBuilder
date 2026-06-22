@@ -41,11 +41,16 @@ public class FeModelBuilderTraceTests
     [Fact]
     public void Build_EquipRow_PointMassHasSourceName()
     {
+        var beams = new[]
+        {
+            new RawBeamRow("SUPPORT", "BEAM", "BEAM_400x200x10x16", [400, 200, 10, 16],
+                [100, 0, 0], [200, 0, 0], [0, 0, 1], ""),
+        };
         var rows = new[]
         {
             new RawEquipRow("EQ1", [0, 0, 0], [100, 0, 0], 5.0),
         };
-        var model = new FeModelBuilder().Build(new RawDesignData([], [], rows, []));
+        var model = new FeModelBuilder().Build(new RawDesignData(beams, [], rows, []));
 
         model.PointMasses[0].SourceName.Should().Be("EQ1");
     }
@@ -80,8 +85,7 @@ public class FeModelBuilderTraceTests
         };
         var model = new FeModelBuilder().Build(new RawDesignData(rows, [], [], []));
 
-        var ev = model.TraceLog[0];
-        ev.Action.Should().Be(TraceAction.ElementCreated);
+        var ev = model.TraceLog.First(t => t.Action == TraceAction.ElementCreated);
         ev.StageName.Should().Be("initial");
         ev.Note.Should().Be("MY_STRUCT");
         ev.ElementId.Should().Be(model.Elements[0].Id);
@@ -92,5 +96,21 @@ public class FeModelBuilderTraceTests
     {
         var model = new FeModelBuilder().Build(new RawDesignData([], [], [], []));
         model.TraceLog.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Build_NodesAreTraced_NodeCreatedEvents()
+    {
+        var rows = new[]
+        {
+            new RawBeamRow("A", "BEAM", "BEAM_200x100x8x12", [200, 100, 8, 12],
+                [0, 0, 0], [1000, 0, 0], [0, 0, 1], ""),
+        };
+        var model = new FeModelBuilder().Build(new RawDesignData(rows, [], [], []));
+
+        var nodeCreated = model.TraceLog.Where(t => t.Action == TraceAction.NodeCreated).ToList();
+        nodeCreated.Should().HaveCount(model.Nodes.Count);
+        nodeCreated.Should().OnlyContain(t => t.StageName == "initial");
+        nodeCreated.Select(t => t.NodeId).Should().BeEquivalentTo(model.Nodes.Select(n => (int?)n.Id));
     }
 }

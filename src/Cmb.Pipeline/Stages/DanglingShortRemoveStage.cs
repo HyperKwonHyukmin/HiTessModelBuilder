@@ -5,7 +5,7 @@ namespace Cmb.Pipeline.Stages;
 
 /// <summary>
 /// 한쪽 끝이 자유단(degree=1)이면서 길이가 임계값 미만인 꼬투리 요소를 제거합니다.
-/// IntersectionStage 직후에 실행하여 교차 분할 시 생기는 짧은 stub을 정리합니다.
+/// 제거 후 새로 생긴 dangling을 연쇄적으로 제거하기 위해 수렴 루프로 동작합니다.
 /// </summary>
 public sealed class DanglingShortRemoveStage : IPipelineStage
 {
@@ -15,6 +15,51 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
     {
         var model     = ctx.Model;
         double thresh = ctx.Options.Tolerances.DanglingShortLengthMm;
+        int maxIter   = ctx.Options.Tolerances.MaxConvergenceIterations;
+
+        var pointMassNodes = new HashSet<int>(model.PointMasses.Select(pm => pm.NodeId));
+        var rigidNodes     = new HashSet<int>(
+            model.Rigids.SelectMany(r => r.DependentNodeIds.Append(r.IndependentNodeId)));
+
+        // protected 요소는 한 번만 카운트/trace 기록 (pass 간 중복 방지)
+        var preservedTraced = new HashSet<int>();
+        int totalRemoved = 0, totalPreservedMass = 0, totalPreservedRbe = 0;
+        int iter;
+        for (iter = 0; iter < maxIter; iter++)
+        {
+            int passRemoved = RunOnePass(ctx, thresh, pointMassNodes, rigidNodes,
+                preservedTraced, ref totalPreservedMass, ref totalPreservedRbe);
+            totalRemoved += passRemoved;
+            if (passRemoved == 0) break;
+        }
+
+        if (totalRemoved > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_REMOVED",
+                $"{totalRemoved} dangling short element(s) (< {thresh} mm) removed " +
+                $"over {iter + 1} pass(es).");
+
+        if (totalPreservedMass + totalPreservedRbe > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_PRESERVED",
+                $"{totalPreservedMass + totalPreservedRbe} short element(s) preserved " +
+                $"(PointMass={totalPreservedMass}, RBE={totalPreservedRbe}).");
+
+        if (iter >= maxIter)
+            ctx.AddDiagnostic(DiagnosticSeverity.Warning, "DANGLING_SHORT_NOT_CONVERGED",
+                $"DanglingShortRemove did not converge after {maxIter} iterations.");
+
+        return true;
+    }
+
+    private static int RunOnePass(
+        StageContext ctx,
+        double thresh,
+        HashSet<int> pointMassNodes,
+        HashSet<int> rigidNodes,
+        HashSet<int> preservedTraced,
+        ref int totalPreservedMass,
+        ref int totalPreservedRbe)
+    {
+        var model = ctx.Model;
 
         var degree = new Dictionary<int, int>();
         foreach (var e in model.Elements)
@@ -23,13 +68,8 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
             degree[e.EndNodeId]   = degree.GetValueOrDefault(e.EndNodeId)   + 1;
         }
 
-        var pointMassNodes = new HashSet<int>(model.PointMasses.Select(pm => pm.NodeId));
-        var rigidNodes     = new HashSet<int>(
-            model.Rigids.SelectMany(r => r.DependentNodeIds.Append(r.IndependentNodeId)));
-
         var nodeById = model.Nodes.ToDictionary(n => n.Id);
         var toRemove = new List<int>();
-        int preservedMass = 0, preservedRbe = 0;
 
         foreach (var e in model.Elements)
         {
@@ -46,10 +86,13 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
                 bool protectedByRbe  = rigidNodes.Contains(e.StartNodeId)     || rigidNodes.Contains(e.EndNodeId);
                 if (protectedByMass || protectedByRbe)
                 {
-                    preservedMass += protectedByMass ? 1 : 0;
-                    preservedRbe  += (protectedByRbe && !protectedByMass) ? 1 : 0;
-                    ctx.AddTrace(TraceAction.ElementPreserved, Name,
-                        elementId: e.Id, note: $"preserved (mass={protectedByMass}, rbe={protectedByRbe})");
+                    if (preservedTraced.Add(e.Id))
+                    {
+                        totalPreservedMass += protectedByMass ? 1 : 0;
+                        totalPreservedRbe  += (protectedByRbe && !protectedByMass) ? 1 : 0;
+                        ctx.AddTrace(TraceAction.ElementPreserved, "DanglingShortRemove",
+                            elementId: e.Id, note: $"preserved (mass={protectedByMass}, rbe={protectedByRbe})");
+                    }
                     continue;
                 }
 
@@ -57,20 +100,14 @@ public sealed class DanglingShortRemoveStage : IPipelineStage
             }
         }
 
+        if (toRemove.Count == 0) return 0;
+
         var toRemoveSet = new HashSet<int>(toRemove);
         foreach (int id in toRemove)
-            ctx.AddTrace(TraceAction.ElementRemoved, Name,
+            ctx.AddTrace(TraceAction.ElementRemoved, "DanglingShortRemove",
                 elementId: id, note: $"dangling short (< {thresh} mm)");
         model.Elements.RemoveAll(e => toRemoveSet.Contains(e.Id));
 
-        if (toRemove.Count > 0)
-            ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_REMOVED",
-                $"{toRemove.Count} dangling short element(s) (< {thresh} mm) removed.");
-
-        if (preservedMass + preservedRbe > 0)
-            ctx.AddDiagnostic(DiagnosticSeverity.Info, "DANGLING_SHORT_PRESERVED",
-                $"{preservedMass + preservedRbe} short element(s) preserved (PointMass={preservedMass}, RBE={preservedRbe}).");
-
-        return true;
+        return toRemove.Count;
     }
 }

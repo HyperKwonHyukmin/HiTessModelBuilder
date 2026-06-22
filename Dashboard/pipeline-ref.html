@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>파이프라인 참조 — ClaudeModelBuilder</title>
+<title>파이프라인 참조 — HiTessModelBuilder</title>
 <link rel="stylesheet" href="cmb-style.css">
 </head>
 <body>
 
 <header class="app-header">
-  <span class="app-header-title">ClaudeModelBuilder</span>
+  <span class="app-header-title">HiTessModelBuilder</span>
   <span class="app-header-sep">|</span>
   <span class="app-header-sub">AM CSV &rarr; FEM Beam &rarr; Nastran BDF &nbsp;·&nbsp; .NET 8 / C# 12</span>
 </header>
@@ -206,7 +206,7 @@
     </section>
 
     <div class="page-footer">
-      ClaudeModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24 &nbsp;|&nbsp; 브라우저에서 직접 열기 가능
+      HiTessModelBuilder &mdash; 개발 참조 문서 &nbsp;|&nbsp; 데이터 기준: 2026-04-24 &nbsp;|&nbsp; 브라우저에서 직접 열기 가능
     </div>
 
   </main>
@@ -240,7 +240,7 @@ const DATA = {
       io: "입력: Meshing 완료 FeModel | 출력: 거리 < NodeMergeTol 노드 쌍 없는 FeModel",
       tolerance: "NodeMergeTol = 1.0 mm | SpatialCellSizeMm = 200.0 mm",
       refFile: "Pipeline/NodeInspector/InspectEquivalenceNodes.cs",
-      diagCodes: ["NODE_MERGED"]
+      diagCodes: ["NODES_MERGED", "DUPLICATE_NODE"]
     },
     {
       idx: 4, name: "Intersection", status: "waiting",

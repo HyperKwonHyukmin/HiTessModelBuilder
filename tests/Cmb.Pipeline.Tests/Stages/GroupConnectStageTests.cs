@@ -76,17 +76,21 @@ public class GroupConnectStageTests
     [Fact]
     public void SlaveTranslated_FreeEndCoincidingWithMasterNode_MergedAndRemoved()
     {
-        // Master: N1(0,0) → N2(100,0).  Slave: N3(140,0) → N4(200,0)
-        // Projection of N3 onto master: (100,0), dist=40mm ≤ threshold(55mm)
+        // Master: N1(0,0) → N6(33,0) → N7(66,0) → N2(100,0)  (3 elements, more than slave)
+        // Slave: N3(140,0) → N4(200,0) → N5(260,0)  (2 elements, survives noise removal)
+        // Projection of N3 onto master: closest = N2(100,0), dist=40mm ≤ threshold(55mm)
         // Translation vector: (-40,0) → N3 moves to (100,0) = N2 → merge N3→N2
         var model = ModelWithThinSection();
-        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 140, 0), N(4, 200, 0)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 140, 0), N(4, 200, 0), N(5, 260, 0)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
 
         new GroupConnectStage().Execute(MakeCtx(model));
 
-        // E11 should use N2 (merged), N3 removed
-        var e11 = model.Elements.First(e => e.Id == 11);
+        // E11 should be recreated with a new ID, use N2 (merged), N3 removed
+        model.Elements.Select(e => e.Id).Should().NotContain(11);
+        var e11 = model.Elements.First(e => e.ParentElementId == 11);
         e11.StartNodeId.Should().Be(2);
         model.Nodes.Should().NotContain(n => n.Id == 3);
         // N4 moved from (200,0) to (160,0)
@@ -114,12 +118,15 @@ public class GroupConnectStageTests
     [Fact]
     public void SlaveTranslated_FreeEndOnInterior_NodeRemainsOnMasterSegment()
     {
-        // Master: N1(0,0) → N2(100,0).  Slave: N3(50,30) → N4(50,80)
-        // Projection of N3 onto master: (50,0), dist=30mm ≤ threshold(55mm)
+        // Master: N1(0,0) → N6(33,0) → N7(66,0) → N2(100,0)  (3 elements > slave)
+        // Slave: N3(50,30) → N4(50,80) → N5(50,130)  (2 elements)
+        // Projection of N3 onto master interior: (50,0) on E20 (33-66), dist=30mm ≤ 55mm
         // Translation vector: (0,-30) → N3 moves to (50,0) = ON master segment (not endpoint)
         var model = ModelWithThinSection();
-        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 30), N(4, 50, 80)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 50, 30), N(4, 50, 80), N(5, 50, 130)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
 
         new GroupConnectStage().Execute(MakeCtx(model));
 
@@ -133,15 +140,85 @@ public class GroupConnectStageTests
     [Fact]
     public void SlaveTranslated_EmitsInfoDiagnostic()
     {
+        // Master 3 elements > slave 2 elements (slave survives noise removal)
         var model = ModelWithThinSection();
-        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 140, 0), N(4, 200, 0)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 140, 0), N(4, 200, 0), N(5, 260, 0)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
 
         var ctx = MakeCtx(model);
         new GroupConnectStage().Execute(ctx);
 
         ctx.Diagnostics.Should().Contain(d =>
             d.Severity == DiagnosticSeverity.Info && d.Code == "GROUPS_CONNECTED");
+    }
+
+    [Fact]
+    public void ExistingRigidOnSlaveFreeEnd_DoesNotBlockTranslation()
+    {
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([
+            N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+            N(3, 140, 0), N(4, 200, 0), N(5, 260, 0), N(8, 140, 20)
+        ]);
+        model.Elements.AddRange([
+            E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+            E(11, 3, 4), E(12, 4, 5)
+        ]);
+        model.Rigids.Add(new RigidElement(30, 8, [3], "PREEXISTING"));
+
+        var ctx = MakeCtx(model);
+        new GroupConnectStage().Execute(ctx);
+
+        ctx.Diagnostics.Should().Contain(d => d.Code == "GROUPS_CONNECTED");
+        model.Elements.Should().Contain(e => e.ParentElementId == 11 && e.StartNodeId == 2);
+    }
+
+    [Fact]
+    public void PreservesPreTranslationStructureFreeEndPairByRigid()
+    {
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([
+            N(1, 0, 0), N(2, 50, 0), N(3, 100, 0), N(4, 150, 0),
+            N(5, 190, 0), N(6, 250, 0), N(7, 310, 0),
+            N(8, 310, 20), N(9, 370, 20), N(10, 430, 20)
+        ]);
+        model.Elements.AddRange([
+            E(10, 1, 2), E(11, 2, 3), E(12, 3, 4),
+            E(20, 5, 6), E(21, 6, 7),
+            E(30, 8, 9), E(31, 9, 10)
+        ]);
+
+        var ctx = MakeCtx(model, localTolMm: 1.0);
+        new GroupConnectStage().Execute(ctx);
+
+        model.Rigids.Should().Contain(r =>
+            r.Remark == "PRESERVED_FREE_END" &&
+            ((r.IndependentNodeId == 7 && r.DependentNodeIds.Contains(8)) ||
+             (r.IndependentNodeId == 8 && r.DependentNodeIds.Contains(7))));
+        ctx.Diagnostics.Should().Contain(d => d.Code == "GROUP_PRESERVED_FREE_END_RBE");
+    }
+
+    [Fact]
+    public void PreservedFreeEndCleanup_RemovesRigidWhenEndpointsAreNoLongerFree()
+    {
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([
+            N(1, 0, 0), N(2, 50, 0), N(3, 100, 0),
+            N(4, 0, 50), N(5, 100, 50)
+        ]);
+        model.Elements.AddRange([
+            E(10, 1, 2), E(11, 2, 3),
+            E(12, 1, 4), E(13, 3, 5)
+        ]);
+        model.Rigids.Add(new RigidElement(20, 1, [3], "PRESERVED_FREE_END"));
+
+        var ctx = MakeCtx(model);
+        new PreservedFreeEndCleanupStage().Execute(ctx);
+
+        model.Rigids.Should().NotContain(r => r.Id == 20);
+        ctx.Diagnostics.Should().Contain(d => d.Code == "PRESERVED_FREE_END_RBE_PRUNED");
     }
 
     // ── Meta-group ────────────────────────────────────────────────────────────
@@ -153,12 +230,15 @@ public class GroupConnectStageTests
         // Slave A: N4(140,0) → N5(200,0)   → candidate vec ≈ (-1,0,0) (towards master)
         // Slave B: N6(145,1) → N7(205,1)   → candidate vec ≈ (-1,0,0) (dot=1>0)
         // dist(A,B) ≈ 1mm ≤ localTol(40) AND dot>0 → meta-grouped → translated together
+        // 2-element slave chains to survive noise removal
         var model = ModelWithThinSection();
         model.Nodes.AddRange([
-            N(1,   0, 0), N(2, 50, 0), N(3, 100, 0),
-            N(4, 140, 0), N(5, 200, 0),
-            N(6, 145, 1), N(7, 205, 1)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 2, 3), E(12, 4, 5), E(13, 6, 7)]);
+            N(1,   0, 0), N(2,  50, 0), N(3, 100, 0),
+            N(4, 140, 0), N(5, 200, 0), N(50, 260, 0),   // slave A: 2 elements
+            N(6, 145, 1), N(7, 205, 1), N(70, 265, 1)]); // slave B: 2 elements
+        model.Elements.AddRange([E(10, 1, 2), E(11, 2, 3),
+                                  E(12, 4, 5), E(14, 5, 50),
+                                  E(13, 6, 7), E(15, 7, 70)]);
 
         new GroupConnectStage().Execute(MakeCtx(model));
 
@@ -235,82 +315,88 @@ public class GroupConnectStageTests
         model.Elements.First(e => e.Id == 11).StartNodeId.Should().Be(3);
     }
 
-    // ── RBE 폴백 ─────────────────────────────────────────────────────────────
+    // ── 거리 초과 → RBE 없음, INFO 진단 ─────────────────────────────────────
 
     [Fact]
-    public void TooFar_RbeFallback_RigidAdded()
+    public void TooFar_NoTranslation_InfoDiagnostic()
     {
-        // ThinSection: maxDim=5, threshold=55mm.  Slave free-end is 100mm away → RBE
+        // ThinSection: maxDim=5, threshold=55mm.  Gap=100mm → skip, no RBE
+        // Master 3 elements > slave 2 elements
         var model = ModelWithThinSection();
-        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 200, 0), N(4, 300, 0)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 200, 0), N(4, 300, 0), N(5, 400, 0)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
 
         var ctx = MakeCtx(model);
         new GroupConnectStage().Execute(ctx);
 
-        model.Rigids.Should().ContainSingle(r => r.Remark == "GROUP_CONNECT");
-        ctx.Diagnostics.Should().Contain(d => d.Code == "GROUP_CONNECT_RBE");
+        model.Rigids.Should().BeEmpty();
+        ctx.Diagnostics.Should().Contain(d => d.Code == "GROUP_CONNECT_SKIP" &&
+                                              d.Severity == DiagnosticSeverity.Info);
         // Slave nodes NOT translated
         model.Nodes.First(n => n.Id == 3).Position.X.Should().BeApproximately(200, 0.01);
-    }
-
-    [Fact]
-    public void TooFar_RbeFallback_SnapNodeCreatedAtProjection()
-    {
-        // Projection of slave (200,0) onto master segment is (100,0) = existing N2
-        var model = ModelWithThinSection();
-        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 200, 0), N(4, 300, 0)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
-        int nodeBefore = model.Nodes.Count;
-
-        new GroupConnectStage().Execute(MakeCtx(model));
-
-        var rbe = model.Rigids.First(r => r.Remark == "GROUP_CONNECT");
-        // RBE independent is at projection = (100,0) ≈ N2 → reused (no new node)
-        model.Nodes.Count.Should().Be(nodeBefore);
-        rbe.IndependentNodeId.Should().Be(2);
-        rbe.DependentNodeIds.Should().Contain(3);
-    }
-
-    [Fact]
-    public void TooFar_RbeFallback_NewSnapNodeWhenNoExisting()
-    {
-        // Projection onto master interior: (50,0) — no existing node there
-        var model = ModelWithThinSection();
-        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 100), N(4, 50, 200)]);
-        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
-        // dist from N3(50,100) to master = 100mm > threshold(55mm) → RBE
-        int nodeBefore = model.Nodes.Count;
-
-        new GroupConnectStage().Execute(MakeCtx(model));
-
-        model.Nodes.Count.Should().BeGreaterThan(nodeBefore); // new snap node created
-        var rbe = model.Rigids.First(r => r.Remark == "GROUP_CONNECT");
-        var snapNode = model.Nodes.First(n => n.Id == rbe.IndependentNodeId);
-        snapNode.Position.X.Should().BeApproximately(50, 0.01);
-        snapNode.Position.Y.Should().BeApproximately(0,  0.01);
     }
 
     // ── 단면 기반 가변 tolerance ──────────────────────────────────────────────
 
     [Fact]
-    public void VariableTolerance_LargeSection_TranslatesWhereThinFailed()
+    public void VariableTolerance_LargeSection_TranslatesWhereThinSkipped()
     {
-        // Gap = 80mm.  ThinSection threshold=55mm → RBE.  LargeSection threshold=250mm → translate.
+        // Gap = 80mm.  ThinSection threshold=55mm → skip.  LargeSection threshold=250mm → translate.
 
+        // Master 3 elements > slave 2 elements (so slave survives noise removal)
         var thinModel = ModelWithThinSection();
-        thinModel.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 180, 0), N(4, 280, 0)]);
-        thinModel.Elements.AddRange([E(10, 1, 2, propId: 1), E(11, 3, 4, propId: 1)]);
+        thinModel.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                                   N(3, 180, 0), N(4, 280, 0), N(5, 380, 0)]);
+        thinModel.Elements.AddRange([E(10, 1, 6, propId: 1), E(20, 6, 7, propId: 1), E(21, 7, 2, propId: 1),
+                                      E(11, 3, 4, propId: 1), E(12, 4, 5, propId: 1)]);
         var ctxThin = MakeCtx(thinModel);
         new GroupConnectStage().Execute(ctxThin);
-        ctxThin.Diagnostics.Should().Contain(d => d.Code == "GROUP_CONNECT_RBE");
+        ctxThin.Diagnostics.Should().Contain(d => d.Code == "GROUP_CONNECT_SKIP");
+        ctxThin.Diagnostics.Should().NotContain(d => d.Code == "GROUPS_CONNECTED");
+        thinModel.Rigids.Should().BeEmpty();
 
         var largeModel = ModelWithLargeSection();
-        largeModel.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 180, 0), N(4, 280, 0)]);
-        largeModel.Elements.AddRange([E(10, 1, 2, propId: 2), E(11, 3, 4, propId: 2)]);
+        largeModel.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                                    N(3, 180, 0), N(4, 280, 0), N(5, 380, 0)]);
+        largeModel.Elements.AddRange([E(10, 1, 6, propId: 2), E(20, 6, 7, propId: 2), E(21, 7, 2, propId: 2),
+                                       E(11, 3, 4, propId: 2), E(12, 4, 5, propId: 2)]);
         var ctxLarge = MakeCtx(largeModel);
         new GroupConnectStage().Execute(ctxLarge);
         ctxLarge.Diagnostics.Should().Contain(d => d.Code == "GROUPS_CONNECTED");
-        ctxLarge.Diagnostics.Should().NotContain(d => d.Code == "GROUP_CONNECT_RBE");
+        ctxLarge.Diagnostics.Should().NotContain(d => d.Code == "GROUP_CONNECT_SKIP");
+    }
+
+    // ── 노이즈 제거 ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void NoiseFragment_SingleSmallElement_Removed()
+    {
+        // Master: N1-N2 (100mm).  Noise: N3-N4 (50mm, thin section, no PointMass) → deleted
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 500, 0), N(4, 550, 0)]);
+        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+
+        var ctx = MakeCtx(model);
+        new GroupConnectStage().Execute(ctx);
+
+        model.Elements.Should().NotContain(e => e.Id == 11);
+        ctx.Diagnostics.Should().Contain(d => d.Code == "NOISE_REMOVED");
+    }
+
+    [Fact]
+    public void NoiseFragment_LargeElement_Preserved()
+    {
+        // LargeSection (maxDim=200mm ≥ 100mm) → preserved even if isolated
+        var model = ModelWithLargeSection();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 500, 0), N(4, 700, 0)]);
+        model.Elements.AddRange([E(10, 1, 2, propId: 2), E(11, 3, 4, propId: 2)]);
+
+        var ctx = MakeCtx(model);
+        new GroupConnectStage().Execute(ctx);
+
+        model.Elements.Should().Contain(e => e.Id == 11);
+        ctx.Diagnostics.Should().NotContain(d => d.Code == "NOISE_REMOVED");
     }
 }

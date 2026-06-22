@@ -202,7 +202,8 @@ public class FeModelBuilderPipeTests
 
         model.Elements.Should().BeEmpty();
         model.PointMasses.Should().HaveCount(1);
-        model.PointMasses[0].Mass.Should().BeApproximately(14.3, 1e-9);
+        // CSV mass(kg) → tonne 변환 (×0.001)
+        model.PointMasses[0].Mass.Should().BeApproximately(0.0143, 1e-9);
     }
 
     [Theory]

@@ -86,11 +86,37 @@ public static class HealthMetricsAnalyzer
         return new HealthIssuesDto
         {
             FreeEndNodes       = CountFreeEndNodes(model),
-            OrphanNodes        = connectivity.IsolatedNodeCount,
+            OrphanNodes        = CountOrphanNodes(model),
             ShortElements      = CountShortElements(model, tol),
             UnresolvedUbolts   = CountUnresolvedUbolts(model),
             DisconnectedGroups = connectivity.GroupCount > 0 ? connectivity.GroupCount - 1 : 0,
         };
+    }
+
+    /// <summary>
+    /// element/rigid/PointMass 어디에도 참조되지 않는 노드 수.
+    /// FinalValidationStage.CheckOrphanNodes 와 동일 정의를 사용.
+    /// connectivity.IsolatedNodeCount(=element graph 분리 노드)와는 다른 metric.
+    /// </summary>
+    private static int CountOrphanNodes(FeModel model)
+    {
+        var referenced = new HashSet<int>();
+        foreach (var elem in model.Elements)
+        {
+            referenced.Add(elem.StartNodeId);
+            referenced.Add(elem.EndNodeId);
+        }
+        foreach (var rigid in model.Rigids)
+        {
+            referenced.Add(rigid.IndependentNodeId);
+            foreach (int dep in rigid.DependentNodeIds) referenced.Add(dep);
+        }
+        foreach (var pm in model.PointMasses) referenced.Add(pm.NodeId);
+
+        int count = 0;
+        foreach (var node in model.Nodes)
+            if (!referenced.Contains(node.Id)) count++;
+        return count;
     }
 
     // TODO: 이 로직은 FinalValidationStage.CheckFreeEndNodes 와 동일합니다.

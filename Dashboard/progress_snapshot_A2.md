@@ -124,7 +124,7 @@
 ## 솔루션 구조 현황
 
 ```
-ClaudeModelBuilder.sln
+HiTessModelBuilder.sln
 Directory.Build.props
 src/
   Cmb.Core/

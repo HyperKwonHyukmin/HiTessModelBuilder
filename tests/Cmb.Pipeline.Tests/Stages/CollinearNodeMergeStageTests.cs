@@ -45,8 +45,9 @@ public class CollinearNodeMergeStageTests
         model.Nodes.Should().HaveCount(3);
         model.Nodes.Select(n => n.Id).Should().NotContain(3);
 
-        // E2는 N2→N4 로 remapped
-        var e2 = model.Elements.First(e => e.Id == 2);
+        // E2는 새 ID로 재생성되고 N2→N4 로 remapped
+        model.Elements.Select(e => e.Id).Should().NotContain(2);
+        var e2 = model.Elements.First(e => e.ParentElementId == 2);
         e2.StartNodeId.Should().Be(2);
     }
 
@@ -172,6 +173,31 @@ public class CollinearNodeMergeStageTests
 
         // N3 → N2로 병합
         var rigid = model.Rigids[0];
+        rigid.DependentNodeIds.Should().Contain(2);
+        rigid.DependentNodeIds.Should().NotContain(3);
+    }
+
+    [Fact]
+    public void SnapsInlineRigidDependentNodeToNearbyPipeFreeEnd()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([
+            N(1, 0, 0, 1000),
+            N(2, 1, 0, 0),
+            N(3, 0, 0, -7),
+            N(4, 0, 0, -60),
+            N(5, 0, 0, -120),
+            N(6, 1000, 0, 0),
+            N(7, 1100, 0, 0)
+        ]);
+        model.Elements.Add(E(1, 1, 2, EntityCategory.Pipe));
+        model.Elements.Add(E(2, 6, 7, EntityCategory.Pipe));
+        model.Rigids.Add(new RigidElement(101, 4, [3, 5], "VALV"));
+
+        new CollinearNodeMergeStage().Execute(MakeCtx(model, lateralMm: 1.0));
+
+        model.Nodes.Select(n => n.Id).Should().NotContain(3);
+        var rigid = model.Rigids.Single();
         rigid.DependentNodeIds.Should().Contain(2);
         rigid.DependentNodeIds.Should().NotContain(3);
     }

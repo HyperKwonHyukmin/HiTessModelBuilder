@@ -10,12 +10,12 @@ public sealed class CsvDesignLoader
 
     /// <summary>
     /// Discovers CSV files in <paramref name="folderPath"/> by name pattern
-    /// ("struData", "pipeData", "equpData") and loads all three.
+    /// ("struData"/"structure"/"support"/"supt", "pipeData"/"pipe", "equpData"/"equip") and loads all three.
     /// </summary>
     public RawDesignData LoadFolder(string folderPath)
     {
         var files = Directory.GetFiles(folderPath, "*.csv");
-        var struPath  = MatchFirst(files, "struData", "structure");
+        var struPath  = MatchFirst(files, "struData", "structure", "support", "supt");
         var pipePath  = MatchFirst(files, "pipeData", "pipe");
         var equipPath = MatchFirst(files, "equpData", "equip");
         return Load(struPath, pipePath, equipPath);

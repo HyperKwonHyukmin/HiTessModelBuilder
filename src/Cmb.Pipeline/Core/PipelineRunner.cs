@@ -25,6 +25,7 @@ public static class PipelineRunner
             var ctx        = new StageContext(model, options, logger);
             int elemBefore = model.Elements.Count;
             int nodeBefore = model.Nodes.Count;
+            int traceBefore = model.TraceLog.Count;
             var sw         = Stopwatch.StartNew();
             bool ok        = false;
 
@@ -41,9 +42,17 @@ public static class PipelineRunner
             }
 
             sw.Stop();
+            var stageTrace = model.TraceLog.Skip(traceBefore).ToList();
             var delta = new StageDeltaInfo(prevStageName,
                 elemBefore, model.Elements.Count,
-                nodeBefore, model.Nodes.Count);
+                nodeBefore, model.Nodes.Count,
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.ElementCreated),
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.ElementRemoved),
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.ElementSplit),
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.NodeMerged),
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.NodeMoved),
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.NodeCreated),
+                stageTrace.Count(t => t.Action == Cmb.Core.Model.TraceAction.NodeRemoved));
             stageReports.Add(new StageReport(stage.Name, ok, sw.Elapsed, ctx.Diagnostics));
 
             logger.LogInformation("Stage [{Name}] {Result} in {Elapsed:F0}ms",

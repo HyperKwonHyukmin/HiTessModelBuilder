@@ -1,4 +1,4 @@
-# ClaudeModelBuilder 구현 플랜
+# HiTessModelBuilder 구현 플랜
 
 ## Context (왜 이 작업을 하는가)
 
@@ -19,7 +19,7 @@ AM(Aveva Marine) 3D 설계의 Beam류(H, L, Rod, Tube 등) 부재를 FEM 1D 유�
 | UI | 콘솔 CLI |
 | 프레임워크 | .NET 8 (필요 시 기하 라이브러리 단계적 도입) |
 | 진행 방식 | **3 Phase 분할**, Phase 내 단계마다 JSON 덤프 후 사용자 확인 |
-| 현재 상태 | `C:\Coding\ClaudeModelBuilder`는 `.claude/` 설정만 있는 빈 디렉토리 |
+| 현재 상태 | `C:\Coding\HiTessModelBuilder`는 `.claude/` 설정만 있는 빈 디렉토리 |
 | 참조 경로 | `C:\Coding\Csharp\Projects\HiTessModelBuilder_26_01\HiTessModelBuilder_26_01` (읽기 전용) |
 
 ### 3-Phase 구조
@@ -32,8 +32,8 @@ AM(Aveva Marine) 3D 설계의 Beam류(H, L, Rod, Tube 등) 부재를 FEM 1D 유�
 ## 솔루션 구조
 
 ```
-C:\Coding\ClaudeModelBuilder\
-├── ClaudeModelBuilder.sln
+C:\Coding\HiTessModelBuilder\
+├── HiTessModelBuilder.sln
 ├── Directory.Build.props         # Nullable=enable, LangVersion=latest, TreatWarningsAsErrors=true
 ├── .editorconfig
 ├── .gitignore

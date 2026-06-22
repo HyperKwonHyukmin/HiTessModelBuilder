@@ -168,4 +168,31 @@ public class PipelineRunnerTests
 
         called.Should().Equal("A", "B");
     }
+
+    [Fact]
+    public void Run_OnStageComplete_DeltaIncludesTraceActionCounts()
+    {
+        StageDeltaInfo? delta = null;
+        var stages = new IPipelineStage[]
+        {
+            new FakeStage("S1", side: ctx =>
+            {
+                ctx.AddTrace(TraceAction.ElementCreated, "S1", elementId: 2);
+                ctx.AddTrace(TraceAction.ElementRemoved, "S1", elementId: 1);
+                ctx.AddTrace(TraceAction.ElementSplit, "S1", elementId: 3, relatedElementId: 1);
+                ctx.AddTrace(TraceAction.NodeMerged, "S1", nodeId: 4, relatedNodeId: 5);
+                ctx.AddTrace(TraceAction.NodeMoved, "S1", nodeId: 6);
+            }),
+        };
+
+        PipelineRunner.Run(EmptyModel(), stages, DefaultOptions, NullLogger.Instance,
+            (_, _, _, _, d) => delta = d);
+
+        delta.Should().NotBeNull();
+        delta!.ElementsCreated.Should().Be(1);
+        delta.ElementsRemoved.Should().Be(1);
+        delta.ElementsSplit.Should().Be(1);
+        delta.NodesMerged.Should().Be(1);
+        delta.NodesMoved.Should().Be(1);
+    }
 }

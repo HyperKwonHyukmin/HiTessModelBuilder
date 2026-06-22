@@ -8,8 +8,6 @@ namespace Cmb.Pipeline.Stages;
 
 public sealed class UboltRbeStage : IPipelineStage
 {
-    private const double BoxSearchDistanceMm = 2000.0;
-
     public string Name => "UboltRbe";
 
     public bool Execute(StageContext ctx)
@@ -17,7 +15,9 @@ public sealed class UboltRbeStage : IPipelineStage
         var model = ctx.Model;
         model.SyncIdCounters();
 
-        var uboltRbes = model.Rigids.Where(r => r.Remark == "UBOLT").ToList();
+        var uboltRbes = model.Rigids
+            .Where(r => r.Remark == "UBOLT" && !IsBoxUbolt(r))
+            .ToList();
         if (uboltRbes.Count == 0) return true;
 
         var structureElems = model.Elements
@@ -37,13 +37,12 @@ public sealed class UboltRbeStage : IPipelineStage
         double snapDist = ctx.Options.Tolerances.UboltSnapMaxDistMm;
         double mergeTol = ctx.Options.Tolerances.NodeMergeMm;
         double extraMargin = ctx.Options.Tolerances.ExtendExtraMarginMm;
-        double hashInflate = Math.Max(BoxSearchDistanceMm, snapDist * 2.0);
+        double hashInflate = snapDist * 2.0;
         var spatialHash = new ElementSpatialHash(structureElems, nodeById, cellSize, hashInflate);
 
         RemoveDuplicateUbolts(model, nodeById);
 
         int regularSnapped = 0;
-        int boxSnapped = 0;
         int fallback = 0;
 
         for (int i = 0; i < model.Rigids.Count; i++)
@@ -52,27 +51,9 @@ public sealed class UboltRbeStage : IPipelineStage
             if (rbe.Remark != "UBOLT") continue;
             if (!nodeById.TryGetValue(rbe.IndependentNodeId, out var uboltNode)) continue;
 
-            if (IsBoxUbolt(rbe))
-            {
-                var deps = TrySnapBox(model, spatialHash, structById, nodeById, rbe, uboltNode,
-                    mergeTol, extraMargin);
-                if (deps.Count > 0)
-                {
-                    model.Rigids[i] = new RigidElement(rbe.Id, rbe.IndependentNodeId, deps,
-                        rbe.Remark, rbe.SourceName, rbe.Cm, rbe.DetailRemark);
-                    ctx.AddTrace(TraceAction.ElementCreated, Name, elementId: rbe.Id,
-                        note: $"BOX UBOLT snapped to {deps.Count} structure node(s)");
-                    boxSnapped++;
-                }
-                else
-                {
-                    uboltNode.AddTag(NodeTags.Boundary);
-                    fallback++;
-                }
-                continue;
-            }
+            if (IsBoxUbolt(rbe)) continue;
 
-            var result = TrySnapRegular(model, spatialHash, structById, nodeById, rbe,
+            var result = TrySnapRegular(ctx, model, spatialHash, structById, nodeById, rbe,
                 uboltNode, snapDist, mergeTol, extraMargin);
             if (result.Found)
             {
@@ -86,25 +67,157 @@ public sealed class UboltRbeStage : IPipelineStage
             else
             {
                 uboltNode.AddTag(NodeTags.Boundary);
+                EmitFallbackDiagnostic(ctx, model, rbe, uboltNode, snapDist, extraMargin);
                 ctx.AddTrace(TraceAction.NodeMoved, Name,
                     nodeId: rbe.IndependentNodeId, note: "UBOLT fallback — marked Boundary");
                 fallback++;
             }
         }
 
+        // Fallback U-bolt 또는 import 시점부터 dep가 비어있는 RBE2를 제거.
+        // indep 노드는 이미 NodeTags.Boundary 표시되어 SPC1로 export됨 → RBE2 자체는 무효.
+        int emptyRemoved = 0;
+        for (int i = model.Rigids.Count - 1; i >= 0; i--)
+        {
+            var r = model.Rigids[i];
+            if (r.Remark != "UBOLT") continue;
+            if (IsBoxUbolt(r)) continue;
+            if (r.DependentNodeIds.Count > 0) continue;
+            ctx.AddTrace(TraceAction.ElementRemoved, Name,
+                elementId: r.Id, nodeId: r.IndependentNodeId,
+                note: "empty dep UBOLT removed (indep tagged Boundary for SPC1)");
+            model.Rigids.RemoveAt(i);
+            emptyRemoved++;
+        }
+
         RigidElementNormalizer.MergeSharedDependentNodes(ctx, Name);
+        int verticalized = VerticalizeSafeUboltAnchors(ctx);
 
         if (regularSnapped > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "UBOLT_SNAPPED",
                 $"{regularSnapped} U-bolt(s) snapped to structure.");
-        if (boxSnapped > 0)
-            ctx.AddDiagnostic(DiagnosticSeverity.Info, "UBOLT_BOX_SNAPPED",
-                $"{boxSnapped} BOX U-bolt(s) snapped to structure.");
+        if (verticalized > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "UBOLT_ANCHOR_VERTICALIZED",
+                $"{verticalized} U-bolt anchor node(s) moved onto vertical support line.");
         if (fallback > 0)
-            ctx.AddDiagnostic(DiagnosticSeverity.Warning, "UBOLT_FALLBACK",
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "UBOLT_FALLBACK_SUMMARY",
                 $"{fallback} U-bolt(s) too far from structure — will export as SPC1.");
+        if (emptyRemoved > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "UBOLT_EMPTY_DEP_REMOVED",
+                $"{emptyRemoved} U-bolt RBE2(s) with empty dep removed (indep retained as boundary).");
 
         return true;
+    }
+
+    public static int VerticalizeSafeUboltAnchors(StageContext ctx, string stageName = "UboltRbe")
+    {
+        var model = ctx.Model;
+        var nodeIndexById = model.Nodes
+            .Select((n, i) => (n.Id, Index: i))
+            .ToDictionary(x => x.Id, x => x.Index);
+        var nodeById = model.Nodes.ToDictionary(n => n.Id);
+        int moved = 0;
+
+        foreach (var rigid in model.Rigids)
+        {
+            if (rigid.Remark != "UBOLT" || IsBoxUbolt(rigid)) continue;
+            if (rigid.DependentNodeIds.Count != 1) continue;
+
+            int anchorId = rigid.IndependentNodeId;
+            int supportId = rigid.DependentNodeIds[0];
+            if (!nodeById.TryGetValue(anchorId, out var anchor) ||
+                !nodeById.TryGetValue(supportId, out var support)) continue;
+
+            if (!CanVerticalizeUboltAnchor(model, nodeById, anchor, support, out var target)) continue;
+            if (!nodeIndexById.TryGetValue(anchorId, out int index)) continue;
+
+            model.Nodes[index] = new Node(anchorId, target, anchor.Tags);
+            nodeById[anchorId] = model.Nodes[index];
+            ctx.AddTrace(TraceAction.NodeMoved, stageName,
+                elementId: rigid.Id, nodeId: anchorId, relatedNodeId: supportId,
+                note: "UBOLT anchor moved onto vertical support line");
+            moved++;
+        }
+
+        return moved;
+    }
+
+    private static bool CanVerticalizeUboltAnchor(
+        FeModel model,
+        IReadOnlyDictionary<int, Node> nodeById,
+        Node anchor,
+        Node support,
+        out Point3 target)
+    {
+        target = default;
+        const double coordTol = 1e-6;
+        const double nodeOnPathTol = 1.0;
+
+        var a = anchor.Position;
+        var s = support.Position;
+        if (Math.Abs(a.Y - s.Y) > coordTol) return false;
+        if (Math.Abs(a.X - s.X) <= coordTol) return false;
+        if (Math.Abs(a.Z - s.Z) <= coordTol) return false;
+
+        var pipeElems = model.Elements
+            .Where(e => e.Category == EntityCategory.Pipe &&
+                        (e.StartNodeId == anchor.Id || e.EndNodeId == anchor.Id))
+            .ToList();
+        if (pipeElems.Count < 2) return false;
+
+        var otherNodes = new List<Node>();
+        foreach (var elem in pipeElems)
+        {
+            int otherId = elem.StartNodeId == anchor.Id ? elem.EndNodeId : elem.StartNodeId;
+            if (!nodeById.TryGetValue(otherId, out var other)) return false;
+            if (Math.Abs(other.Position.Y - a.Y) > coordTol) return false;
+            if (Math.Abs(other.Position.Z - a.Z) > coordTol) return false;
+            otherNodes.Add(other);
+        }
+
+        double minX = otherNodes.Min(n => n.Position.X);
+        double maxX = otherNodes.Max(n => n.Position.X);
+        if (s.X <= minX + coordTol || s.X >= maxX - coordTol) return false;
+
+        target = new Point3(s.X, a.Y, a.Z);
+        foreach (var elem in pipeElems)
+        {
+            int otherId = elem.StartNodeId == anchor.Id ? elem.EndNodeId : elem.StartNodeId;
+            if (!nodeById.TryGetValue(otherId, out var other)) return false;
+            if (target.DistanceTo(other.Position) < nodeOnPathTol) return false;
+        }
+
+        double pathMinX = Math.Min(a.X, target.X) - coordTol;
+        double pathMaxX = Math.Max(a.X, target.X) + coordTol;
+        foreach (var node in nodeById.Values)
+        {
+            if (node.Id == anchor.Id || node.Id == support.Id) continue;
+            if (Math.Abs(node.Position.Y - a.Y) > nodeOnPathTol) continue;
+            if (Math.Abs(node.Position.Z - a.Z) > nodeOnPathTol) continue;
+            if (node.Position.X > pathMinX && node.Position.X < pathMaxX)
+                return false;
+            if (node.Position.DistanceTo(target) < nodeOnPathTol)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static void EmitFallbackDiagnostic(StageContext ctx, FeModel model,
+        RigidElement rbe, Node uboltNode, double snapDist, double extraMargin)
+    {
+        var ownerPipe = FindOwnerPipe(model, rbe.IndependentNodeId);
+        double pipeRadius = ownerPipe is null ? 0.0 : GetSectionMaxDim(model, ownerPipe.PropertyId);
+        double appliedRadius = Math.Max(snapDist * 2.0, pipeRadius * 2.0 + extraMargin);
+        var p = uboltNode.Position;
+        string pipeInfo = ownerPipe is null
+            ? "no owner pipe"
+            : $"on pipe E{ownerPipe.Id} (sec maxDim={pipeRadius:F0}mm)";
+        ctx.AddDiagnostic(DiagnosticSeverity.Warning, "UBOLT_FALLBACK",
+            $"U-bolt N{rbe.IndependentNodeId} '{rbe.SourceName}' at " +
+            $"({p.X:F0},{p.Y:F0},{p.Z:F0}) — {pipeInfo}, no structure within " +
+            $"{appliedRadius:F0}mm. SPC1 fallback applied.",
+            nodeId: rbe.IndependentNodeId);
     }
 
     private sealed record SnapResult(
@@ -114,6 +227,7 @@ public sealed class UboltRbeStage : IPipelineStage
         int TargetElementId = -1);
 
     private static SnapResult TrySnapRegular(
+        StageContext ctx,
         FeModel model,
         ElementSpatialHash spatialHash,
         IReadOnlyDictionary<int, BeamElement> structById,
@@ -135,7 +249,8 @@ public sealed class UboltRbeStage : IPipelineStage
             uboltNode.Position, phase2, preferLargeSection: true, model);
         if (selected is null) return new SnapResult(false);
 
-        int depNodeId = AddOrReuseNode(model, nodeById, selected.Value.Projection, mergeTol);
+        int depNodeId = AddOrReuseNode(ctx, model, nodeById, selected.Value.Projection, mergeTol,
+            note: $"UBOLT dep snap to E{selected.Value.ElementId}", relatedElementId: rbe.Id);
         Point3 indepPoint = uboltNode.Position;
 
         if (ownerPipe is not null &&
@@ -147,71 +262,9 @@ public sealed class UboltRbeStage : IPipelineStage
             indepPoint = pipeProj;
         }
 
-        int indepNodeId = AddOrReuseNode(model, nodeById, indepPoint, mergeTol);
+        int indepNodeId = AddOrReuseNode(ctx, model, nodeById, indepPoint, mergeTol,
+            note: "UBOLT indep on owner pipe", relatedElementId: rbe.Id);
         return new SnapResult(true, indepNodeId, depNodeId, selected.Value.ElementId);
-    }
-
-    private static List<int> TrySnapBox(
-        FeModel model,
-        ElementSpatialHash spatialHash,
-        IReadOnlyDictionary<int, BeamElement> structById,
-        Dictionary<int, Node> nodeById,
-        RigidElement rbe,
-        Node uboltNode,
-        double mergeTol,
-        double extraMargin)
-    {
-        var ownerPipe = FindOwnerPipe(model, rbe.IndependentNodeId);
-        if (ownerPipe is null ||
-            !nodeById.TryGetValue(ownerPipe.StartNodeId, out var pA) ||
-            !nodeById.TryGetValue(ownerPipe.EndNodeId, out var pB))
-            return [];
-
-        var axis = (pB.Position - pA.Position);
-        if (axis.Length < 1e-9) return [];
-        axis = axis.Normalize();
-
-        var globalUp = Math.Abs(axis.Z) > 0.99 ? Vector3.UnitY : Vector3.UnitZ;
-        var right = Vector3.Cross(axis, globalUp).Normalize();
-        var up = Vector3.Cross(right, axis).Normalize();
-        double radius = Math.Max(BoxSearchDistanceMm, GetSectionMaxDim(model, ownerPipe.PropertyId) + extraMargin);
-
-        var buckets = new Dictionary<string, Candidate>();
-        foreach (var c in EnumerateCandidates(spatialHash, structById, nodeById, uboltNode.Position, radius, model))
-        {
-            var diff = c.Projection - uboltNode.Position;
-            if (diff.Length < 1e-6) continue;
-
-            double u = Vector3.Dot(diff, up);
-            double r = Vector3.Dot(diff, right);
-            string key = Math.Abs(u) >= Math.Abs(r)
-                ? (u >= 0 ? "top" : "bottom")
-                : (r >= 0 ? "right" : "left");
-
-            if (!buckets.TryGetValue(key, out var current) || c.Distance < current.Distance)
-                buckets[key] = c;
-        }
-
-        if (buckets.Count == 0) return [];
-
-        double avgShift = buckets.Values.Average(c => Vector3.Dot(c.Projection - uboltNode.Position, axis));
-        if (Math.Abs(avgShift) > 0.01)
-        {
-            var aligned = uboltNode.Position + axis * avgShift;
-            int idx = model.Nodes.FindIndex(n => n.Id == uboltNode.Id);
-            if (idx >= 0)
-            {
-                var moved = new Node(uboltNode.Id, aligned, uboltNode.Tags);
-                model.Nodes[idx] = moved;
-                nodeById[uboltNode.Id] = moved;
-            }
-        }
-
-        return buckets.Values
-            .OrderBy(c => c.Distance)
-            .Select(c => AddOrReuseNode(model, nodeById, c.Projection, mergeTol))
-            .Distinct()
-            .ToList();
     }
 
     private readonly record struct Candidate(int ElementId, Point3 Projection, double Distance, double MaxDim);
@@ -257,7 +310,14 @@ public sealed class UboltRbeStage : IPipelineStage
         }
     }
 
-    private static int AddOrReuseNode(FeModel model, Dictionary<int, Node> nodeById, Point3 pos, double mergeTol)
+    private static int AddOrReuseNode(
+        StageContext ctx,
+        FeModel model,
+        Dictionary<int, Node> nodeById,
+        Point3 pos,
+        double mergeTol,
+        string? note = null,
+        int? relatedElementId = null)
     {
         var existing = nodeById.Values.FirstOrDefault(n => n.Position.DistanceTo(pos) <= mergeTol);
         if (existing is not null) return existing.Id;
@@ -266,6 +326,8 @@ public sealed class UboltRbeStage : IPipelineStage
         var node = new Node(id, pos);
         model.Nodes.Add(node);
         nodeById[id] = node;
+        ctx.AddTrace(TraceAction.NodeCreated, "UboltRbe",
+            nodeId: id, relatedElementId: relatedElementId, note: note);
         return id;
     }
 
@@ -288,7 +350,7 @@ public sealed class UboltRbeStage : IPipelineStage
         var seen = new HashSet<(long X, long Y, long Z)>();
         model.Rigids.RemoveAll(r =>
         {
-            if (r.Remark != "UBOLT") return false;
+            if (r.Remark != "UBOLT" || IsBoxUbolt(r)) return false;
             if (!nodeById.TryGetValue(r.IndependentNodeId, out var n)) return false;
             var key = (
                 (long)Math.Round(n.Position.X * 1000.0),

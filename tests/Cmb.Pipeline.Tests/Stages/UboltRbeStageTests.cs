@@ -146,8 +146,10 @@ public class UboltRbeStageTests
     }
 
     [Fact]
-    public void Ubolt_TooFar_RbeUnchanged_NoDependents()
+    public void Ubolt_TooFar_RbeRemoved_IndepTaggedBoundary()
     {
+        // Fallback U-bolt(snap 실패)는 dep가 비어있어 BDF에서 무효 RBE2 → stage가 제거하고
+        // indep 노드만 Boundary 태그로 남겨 SPC1로 export.
         var model = new FeModel();
         model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 200)]);
         model.Elements.Add(E(10, 1, 2));
@@ -155,8 +157,8 @@ public class UboltRbeStageTests
 
         new UboltRbeStage().Execute(MakeCtx(model, snapDist: 50.0));
 
-        var rbe = model.Rigids.First(r => r.Id == 20);
-        rbe.DependentNodeIds.Should().BeEmpty();
+        model.Rigids.Should().NotContain(r => r.Id == 20);
+        model.Nodes.First(n => n.Id == 3).Tags.HasFlag(NodeTags.Boundary).Should().BeTrue();
     }
 
     // ── No structure → warning, all fallback ──────────────────────────────
@@ -211,6 +213,27 @@ public class UboltRbeStageTests
         model.Rigids.Should().AllSatisfy(r => r.DependentNodeIds.Should().HaveCount(1));
     }
 
+    // 두 U-bolt(파이프)가 같은 구조 노드(2)에 클램프되면, 한쪽을 버리지 말고 구조 노드를
+    // independent 로, 두 파이프 노드를 모두 dependent 로 하는 1개 RBE2 로 통합한다.
+    [Fact]
+    public void TwoUbolts_SnapToSameStructureNode_ConsolidatedWithStructureIndependent()
+    {
+        var model = new FeModel();
+        // 구조 빔 1(0,0)-2(100,0). U-bolt 3(100,30)·4(100,-30) 모두 (100,0)=node2 로 투영 → 같은 노드 공유.
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 100, 30), N(4, 100, -30)]);
+        model.Elements.Add(E(10, 1, 2));
+        model.Rigids.Add(Ubolt(20, 3));
+        model.Rigids.Add(Ubolt(21, 4));
+
+        new UboltRbeStage().Execute(MakeCtx(model));
+
+        model.Rigids.Should().ContainSingle();
+        var rbe = model.Rigids[0];
+        rbe.Remark.Should().Be("UBOLT");
+        rbe.IndependentNodeId.Should().Be(2);                       // 구조 노드 = independent
+        rbe.DependentNodeIds.Should().BeEquivalentTo([3, 4]);       // 두 파이프 = dependent (누락 없음)
+    }
+
     [Fact]
     public void Ubolt_PreservesCm_WhenSnapped()
     {
@@ -225,7 +248,60 @@ public class UboltRbeStageTests
     }
 
     [Fact]
-    public void BoxUbolt_ConnectsFourDirections()
+    public void Ubolt_Snapped_DiagonalXzOnly_MovesAnchorOntoVerticalSupportLine()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([
+            N(1,   0, 0, 100),
+            N(2, 100, 0, 100),
+            N(3, 200, 0, 100),
+            N(4, 120, -50, 0),
+            N(5, 120,  50, 0)
+        ]);
+        model.Elements.AddRange([
+            E(10, 1, 2, 2, EntityCategory.Pipe),
+            E(11, 2, 3, 2, EntityCategory.Pipe),
+            E(12, 4, 5, 1, EntityCategory.Structure)
+        ]);
+        model.Rigids.Add(new RigidElement(20, 2, [], "UBOLT"));
+
+        var ctx = MakeCtx(model, snapDist: 150.0);
+        new UboltRbeStage().Execute(ctx);
+
+        var anchor = model.Nodes.First(n => n.Id == 2);
+        anchor.Position.X.Should().BeApproximately(120, 0.001);
+        anchor.Position.Y.Should().BeApproximately(0, 0.001);
+        anchor.Position.Z.Should().BeApproximately(100, 0.001);
+        ctx.Diagnostics.Should().Contain(d => d.Code == "UBOLT_ANCHOR_VERTICALIZED");
+    }
+
+    [Fact]
+    public void Ubolt_Snapped_DifferentY_DoesNotMoveAnchor()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([
+            N(1,   0, 0, 100),
+            N(2, 100, 0, 100),
+            N(3, 200, 0, 100),
+            N(4, 120,  20, 0),
+            N(5, 120, 120, 0)
+        ]);
+        model.Elements.AddRange([
+            E(10, 1, 2, 2, EntityCategory.Pipe),
+            E(11, 2, 3, 2, EntityCategory.Pipe),
+            E(12, 4, 5, 1, EntityCategory.Structure)
+        ]);
+        model.Rigids.Add(new RigidElement(20, 2, [], "UBOLT"));
+
+        var ctx = MakeCtx(model, snapDist: 150.0);
+        new UboltRbeStage().Execute(ctx);
+
+        model.Nodes.First(n => n.Id == 2).Position.X.Should().BeApproximately(100, 0.001);
+        ctx.Diagnostics.Should().NotContain(d => d.Code == "UBOLT_ANCHOR_VERTICALIZED");
+    }
+
+    [Fact]
+    public void BoxUbolt_IsLeftForDedicatedBoxStage()
     {
         var model = new FeModel();
         model.Materials.Add(Material.DefaultSteel);
@@ -251,6 +327,29 @@ public class UboltRbeStageTests
         new UboltRbeStage().Execute(MakeCtx(model));
 
         var rbe = model.Rigids.First(r => r.Id == 20);
-        rbe.DependentNodeIds.Should().HaveCount(4);
+        rbe.DependentNodeIds.Should().BeEmpty();
+        model.Nodes.First(n => n.Id == 9).HasTag(NodeTags.Boundary).Should().BeFalse();
+    }
+
+    [Fact]
+    public void BoxUbolt_IsPreserved_WhenRegularUboltCleanupRuns()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([
+            N(1, 0, 0), N(2, 100, 0),
+            N(3, 50, 30),
+            N(4, 50, 200)
+        ]);
+        model.Elements.Add(E(10, 1, 2));
+        model.Rigids.Add(Ubolt(20, 3));
+        model.Rigids.Add(new RigidElement(21, 4, [], "UBOLT", cm: "123456", detailRemark: "BOX"));
+
+        new UboltRbeStage().Execute(MakeCtx(model, snapDist: 50.0));
+
+        model.Rigids.Should().ContainSingle(r =>
+            r.Id == 21 &&
+            r.Remark == "UBOLT" &&
+            r.DetailRemark == "BOX" &&
+            r.DependentNodeIds.Count == 0);
     }
 }

@@ -59,10 +59,12 @@ public sealed class RawPipeDto
 
 public sealed class RawEquipDto
 {
-    [JsonPropertyName("name")] public string Name { get; set; } = "";
-    [JsonPropertyName("pos")]  public double[] Pos { get; set; } = [];
-    [JsonPropertyName("cog")]  public double[] Cog { get; set; } = [];
-    [JsonPropertyName("mass")] public double Mass { get; set; }
+    [JsonPropertyName("name")]     public string Name { get; set; } = "";
+    [JsonPropertyName("pos")]      public double[] Pos { get; set; } = [];
+    [JsonPropertyName("cog")]      public double[] Cog { get; set; } = [];
+    [JsonPropertyName("interPos")] public double[]? InterPos { get; set; }
+    [JsonPropertyName("mass")]     public double Mass { get; set; }
+    [JsonPropertyName("wvol")]     public double Wvol { get; set; }
 }
 
 public sealed class RawSkipDto
@@ -128,10 +130,12 @@ public static class RawDesignDataJson
             }).ToList(),
             Equips = data.Equips.Select(e => new RawEquipDto
             {
-                Name = e.Name,
-                Pos  = e.Pos,
-                Cog  = e.Cog,
-                Mass = e.Mass,
+                Name     = e.Name,
+                Pos      = e.Pos,
+                Cog      = e.Cog,
+                InterPos = e.InterPos,
+                Mass     = e.Mass,
+                Wvol     = e.Wvol,
             }).ToList(),
             Skips  = data.Skips.Select(s => new RawSkipDto
             {

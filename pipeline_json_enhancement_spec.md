@@ -160,7 +160,7 @@
 | `ORPHAN_NODE` | warning | 고립 노드 (연결 degree=0) |
 | `SHORT_ELEMENT` | error | 길이 < 1mm 요소 |
 | `GROUP_NOT_CONNECTED` | warning | 분리된 연결 그룹 |
-| `DUPLICATE_NODE` | error | 동일 좌표 노드 중복 |
+| `DUPLICATE_NODE` | warning | 동일 좌표/허용오차 내 중복 노드 |
 | `ZERO_LENGTH_ELEMENT` | error | 길이 = 0 요소 |
 
 ---

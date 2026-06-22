@@ -22,6 +22,8 @@ public sealed class FeModelDto
     public ConnectivityDto? Connectivity { get; set; }
     [JsonPropertyName("healthMetrics")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public HealthMetricsDto? HealthMetrics { get; set; }
+    [JsonPropertyName("elementQuality")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ElementQualityDto? ElementQuality { get; set; }
     [JsonPropertyName("diagnostics")] public List<DiagnosticDto> Diagnostics { get; set; } = [];
     [JsonPropertyName("stageDeltas")] [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StageDeltasDto? StageDeltas { get; set; }
@@ -64,7 +66,7 @@ public sealed class BeamElementDto
     [JsonPropertyName("orientation")]                                               public double[] Orientation { get; set; } = [0, 0, 1];
     [JsonPropertyName("lengthMm")]                                                  public double LengthMm { get; set; }
     [JsonPropertyName("sourceName")]    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SourceName { get; set; }
-    [JsonPropertyName("parentElemId")]  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? ParentElemId { get; set; }
+    [JsonPropertyName("parentElemId")]                                              public int? ParentElemId { get; set; }
 }
 
 public sealed class RigidElementDto
@@ -121,6 +123,7 @@ public sealed class DiagnosticDto
     [JsonPropertyName("message")]  public string Message { get; set; } = "";
     [JsonPropertyName("elemId")]   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? ElemId { get; set; }
     [JsonPropertyName("nodeId")]   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? NodeId { get; set; }
+    [JsonPropertyName("groupId")]  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? GroupId { get; set; }
 }
 
 public sealed class ConnectivityDto
@@ -135,9 +138,11 @@ public sealed class ConnectivityDto
 
 public sealed class ConnectivityGroupDto
 {
-    [JsonPropertyName("id")]           public int Id           { get; set; }
-    [JsonPropertyName("nodeCount")]    public int NodeCount    { get; set; }
-    [JsonPropertyName("elementCount")] public int ElementCount { get; set; }
+    [JsonPropertyName("id")]           public int       Id           { get; set; }
+    [JsonPropertyName("nodeCount")]    public int       NodeCount    { get; set; }
+    [JsonPropertyName("elementCount")] public int       ElementCount { get; set; }
+    [JsonPropertyName("nodeIds")]      public List<int> NodeIds      { get; set; } = [];
+    [JsonPropertyName("elementIds")]   public List<int> ElementIds   { get; set; } = [];
 }
 
 public sealed class LengthDistributionDto
@@ -211,6 +216,13 @@ public sealed class StageDeltasDto
 {
     [JsonPropertyName("fromStage")]       public string FromStage       { get; set; } = "";
     [JsonPropertyName("toStage")]         public string ToStage         { get; set; } = "";
+    [JsonPropertyName("elementsCreated")] public int    ElementsCreated { get; set; }
+    [JsonPropertyName("elementsRemoved")] public int    ElementsRemoved { get; set; }
+    [JsonPropertyName("elementsSplit")]   public int    ElementsSplit   { get; set; }
+    [JsonPropertyName("nodesCreated")]    public int    NodesCreated    { get; set; }
+    [JsonPropertyName("nodesRemoved")]    public int    NodesRemoved    { get; set; }
+    [JsonPropertyName("nodesMerged")]     public int    NodesMerged     { get; set; }
+    [JsonPropertyName("nodesMoved")]      public int    NodesMoved      { get; set; }
     [JsonPropertyName("elemCountBefore")] public int    ElemCountBefore { get; set; }
     [JsonPropertyName("elemCountAfter")]  public int    ElemCountAfter  { get; set; }
     [JsonPropertyName("nodeCountBefore")] public int    NodeCountBefore { get; set; }
@@ -305,6 +317,7 @@ public static class FeModelJson
         var dto = ToDto(model, phase, stageName, stageIndex, processingDurationMs);
         dto.Connectivity     = connectivity;
         dto.HealthMetrics    = healthMetrics;
+        dto.ElementQuality   = healthMetrics?.ElementQuality;
         dto.Diagnostics      = stageDiagnostics is { Count: > 0 } ? [..stageDiagnostics] : [];
         dto.StageDeltas      = stageDeltas;
         dto.ValidationResult = validationResult;
@@ -332,6 +345,7 @@ public static class FeModelJson
         ["pointMasses"]  = "집중질량 배열 (id, nodeId, mass)",
         ["connectivity"]   = "연결성 분석 (groupCount, largestGroupNodeCount, largestGroupElementCount, largestGroupNodeRatio, isolatedNodeCount, groups[])",
         ["healthMetrics"]  = "FEM 건전성 지표 — totals(규모), issues(감소 목표: freeEndNodes/orphanNodes/shortElements/unresolvedUbolts/disconnectedGroups), diagnosticCounts(error/warning/info/byCode)",
+        ["elementQuality"] = "요소 품질 분포 요약 (lengthDistribution, shortElementCount, shortElementThresholdMm, aspectRatioOk)",
         ["diagnostics"]    = "스테이지 진단 메시지 배열 (severity, code, message, elemId?, nodeId?)",
         ["stageDeltas"]    = "이전 스테이지 대비 변화량 (fromStage, toStage, elemCountBefore, elemCountAfter, nodeCountBefore, nodeCountAfter, netElementDelta, netNodeDelta) — 옵션",
         ["stageHistory"]   = "스테이지별 처리 이력 배열 (stageIndex, stage, timestamp, processingDurationMs, elementCount, nodeCount, issueCount) — 마지막 스테이지에만 포함",
@@ -466,7 +480,9 @@ public static class FeModelJson
 
         foreach (var e in dto.Elements)
         {
-            var cat = Enum.Parse<EntityCategory>(e.Category);
+            if (!Enum.TryParse<EntityCategory>(e.Category, out var cat))
+                throw new System.Text.Json.JsonException(
+                    $"알 수 없는 EntityCategory '{e.Category}' (요소 id={e.Id}). 스키마 버전이 호환되지 않을 수 있습니다(기대: 1.2).");
             var orient = e.Orientation.Length >= 3
                 ? new Geometry.Vector3(e.Orientation[0], e.Orientation[1], e.Orientation[2])
                 : Geometry.Vector3.UnitZ;
@@ -479,7 +495,9 @@ public static class FeModelJson
 
         foreach (var s in dto.Properties)
         {
-            var kind = Enum.Parse<BeamSectionKind>(s.Kind);
+            if (!Enum.TryParse<BeamSectionKind>(s.Kind, out var kind))
+                throw new System.Text.Json.JsonException(
+                    $"알 수 없는 BeamSectionKind '{s.Kind}' (단면 id={s.Id}). 스키마 버전이 호환되지 않을 수 있습니다(기대: 1.2).");
             model.Sections.Add(new Model.BeamSection(s.Id, kind, s.Dims, s.MaterialId));
         }
 

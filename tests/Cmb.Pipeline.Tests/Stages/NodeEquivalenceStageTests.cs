@@ -84,6 +84,24 @@ public class NodeEquivalenceStageTests
     }
 
     [Fact]
+    public void AfterMerge_ChangedElementGetsNewIdAndParentElementId()
+    {
+        var model = new FeModel();
+        model.Nodes.Add(N(1, 0));
+        model.Nodes.Add(N(2, 0.5));
+        model.Nodes.Add(N(3, 1000));
+        model.Elements.Add(E(10, 1, 3));
+        model.Elements.Add(E(11, 2, 3));
+
+        new NodeEquivalenceStage().Execute(MakeCtx(model));
+
+        model.Elements.Select(e => e.Id).Should().NotContain(11);
+        var recreated = model.Elements.Single(e => e.ParentElementId == 11);
+        recreated.Id.Should().BeGreaterThan(11);
+        recreated.StartNodeId.Should().Be(1);
+    }
+
+    [Fact]
     public void DegenerateElement_RemovedAfterMerge()
     {
         var model = new FeModel();
@@ -131,7 +149,7 @@ public class NodeEquivalenceStageTests
     }
 
     [Fact]
-    public void RigidElement_DependentEqualsIndependent_AfterMerge_RemovedFromDeps()
+    public void RigidElement_AllDepsMergedIntoIndep_RbeRemoved()
     {
         var model = new FeModel();
         model.Nodes.Add(N(1, 0));
@@ -139,13 +157,30 @@ public class NodeEquivalenceStageTests
         model.Nodes.Add(N(3, 100));
         model.Nodes.Add(N(4, 200));
         model.Elements.Add(E(10, 3, 4));
-        // independent = 1, dependent = 2 → after merge both = 1 → dep removed
+        // independent = 1, dependent = 2 → after merge both = 1 → dep 빈 RBE2 → 제거
         model.Rigids.Add(new RigidElement(20, 1, [2]));
 
         new NodeEquivalenceStage().Execute(MakeCtx(model));
 
-        var rigid = model.Rigids[0];
-        rigid.DependentNodeIds.Should().NotContain(1);
+        model.Rigids.Should().NotContain(r => r.Id == 20);
+    }
+
+    [Fact]
+    public void BoxUboltMarker_WithEmptyDependents_IsPreserved()
+    {
+        var model = new FeModel();
+        model.Nodes.Add(N(1, 0));
+        model.Nodes.Add(N(2, 0.5));
+        model.Elements.Add(E(10, 1, 2));
+        model.Rigids.Add(new RigidElement(20, 2, [], "UBOLT", detailRemark: "BOX"));
+
+        new NodeEquivalenceStage().Execute(MakeCtx(model));
+
+        model.Rigids.Should().ContainSingle(r =>
+            r.Id == 20 &&
+            r.IndependentNodeId == 1 &&
+            r.DependentNodeIds.Count == 0 &&
+            r.DetailRemark == "BOX");
     }
 
     // ── Diagnostics ───────────────────────────────────────────────────────────
@@ -162,6 +197,10 @@ public class NodeEquivalenceStageTests
         new NodeEquivalenceStage().Execute(ctx);
 
         ctx.Diagnostics.Should().ContainSingle(d => d.Code == "NODES_MERGED");
+        ctx.Diagnostics.Should().ContainSingle(d =>
+            d.Code == "DUPLICATE_NODE" &&
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.NodeId == 2);
     }
 
     [Fact]
@@ -176,6 +215,7 @@ public class NodeEquivalenceStageTests
         new NodeEquivalenceStage().Execute(ctx);
 
         ctx.Diagnostics.Should().NotContain(d => d.Code == "NODES_MERGED");
+        ctx.Diagnostics.Should().NotContain(d => d.Code == "DUPLICATE_NODE");
     }
 
     // ── Chain merge (A≈B, B≈C → all same group) ──────────────────────────────

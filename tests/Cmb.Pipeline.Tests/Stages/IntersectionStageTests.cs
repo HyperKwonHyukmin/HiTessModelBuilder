@@ -38,6 +38,19 @@ public class IntersectionStageTests
     }
 
     [Fact]
+    public void CrossIntersection_SplitChildren_DoNotReuseOriginalElementIds()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, -50), N(4, 50, 50)]);
+        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+
+        new IntersectionStage().Execute(MakeCtx(model));
+
+        model.Elements.Select(e => e.Id).Should().NotContain([10, 11]);
+        model.Elements.Select(e => e.ParentElementId).Should().Contain([10, 11]);
+    }
+
+    [Fact]
     public void CrossIntersection_SharedNodeAtCrossPoint()
     {
         var model = new FeModel();

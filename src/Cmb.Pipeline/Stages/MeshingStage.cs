@@ -44,6 +44,9 @@ public sealed class MeshingStage : IPipelineStage
                 var newNode = new Node(model.AllocNodeId(), pos);
                 model.Nodes.Add(newNode);
                 chain.Add(newNode.Id);
+                ctx.AddTrace(TraceAction.NodeCreated, "Meshing",
+                    nodeId: newNode.Id, relatedElementId: eid,
+                    note: $"meshed segment {i}/{steps}");
             }
             chain.Add(nB.Id);
 

@@ -45,5 +45,5 @@ internal static class EquipCsv
     public const int InterPos = 3;
     public const int Mass = 4;
     public const int Wvol = 5;
-    public const int MinColumns = 5;
+    public const int MinColumns = 6;
 }

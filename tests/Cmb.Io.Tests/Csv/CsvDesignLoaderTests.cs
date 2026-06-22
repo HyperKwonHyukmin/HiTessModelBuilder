@@ -47,4 +47,25 @@ public class CsvDesignLoaderTests
         data.Beams.Should().BeEmpty();
         data.Pipes.Count.Should().Be(8);
     }
+
+    [Fact]
+    public void LoadFolder_SupportAbbreviation_MatchesStructureCsv()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cmb-csv-loader-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.Copy(Path.Combine(FixturesDir, "structure.csv"), Path.Combine(dir, "8262-MAA-SUPT.csv"));
+            File.Copy(Path.Combine(FixturesDir, "pipe.csv"), Path.Combine(dir, "8262-MAA-PIPE.csv"));
+
+            var data = new CsvDesignLoader().LoadFolder(dir);
+
+            data.Beams.Count.Should().Be(7);
+            data.Pipes.Count.Should().Be(8);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

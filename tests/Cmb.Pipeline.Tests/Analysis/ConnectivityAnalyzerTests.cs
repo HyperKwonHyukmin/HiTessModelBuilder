@@ -124,8 +124,8 @@ public class ConnectivityAnalyzerTests
         var result = ConnectivityAnalyzer.Analyze(model);
 
         result.Groups.Should().HaveCount(2);
-        result.Groups[0].Id.Should().Be(1);
+        result.Groups[0].Id.Should().Be(0);
         result.Groups[0].ElementCount.Should().BeGreaterThan(result.Groups[1].ElementCount);
-        result.Groups[1].Id.Should().Be(2);
+        result.Groups[1].Id.Should().Be(1);
     }
 }

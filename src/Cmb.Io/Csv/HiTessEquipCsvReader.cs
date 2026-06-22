@@ -42,6 +42,7 @@ public sealed class HiTessEquipCsvReader
 
         var pos = CsvParsing.ExtractDoubles(cols[EquipCsv.Pos]);
         var cog = CsvParsing.ExtractDoubles(cols[EquipCsv.Cog]);
+        var interPos = CsvParsing.ExtractDoublesOrNull(cols[EquipCsv.InterPos]);
 
         if (pos.Length < 3) { reason = "pos 좌표 3개 미확보"; return false; }
         if (cog.Length < 3) { reason = "cog 좌표 3개 미확보"; return false; }
@@ -50,7 +51,9 @@ public sealed class HiTessEquipCsvReader
             Name: cols[EquipCsv.Name].Trim(),
             Pos:  pos,
             Cog:  cog,
-            Mass: CsvParsing.ParseDoubleSafe(cols[EquipCsv.Mass])
+            Mass: CsvParsing.ParseDoubleSafe(cols[EquipCsv.Mass]),
+            InterPos: interPos,
+            Wvol: cols.Length > EquipCsv.Wvol ? CsvParsing.ParseDoubleSafe(cols[EquipCsv.Wvol]) : 0.0
         );
         return true;
     }
