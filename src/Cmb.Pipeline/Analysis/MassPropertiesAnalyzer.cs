@@ -11,7 +11,21 @@ namespace Cmb.Pipeline.Analysis;
 /// </summary>
 public static class MassPropertiesAnalyzer
 {
+    /// <summary>순수 강재 밀도 (tonne/mm³). Studio 의 PIPE_STEEL_RHO 와 동일.</summary>
+    public const double PipeSteelRho = 7.85e-9;
+
+    /// <summary>원본(배관 내부 유체 포함) 밀도 기준 질량/무게중심.</summary>
     public static MassProperties Analyze(FeModel model)
+        => AnalyzeCore(model, pipeRhoOverride: null);
+
+    /// <summary>
+    /// 배관(Pipe) 부재의 재료 밀도를 <paramref name="pipeRho"/>(기본 = 순수 강재)로 대체해
+    /// 재계산한 질량/무게중심. Studio 의 "배관 유체 비움" 초기 상태와 동일한 값.
+    /// </summary>
+    public static MassProperties AnalyzeFluidEmpty(FeModel model, double pipeRho = PipeSteelRho)
+        => AnalyzeCore(model, pipeRhoOverride: pipeRho);
+
+    private static MassProperties AnalyzeCore(FeModel model, double? pipeRhoOverride)
     {
         var nodeById     = model.Nodes.ToDictionary(n => n.Id);
         var sectionById  = model.Sections.ToDictionary(s => s.Id);
@@ -27,9 +41,13 @@ public static class MassPropertiesAnalyzer
             if (!sectionById.TryGetValue(e.PropertyId, out var sec)) continue;
             if (!materialById.TryGetValue(sec.MaterialId, out var mat)) continue;
 
+            double rho = (pipeRhoOverride is double overrideRho && e.Category == EntityCategory.Pipe)
+                ? overrideRho
+                : mat.Rho;
+
             double length = nA.Position.DistanceTo(nB.Position);
             double area   = ComputeArea(sec);
-            double mass   = length * area * mat.Rho;
+            double mass   = length * area * rho;
             if (!(mass > 0)) continue;
 
             double cx = (nA.Position.X + nB.Position.X) * 0.5;

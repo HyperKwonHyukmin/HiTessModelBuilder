@@ -123,6 +123,8 @@ public sealed class ExtendToIntersectStage : IPipelineStage
             {
                 if (eid == elemA.Id) continue;
                 if (!elemById.TryGetValue(eid, out var elemB)) continue;
+                // 구조 부재 끝을 배관 중심선까지 늘려 CBEAM 으로 잇지 않는다(U-bolt 자유도 무력화).
+                if (elemB.Category == EntityCategory.Pipe) continue;
                 if (!nodeById.TryGetValue(elemB.StartNodeId, out var segA)) continue;
                 if (!nodeById.TryGetValue(elemB.EndNodeId,   out var segB)) continue;
 

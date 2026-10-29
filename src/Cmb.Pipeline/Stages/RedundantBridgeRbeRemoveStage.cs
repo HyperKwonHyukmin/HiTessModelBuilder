@@ -28,6 +28,7 @@ public sealed class RedundantBridgeRbeRemoveStage : IPipelineStage
     {
         "FREE_END_RBE",
         "PRESERVED_FREE_END",
+        GroupConnectStage.GroupConnectRemark,
         "FINAL_MESH_PROXIMITY",
     };
 
@@ -38,8 +39,14 @@ public sealed class RedundantBridgeRbeRemoveStage : IPipelineStage
         // CBEAM 만으로 UnionFind 구성 (RBE 는 포함 X — RBE 의 redundancy 판정이 목적)
         var nodeIds = model.Nodes.Select(n => n.Id);
         var uf = new UnionFind(nodeIds);
+        // CBEAM element-degree (RBE 제외). degree<=1 = 진짜 자유단 → 국부 대체 연결 없음.
+        var beamDegree = new Dictionary<int, int>();
         foreach (var e in model.Elements)
+        {
             uf.Union(e.StartNodeId, e.EndNodeId);
+            beamDegree[e.StartNodeId] = beamDegree.GetValueOrDefault(e.StartNodeId) + 1;
+            beamDegree[e.EndNodeId]   = beamDegree.GetValueOrDefault(e.EndNodeId) + 1;
+        }
 
         int rbeRemoved = 0;
         int depRemoved = 0;
@@ -58,7 +65,11 @@ public sealed class RedundantBridgeRbeRemoveStage : IPipelineStage
 
             foreach (int dep in rigid.DependentNodeIds)
             {
-                if (uf.Find(dep) == indepRoot)
+                // 진짜 자유단(CBEAM degree<=1)은 국부 연결이 이 브릿지뿐이다. 자기 부재를 타고
+                // 구조를 멀리 돌아 같은 component 에 닿더라도 국부 하중경로는 없으므로, 전역
+                // component 동일성만으로 제거하면 자유단이 재고립된다(예: N725). → 보존한다.
+                bool genuineFreeEnd = beamDegree.GetValueOrDefault(dep) <= 1;
+                if (!genuineFreeEnd && uf.Find(dep) == indepRoot)
                 {
                     removedHere++;
                     ctx.AddTrace(TraceAction.ElementRemoved, Name,

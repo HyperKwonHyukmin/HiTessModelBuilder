@@ -134,6 +134,60 @@ public class InputAuditOutputTests
         }
     }
 
+    [Fact]
+    public void BuildFull_WithoutRunNastran_FinalBdfEmitsBottomSpcAndGravity()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "cmb-no-spc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var fixtureDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+                "..", "..", "..", "..", "Cmb.Io.Tests", "Fixtures"));
+            File.Copy(Path.Combine(fixtureDir, "structure.csv"), Path.Combine(tempDir, "structure.csv"));
+            File.Copy(Path.Combine(fixtureDir, "pipe.csv"), Path.Combine(tempDir, "pipe.csv"));
+            File.Copy(Path.Combine(fixtureDir, "equip.csv"), Path.Combine(tempDir, "equip.csv"));
+
+            var cliDll = Path.Combine(AppContext.BaseDirectory, "Cmb.Cli.dll");
+            var start = new ProcessStartInfo("dotnet", $"\"{cliDll}\" build-full --input \"{tempDir}\"")
+            {
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = Process.Start(start)!;
+            process.WaitForExit(60_000).Should().BeTrue("build-full should finish on the small CSV fixtures");
+            process.ExitCode.Should().Be(0);
+
+            var outDir = Directory.GetDirectories(tempDir).Single();
+
+            // 최종 산출물 BDF = 두 자리 phase prefix(^\d\d_) 가 아닌 .bdf
+            var finalBdfs = Directory.GetFiles(outDir, "*.bdf")
+                .Where(p => !System.Text.RegularExpressions.Regex.IsMatch(
+                    Path.GetFileName(p), @"^\d{2}_"))
+                .ToList();
+            finalBdfs.Should().HaveCount(1, "build-full 은 최종 <designName>.bdf 하나를 낸다");
+
+            var bdfText = File.ReadAllText(finalBdfs[0]);
+
+            bdfText.Should().Contain("SPC1");
+            bdfText.Should().Contain("GRAV");
+            bdfText.Split(Environment.NewLine)
+                .Select(l => l.Trim())
+                .Should().Contain("SPC = 1");
+            bdfText.Split(Environment.NewLine)
+                .Select(l => l.Trim())
+                .Should().Contain("LOAD = 2");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static bool HasRequiredAuditFields(JsonElement row) =>
         row.TryGetProperty("rawLine", out _) &&
         row.TryGetProperty("rawFields", out _) &&

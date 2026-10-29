@@ -304,4 +304,98 @@ public class FreeEndRbeStageTests
         m.Rigids.Should().Contain(r => r.DependentNodeIds.Contains(3));
         m.Rigids.Should().Contain(r => r.DependentNodeIds.Contains(5));
     }
+
+    // ── 축 방향 후보 우선 ────────────────────────────────────────────────────
+
+    private static readonly BeamSection PostAngle  = new(3, BeamSectionKind.L, [90.0, 90.0, 10.0, 10.0], 1);
+    private static readonly BeamSection SideAngle  = new(4, BeamSectionKind.L, [75.0, 75.0, 6.0, 6.0], 1);
+    private static readonly BeamSection FloorHBeam = new(5, BeamSectionKind.H, [130.0, 20.0, 150.0, 7.0], 1);
+
+    /// <summary>
+    /// 3496-35210-A508372 N291 재현: 수직 앵글 기둥의 하단 자유단(N11) 옆 76mm 에 수평 앵글,
+    /// 아래 75mm(+Y 45mm) 에 H빔(상부 플랜지 윗면 = 자유단 높이)이 있다.
+    /// 거리만 보면 옆 앵글(76)이 H빔(87)보다 가깝지만, 기둥 끝은 축 방향(아래) H빔에 얹혀야 한다.
+    /// </summary>
+    private static FeModel VerticalPostOverHBeamModel()
+    {
+        var m = BaseModel();
+        m.Sections.AddRange([PostAngle, SideAngle, FloorHBeam]);
+        m.Nodes.AddRange([
+            N(10, 0, 0, 138.5), N(11, 0, 0, 0),              // 수직 기둥 (N11 = 하단 자유단)
+            N(20, -76, -1000, 0), N(21, -76, 1000, 0),       // 옆 수평 앵글 (같은 높이, X -76)
+            N(30, -1000, -45, -75), N(31, 1000, -45, -75),   // 아래 H빔 (Z -75, Y -45)
+        ]);
+        m.Elements.AddRange([E(40, 10, 11, propId: 3), E(41, 20, 21, propId: 4), E(42, 30, 31, propId: 5)]);
+        return m;
+    }
+
+    [Fact]
+    public void VerticalPostFreeEnd_PrefersAxialHBeamBelow_OverCloserLateralAngle()
+    {
+        var m = VerticalPostOverHBeamModel();
+
+        new FreeEndRbeStage().Execute(MakeCtx(m));
+
+        var rbe = m.Rigids.Single(r => r.Remark == "FREE_END_RBE" && r.DependentNodeIds.Contains(11));
+        var indep = m.Nodes.First(n => n.Id == rbe.IndependentNodeId).Position;
+        indep.X.Should().BeApproximately(0,   0.1);
+        indep.Y.Should().BeApproximately(-45, 0.1);
+        indep.Z.Should().BeApproximately(-75, 0.1);
+        rbe.DetailRemark.Should().Be(FreeEndRbeStage.AxialDetailRemark);
+    }
+
+    [Fact]
+    public void AxialPreferenceDisabled_KeepsNearestLateral()
+    {
+        // 선호 여유 0 → 순수 최근접(옆 앵글 76mm) 선택. 기존 동작과 같다.
+        var m = VerticalPostOverHBeamModel();
+        var ctx = new StageContext(m, new RunOptions(new Tolerances(FreeEndRbeAxialPreferenceMm: 0.0)),
+            NullLogger.Instance);
+
+        new FreeEndRbeStage().Execute(ctx);
+
+        var rbe = m.Rigids.Single(r => r.Remark == "FREE_END_RBE" && r.DependentNodeIds.Contains(11));
+        var indep = m.Nodes.First(n => n.Id == rbe.IndependentNodeId).Position;
+        indep.X.Should().BeApproximately(-76, 0.1);
+        indep.Z.Should().BeApproximately(0,   0.1);
+    }
+
+    [Fact]
+    public void AxialCandidateMuchFarther_KeepsNearestLateral()
+    {
+        // 옆 앵글이 20mm 로 붙어 있고 H빔은 축 방향 160mm 아래 → 160 > 20 + 100 이라 옆 앵글 유지.
+        var m = BaseModel();
+        m.Sections.AddRange([PostAngle, SideAngle, FloorHBeam]);
+        m.Nodes.AddRange([
+            N(10, 0, 0, 138.5), N(11, 0, 0, 0),
+            N(20, -20, -1000, 0), N(21, -20, 1000, 0),
+            N(30, -1000, 0, -160), N(31, 1000, 0, -160),
+        ]);
+        m.Elements.AddRange([E(40, 10, 11, propId: 3), E(41, 20, 21, propId: 4), E(42, 30, 31, propId: 5)]);
+
+        new FreeEndRbeStage().Execute(MakeCtx(m));
+
+        var rbe = m.Rigids.Single(r => r.Remark == "FREE_END_RBE" && r.DependentNodeIds.Contains(11));
+        m.Nodes.First(n => n.Id == rbe.IndependentNodeId).Position.X.Should().BeApproximately(-20, 0.1);
+    }
+
+    [Fact]
+    public void LateralMemberAlreadyTouching_KeptEvenIfAxialMemberBelow()
+    {
+        // 옆 앵글이 30mm(≤ 75/2) 로 자유단에 이미 닿아 있다 → 아래 H빔(축 방향, 얹힘)이 있어도 옆 앵글 유지.
+        // (09 N319: 옆 L100 6mm vs 아래 H200 103mm 같은 경우)
+        var m = BaseModel();
+        m.Sections.AddRange([PostAngle, SideAngle, FloorHBeam]);
+        m.Nodes.AddRange([
+            N(10, 0, 0, 138.5), N(11, 0, 0, 0),
+            N(20, -30, -1000, 0), N(21, -30, 1000, 0),
+            N(30, -1000, -45, -75), N(31, 1000, -45, -75),
+        ]);
+        m.Elements.AddRange([E(40, 10, 11, propId: 3), E(41, 20, 21, propId: 4), E(42, 30, 31, propId: 5)]);
+
+        new FreeEndRbeStage().Execute(MakeCtx(m));
+
+        var rbe = m.Rigids.Single(r => r.Remark == "FREE_END_RBE" && r.DependentNodeIds.Contains(11));
+        m.Nodes.First(n => n.Id == rbe.IndependentNodeId).Position.X.Should().BeApproximately(-30, 0.1);
+    }
 }

@@ -178,4 +178,39 @@ public class RigidProximityMergeStageTests
         ctx.Diagnostics.Should().Contain(d =>
             d.Severity == DiagnosticSeverity.Info && d.Code == "RIGID_PROXIMITY_MERGED");
     }
+
+    // ── F-3: 서로 다른 소스(다른 배관)의 U-bolt 가 거리 기반으로 병합되면 감사 로그를 남긴다 ──
+
+    [Fact]
+    public void MergingDistinctSourceMembers_EmitsAuditListingBothSources()
+    {
+        var m = new FeModel();
+        m.Nodes.AddRange([N(1, 0, 0), N(2, 0, 100), N(3, 30, 0), N(4, 30, 100)]);
+        m.Rigids.Add(new RigidElement(10, 1, [2], "UBOLT", "PIPE_A"));
+        m.Rigids.Add(new RigidElement(11, 3, [4], "UBOLT", "PIPE_B"));
+
+        var ctx = MakeCtx(m, tolMm: 50.0);
+        new RigidProximityMergeStage().Execute(ctx);
+
+        m.Rigids.Should().ContainSingle();
+        ctx.Diagnostics.Should().Contain(d =>
+            d.Severity == DiagnosticSeverity.Info &&
+            d.Code == "RIGID_PROXIMITY_MERGE_AUDIT" &&
+            d.Message.Contains("PIPE_A") && d.Message.Contains("PIPE_B"));
+    }
+
+    [Fact]
+    public void MergingSameSourceMembers_DoesNotEmitDistinctPairAudit()
+    {
+        var m = new FeModel();
+        m.Nodes.AddRange([N(1, 0, 0), N(2, 0, 100), N(3, 30, 0), N(4, 30, 100)]);
+        m.Rigids.Add(new RigidElement(10, 1, [2], "UBOLT", "PIPE_A"));
+        m.Rigids.Add(new RigidElement(11, 3, [4], "UBOLT", "PIPE_A")); // 동일 소스
+
+        var ctx = MakeCtx(m, tolMm: 50.0);
+        new RigidProximityMergeStage().Execute(ctx);
+
+        m.Rigids.Should().ContainSingle();
+        ctx.Diagnostics.Should().NotContain(d => d.Code == "RIGID_PROXIMITY_MERGE_AUDIT");
+    }
 }

@@ -135,7 +135,7 @@ WorkBench 사용 권장도: **선택적** (Stage 1 결과 BDF 미리보기가 �
 cmb build-full [csv-options] [--stopat <STAGE>] [--verbose-dump] \
                [--run-nastran] [--nastran-path <PATH>] [--leg-z-tol <MM>] \
                [--ubolt-full-fix] \
-               [--mesh-size <MM>] [--mesh-size-structure <MM>] [--mesh-size-pipe <MM>]
+               [--mesh-size <MM>] [--mesh-size-structure <MM>] [--mesh-size-pipe <MM>]                [--hull-no <호선>]
 ```
 
 ### 5.1 옵션 상세
@@ -151,6 +151,7 @@ cmb build-full [csv-options] [--stopat <STAGE>] [--verbose-dump] \
 | `--mesh-size <MM>` | double? | (없음) | Structure/Pipe 양쪽 최종 mesh 최대 길이. `FinalMeshSizeStage`가 모든 segment를 이 값 미만으로 분할. 양수만 허용. |
 | `--mesh-size-structure <MM>` | double? | (없음) | Structure 전용. `--mesh-size`보다 우선. |
 | `--mesh-size-pipe <MM>` | double? | (없음) | Pipe 전용. `--mesh-size`보다 우선. |
+| `--hull-no <호선>` | string? | (없음) | 호선 번호. 최종·phase BDF **첫 줄** `$ HiTessModelBuilder: HullNo=<호선>` 주석과 JSON `meta.hullNo` 로 남는다(해석 영향 없음). 공백 제거·대문자, 영문·숫자·`-`·`_` 20자 이내만 허용 — 형식이 틀리면 경고만 하고 남기지 않는다(exit 코드 불변). `apply-edit-intent` 는 base JSON `meta.hullNo`(없으면 base BDF 주석)를 이어받아 편집 BDF 첫 줄에 다시 쓴다. |
 
 값 우선순위 (`--mesh-size-*`):
 - Structure 최종값 = `--mesh-size-structure` ?? `--mesh-size` ?? null(분할 안 함)
@@ -346,7 +347,7 @@ cmb build-full --input "..." --run-nastran --nastran-path "C:\MSC.Software\MSC_N
 | Structure | `1 ~ PipePidBase - 1` |
 | Pipe | `PipePidBase` 이상 |
 
-`PipePidBase` 기본값은 **1000**. `RunOptions.PipePidBase`로 변경 가능.
+`PipePidBase` 기본값은 **101**이다. 따라서 Structure는 PID `1~100`, Pipe는 PID `101`부터 할당된다. `RunOptions.PipePidBase`로 변경 가능.
 
 Equipment(`EntityCategory.Equipment`)는 PBEAML을 생성하지 않으므로 PID 분류 대상이 아니다 (RBE2 + CONM2만 출력됨).
 
@@ -355,17 +356,28 @@ Equipment(`EntityCategory.Equipment`)는 PBEAML을 생성하지 않으므로 PID
 `BdfWriter`는 PBEAML 블록 앞에 다음 marker 주석을 자동 삽입한다 — Nastran은 `$` 라인을 무시하므로 해석에 영향 없음.
 
 ```
-$ HiTessModelBuilder: PipePidBase=1000
-$ ---- STRUCTURE SECTIONS (PID < 1000) ----
+$ HiTessModelBuilder: PipePidBase=101
+$ ---- STRUCTURE SECTIONS (PID < 101) ----
 PBEAML  1       1               H
 +       0.05    0.01    0.05    0.01    0.0
 PBEAML  2       1               L
 ...
-$ ---- PIPE SECTIONS (PID >= 1000) ----
-PBEAML  1000    2               TUBE
+$ ---- PIPE SECTIONS (PID >= 101) ----
+PBEAML  101     2               TUBE
 +       0.1     0.09    0.0
 ...
 ```
+
+호선 주석(`--hull-no`, 2026-10-20)은 PBEAML 블록이 아니라 **파일 맨 첫 줄**에 쓴다:
+
+```
+$ HiTessModelBuilder: HullNo=3454
+SOL 101
+```
+
+WorkBench 권상(GMU)·LogBook 보내기가 BDF 만 보고 호선을 알아내는 통로다. nastran_bridge 도 이 주석을 읽어
+`meta.hullNo` 에 담고 편집 BDF·Wire 포함 BDF 에 다시 쓴다. 정규화 규칙은 C# `FeModel.NormalizeHullNo` ·
+bridge `normalize_hull_no` · WorkBench `app/services/hull_no.py` 가 같아야 한다.
 
 ### 9.3 뷰어 분류 의사코드
 
@@ -374,7 +386,7 @@ PBEAML  1000    2               TUBE
 2) 정규식으로 marker 검색:
        ^\$\s*HiTessModelBuilder:\s*PipePidBase=(\d+)
    - 매칭됨 → 캡처값을 pipePidBase로 사용
-   - 매칭 안 됨 → pipePidBase = 1000 (기본값 fallback)
+   - 매칭 안 됨 → pipePidBase = 101 (기본값 fallback)
 3) PBEAML 카드를 모두 수집해 PID -> {Kind, Dims, MaterialId} 맵 작성
 4) CBEAM 카드 각각에 대해 PID 조회:
        PID >= pipePidBase  -> Pipe
@@ -390,7 +402,7 @@ PBEAML  1000    2               TUBE
 - **PBEAML `TYPE in {H, L, BOX, CHAN, BAR, ROD}`** → Structure 가능성 높음. (Pipe는 항상 TUBE)
 - **MAT1 이름이 `Steel_Fluid_R<…>x<…>` 패턴** → Pipe (단, 외부 뷰어는 MAT1 카드의 이름을 직접 보지 못할 수 있음 — `cmb` 는 MAT1에 이름을 쓰지 않으므로 이 신호는 JSON에서만 유효)
 
-가장 신뢰도 높은 fallback은 **TUBE + RHO 비교**. 그래도 모호하면 PID 1000 미만 = Structure 라는 단순 임계값으로 회귀하는 것이 충분하다.
+가장 신뢰도 높은 fallback은 **TUBE + RHO 비교**. 그래도 모호하면 PID 101 미만 = Structure 라는 단순 임계값으로 회귀하는 것이 충분하다.
 
 ### 9.5 PBEAML 출력 순서 보장
 

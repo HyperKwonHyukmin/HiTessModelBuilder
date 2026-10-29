@@ -221,6 +221,40 @@ public class FeModelBuilderPipeTests
         model.PointMasses.Should().HaveCount(1);
     }
 
+    // ── H-1: 관 두께 >= 외경/2 → 음수 PBEAML 내부 반경 방지 (형상 드롭) ────────
+
+    [Fact]
+    public void LinePipe_WallThicknessAtLeastHalfOutDia_DropsGeometryInsteadOfNegativeSection()
+    {
+        // thick(30) >= outDia(50)/2 → 내부 반경 -5. 조용한 음수 단면 대신 형상을 드롭한다.
+        var row = MakePipe("TUBI", "TUBI",
+            pos:  [500, 0, 0],
+            aPos: [0,   0, 0],
+            lPos: [1000, 0, 0],
+            outDia: 50, thick: 30);
+        var model = Build(row);
+
+        model.Elements.Should().BeEmpty();
+        model.Sections.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NonLinePipeFlange_WallTooThick_KeepsMassAsPointMassWithoutBadSection()
+    {
+        // FLAN 은 line-pipe 가 아니므로, 형상은 드롭하되 질량은 point mass 로 보존한다.
+        var row = MakePipe("F", "FLAN",
+            pos:  [500, 0, 0],
+            aPos: [0,   0, 0],
+            lPos: [1000, 0, 0],
+            outDia: 50, thick: 30, mass: 5.0);
+        var model = Build(row);
+
+        model.Elements.Should().BeEmpty();
+        model.Sections.Should().BeEmpty();
+        model.PointMasses.Should().HaveCount(1);
+        model.PointMasses[0].Mass.Should().BeApproximately(0.005, 1e-9);
+    }
+
     // ── 헬퍼 ─────────────────────────────────────────────────────────────────
 
     private static FeModel Build(RawPipeRow row) =>

@@ -83,4 +83,20 @@ public static class ConnectivityAnalyzer
             Groups                   = groups,
         };
     }
+
+    /// <summary>
+    /// 연결 그룹 중 SPC 노드를 하나도 포함하지 않는(= 완전 무구속, mechanism) 그룹을 반환합니다.
+    /// 진단 전용 — 최종 BDF/SPC 출력을 변경하지 않습니다. 비어 있지 않으면 해당 그룹들은
+    /// 외부 Nastran 해석 시 특이 강성행렬(FATAL 9050 계열)을 유발할 수 있습니다.
+    /// EnsureSpcPerGroup 의 "group.NodeIds.Any(spcSet.Contains)" 판정과 동일한 기준입니다.
+    /// </summary>
+    public static List<ConnectivityGroupDto> GroupsWithoutSpc(
+        ConnectivityDto connectivity, IReadOnlySet<int> spcNodeIds)
+    {
+        if (connectivity?.Groups is null || connectivity.Groups.Count == 0)
+            return new();
+        return connectivity.Groups
+            .Where(g => !(g.NodeIds ?? []).Any(spcNodeIds.Contains))
+            .ToList();
+    }
 }

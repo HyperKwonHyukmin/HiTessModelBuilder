@@ -85,9 +85,13 @@ public sealed class RigidSharedNodeMergeStage : IPipelineStage
                 continue;
             }
 
-            // Master 선정: GM(dep) 개수 최다 → tiebreak: IndependentNodeId 최소 (RigidProximityMerge 와 동일)
+            // Master 선정: 축 방향 FREE_END_RBE 우선 → GM(dep) 개수 최다 → tiebreak: IndependentNodeId 최소
+            // (뒤 두 규칙은 RigidProximityMerge 와 동일). 축 방향 RBE 의 indep 는 자유단이 얹힌 받침 부재
+            // 노드라, 이를 master 로 두어야 병합 후에도 자유단이 받침 부재에서 뻗어 나간다 — ID 최소 규칙이면
+            // 옆 부재 노드가 master 가 되어 자유단이 다시 옆 부재에 붙은 모양이 된다(3496-35210-A508372 N291).
             int masterIdx = indices
-                .OrderByDescending(idx => model.Rigids[idx].DependentNodeIds.Count)
+                .OrderByDescending(idx => model.Rigids[idx].DetailRemark == FreeEndRbeStage.AxialDetailRemark)
+                .ThenByDescending(idx => model.Rigids[idx].DependentNodeIds.Count)
                 .ThenBy(idx => model.Rigids[idx].IndependentNodeId)
                 .First();
             var master = model.Rigids[masterIdx];

@@ -131,6 +131,7 @@ public sealed class RigidProximityMergeStage : IPipelineStage
             // 병합된 노드 집합 = 모든 RBE의 (Indep + Dep) 합집합 - master.Indep
             var merged = new HashSet<int>();
             var cmChars = new HashSet<char>();
+            var distinctSources = new HashSet<string>(StringComparer.Ordinal);
             bool anyUbolt = false;
             bool anyBoxUbolt = false;
             foreach (int idx in indices)
@@ -139,6 +140,7 @@ public sealed class RigidProximityMergeStage : IPipelineStage
                 merged.Add(r.IndependentNodeId);
                 foreach (int d in r.DependentNodeIds) merged.Add(d);
                 foreach (char c in r.Cm.Where(char.IsDigit)) cmChars.Add(c);
+                if (!string.IsNullOrWhiteSpace(r.SourceName)) distinctSources.Add(r.SourceName!);
                 if (r.Remark == "UBOLT") anyUbolt = true;
                 if (string.Equals(r.DetailRemark, "BOX", StringComparison.OrdinalIgnoreCase))
                     anyBoxUbolt = true;
@@ -177,6 +179,15 @@ public sealed class RigidProximityMergeStage : IPipelineStage
                     elementId: consumedId, relatedElementId: master.Id,
                     note: $"merged into RBE2 {master.Id}");
             }
+
+            // F-3 감사: 거리 기반 병합이 서로 다른 소스(예: 다른 배관의 U-bolt)를 하나로 묶었을 수 있다.
+            // 클러스터가 2개 이상 서로 다른 소스명을 포함하면 StageSummary(진단)에 남겨 검토 가능하게 한다.
+            if (distinctSources.Count >= 2)
+                ctx.AddDiagnostic(DiagnosticSeverity.Info, "RIGID_PROXIMITY_MERGE_AUDIT",
+                    $"근접 병합 클러스터(master RBE2 {master.Id})가 서로 다른 소스 {distinctSources.Count}개를 하나로 묶음: " +
+                    $"[{string.Join(", ", distinctSources.OrderBy(s => s, StringComparer.Ordinal))}] " +
+                    $"(rigids {master.Id},{string.Join(",", consumedIds)} within {tol:F0}mm). " +
+                    "서로 다른 부재의 강체가 거리 기준으로 합쳐졌을 수 있으니 확인 필요.");
 
             clustersMerged++;
             rigidsConsumed += consumedIds.Count;

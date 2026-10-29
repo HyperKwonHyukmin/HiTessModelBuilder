@@ -38,7 +38,9 @@ public sealed class RigidElement
     private static string NormalizeCm(string? cm)
     {
         if (string.IsNullOrWhiteSpace(cm)) return "123456";
-        var chars = cm.Where(char.IsDigit).Distinct().OrderBy(c => c).ToArray();
+        // 유효 DOF(1~6) 만 허용한다. 0/7/8/9 등 범위 밖 성분은 뷰어 IsValidCm 과 마찬가지로 버린다.
+        // (범위 밖만 들어와 남는 성분이 없으면 기존 빈 문자열 처리와 동일하게 "123456" 으로 폴백)
+        var chars = cm.Where(c => c is >= '1' and <= '6').Distinct().OrderBy(c => c).ToArray();
         return chars.Length == 0 ? "123456" : new string(chars);
     }
 }

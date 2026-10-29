@@ -213,4 +213,19 @@ public class CollinearNodeMergeStageTests
         act.Should().NotThrow();
         ctx.Diagnostics.Should().BeEmpty();
     }
+
+    // 쌍마다 50mm 이내라도 사슬로 이어 붙여 덩어리가 50mm 를 넘으면 한 점으로 붕괴시키지 않는다.
+    [Fact]
+    public void ChainOfNearEndpoints_ClusterNotLargerThanDistanceTolerance()
+    {
+        // 한 직선 위 40mm 간격 토막 4개: N2(1000) N3(1040) N4(1080) N5(1120) — 전체 폭 120mm
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0), N(2, 1000), N(3, 1040), N(4, 1080), N(5, 1120), N(6, 2000)]);
+        model.Elements.AddRange([E(1, 1, 2), E(2, 2, 3), E(3, 3, 4), E(4, 4, 5), E(5, 5, 6)]);
+
+        new CollinearNodeMergeStage().Execute(MakeCtx(model));
+
+        // 남은 절점들 사이 간격이 50mm 를 넘는 병합은 없어야 한다 → 적어도 2개의 절점이 1000~1120 사이에 남는다
+        model.Nodes.Count(n => n.Position.X >= 999 && n.Position.X <= 1121).Should().BeGreaterThanOrEqualTo(2);
+    }
 }

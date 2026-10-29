@@ -106,8 +106,31 @@ public sealed class CollinearNodeMergeStage : IPipelineStage
 
         if (pairs.Count == 0) return true;
 
+        // 가까운 쌍부터 묶되, 한 덩어리의 크기(AABB 대각선)가 distTol 을 넘으면 묶지 않는다.
+        // 쌍마다 50mm 이내여도 Union-Find 가 사슬로 이어 붙이면(40mm 간격 가로재 여러 개) 덩어리가
+        // 50mm 를 넘어 한 점으로 붕괴하고 접합 위치가 수십 mm 씩 옮겨진다.
         var uf = new UnionFind(nodeById.Keys);
-        foreach (var (a, b) in pairs) uf.Union(a, b);
+        var boxes = new Dictionary<int, (Point3 Min, Point3 Max)>();
+        (Point3 Min, Point3 Max) BoxOf(int root)
+        {
+            if (boxes.TryGetValue(root, out var b)) return b;
+            var p = nodeById[root].Position;
+            return (p, p);
+        }
+        foreach (var (a, b) in pairs
+                     .OrderBy(pr => nodeById[pr.a].Position.DistanceTo(nodeById[pr.b].Position))
+                     .ThenBy(pr => pr.a).ThenBy(pr => pr.b))
+        {
+            int ra = uf.Find(a), rb = uf.Find(b);
+            if (ra == rb) continue;
+            var (minA, maxA) = BoxOf(ra);
+            var (minB, maxB) = BoxOf(rb);
+            var min = new Point3(Math.Min(minA.X, minB.X), Math.Min(minA.Y, minB.Y), Math.Min(minA.Z, minB.Z));
+            var max = new Point3(Math.Max(maxA.X, maxB.X), Math.Max(maxA.Y, maxB.Y), Math.Max(maxA.Z, maxB.Z));
+            if (min.DistanceTo(max) > distTol) continue;
+            uf.Union(a, b);
+            boxes[uf.Find(a)] = (min, max);
+        }
 
         var clusters = uf.GetGroups().Where(g => g.Count >= 2).ToList();
         var nodeRemap = new Dictionary<int, int>();

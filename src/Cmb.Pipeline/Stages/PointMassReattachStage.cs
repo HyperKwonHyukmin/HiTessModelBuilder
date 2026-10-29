@@ -98,7 +98,7 @@ public sealed class PointMassReattachStage : IPipelineStage
                 unresolved++;
                 ctx.AddDiagnostic(DiagnosticSeverity.Warning, "POINTMASS_REATTACH_UNRESOLVED",
                     $"Orphan PointMass node N{oldNid} at ({pos.X:F0},{pos.Y:F0},{pos.Z:F0}) " +
-                    $"has no pipe candidate within {maxSearch:F0}mm — left in place.",
+                    $"has no pipe candidate within {maxSearch:F0}mm — left unattached; OrphanNodeRemove drops it from the final model (mass excluded).",
                     nodeId: oldNid);
                 continue;
             }

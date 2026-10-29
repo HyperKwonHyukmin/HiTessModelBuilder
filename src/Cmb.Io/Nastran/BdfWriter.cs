@@ -20,8 +20,9 @@ public static class BdfWriter
         IEnumerable<int>? spcNodeIds = null,
         AnalysisCase? analysis = null,
         bool forceFullDofUbolt = false,
-        int pipePidBase = 1000)
+        int pipePidBase = 101)
     {
+        WriteHullComment(model, w);
         WriteHeader(w, analysis);
         WriteNodes(model, w);
         WriteElements(model, w);
@@ -34,6 +35,16 @@ public static class BdfWriter
         w.WriteLine("ENDDATA");
     }
 
+    // ── 호선 주석 ────────────────────────────────────────────────────────────
+    // 파일 맨 첫 줄. 해석에는 영향 없고, 권상·LogBook 단계가 BDF 만 보고 호선을 알아내는 통로다.
+    // 형식은 PipePidBase 주석과 같은 "$ HiTessModelBuilder: Key=Value" — nastran_bridge 가 같은 정규식 계열로 읽는다.
+    private static void WriteHullComment(FeModel model, TextWriter w)
+    {
+        var hullNo = FeModel.NormalizeHullNo(model.HullNo);
+        if (hullNo is not null)
+            w.WriteLine($"$ HiTessModelBuilder: HullNo={hullNo}");
+    }
+
     // ── Header (Executive + Case Control) ────────────────────────────────────
 
     private static void WriteHeader(TextWriter w, AnalysisCase? analysis)
@@ -44,20 +55,25 @@ public static class BdfWriter
         w.WriteLine("FORCE = ALL");
         w.WriteLine("STRESS = ALL");
         w.WriteLine("SPCFORCES = ALL");
+        // RBE2(U-bolt·연결 RBE) 구속력 — 배관 지지 반력을 회수하려면 필요하다.
+        w.WriteLine("MPCFORCES = ALL");
         w.WriteLine("SUBCASE 1");
         w.WriteLine("  LABEL = STATIC");
         if (analysis is not null)
         {
+            // 해석(--run-nastran) 경로에서만 SPC/LOAD Case Control 을 출력한다.
+            // analysis 가 null 인 일반(최종 모델) 출력에는 SPC 경계조건·하중 카드가 없으므로
+            // "SPC = N" / "LOAD = N" 라인을 쓰지 않는다(존재하지 않는 set 을 참조하지 않도록).
             w.WriteLine($"  SPC = {analysis.SpcSid}");
             w.WriteLine($"  LOAD = {analysis.LoadSid}");
-            w.WriteLine("  ANALYSIS = STATICS");
         }
-        else
-        {
-            w.WriteLine("  SPC = 1");
-        }
+        // ANALYSIS = STATICS 는 SOL 종류(정적해석) 명시이므로 일반(형상 전용) 출력에도 항상 포함한다.
+        // SPC=/LOAD= 와 달리 존재하지 않는 set 을 참조하지 않아 dangling 위험이 없다.
+        w.WriteLine("  ANALYSIS = STATICS");
         w.WriteLine("BEGIN BULK");
         w.WriteLine("PARAM,POST,-1");
+        // 격자점 무게 요약(GPWG) — 모델 총 질량·무게중심을 F06 에서 입력 중량과 대조하는 용도.
+        w.WriteLine("PARAM,GRDPNT,0");
         if (analysis is not null)
             w.WriteLine("PARAM,AUTOMPC,YES");
     }
@@ -90,7 +106,8 @@ public static class BdfWriter
                 nodeById.TryGetValue(e.EndNodeId, out var nB) &&
                 nA.Position.DistanceTo(nB.Position) > 1e-9)
             {
-                orientation = BeamOrientation.CalculateBarOrientation(nA.Position, nB.Position);
+                // 요소 방향(CSV ori 유래)을 쓰되, 축과 평행하면 기본 규칙으로 — 평행 v 는 Nastran FATAL.
+                orientation = BeamOrientation.Resolve(nA.Position, nB.Position, e.Orientation);
             }
 
             w.WriteLine(
@@ -135,7 +152,8 @@ public static class BdfWriter
 
     private static void WritePbeaml(BeamSection s, TextWriter w)
     {
-        string typeName = SectionTypeName(s.Kind);
+        var (typeName, dims) = ResolvePbeamlOutput(s);
+
         // Header line
         w.WriteLine(
             BdfField.L("PBEAML") +
@@ -147,10 +165,30 @@ public static class BdfWriter
         // Dims line (blank leading field = continuation)
         var sb = new System.Text.StringBuilder();
         sb.Append(BdfField.L(""));
-        foreach (var d in s.Dims)
-            sb.Append(BdfField.R(d));
+        foreach (var d in dims)
+            sb.Append(BdfField.RPrecise(d));
         sb.Append(BdfField.R("0.0")); // NSM
         w.WriteLine(sb.ToString());
+    }
+
+    // PBEAML 헤더의 TYPE 이름과 dims 라인을 결정한다.
+    // ── BEAM(H) 단면을 표준 I 단면(MSCBML0 "I")으로 출력 ──
+    //   내부 저장형(H): [H−2TF, 2TF, BF, TW]  (FeModelBuilder.NormalizeDims)
+    //   I 출력형(6 dims): DIM1=H, DIM2=BF(하부 플랜지 폭), DIM3=BF(상부 플랜지 폭),
+    //                     DIM4=TW(웹 두께), DIM5=TF(하부 플랜지 두께), DIM6=TF(상부 플랜지 두께)
+    //   복원식: H = d0 + d1,  BF = d2,  TW = d3,  TF = d1 / 2
+    //   예) BEAM_200x200x8x12 → 저장형 [176, 24, 200, 8] → I [200, 200, 200, 8, 12, 12]
+    private static (string typeName, IReadOnlyList<double> dims) ResolvePbeamlOutput(BeamSection s)
+    {
+        if (s.Kind == BeamSectionKind.H && s.Dims.Length >= 4)
+        {
+            double h  = s.Dims[0] + s.Dims[1]; // (H−2TF) + 2TF = H
+            double bf = s.Dims[2];             // flange width
+            double tw = s.Dims[3];             // web thickness
+            double tf = s.Dims[1] / 2.0;       // single-flange thickness
+            return ("I", new[] { h, bf, bf, tw, tf, tf });
+        }
+        return (SectionTypeName(s.Kind), s.Dims);
     }
 
     // ── MAT1 ─────────────────────────────────────────────────────────────────
@@ -263,7 +301,7 @@ public static class BdfWriter
 
     private static string SectionTypeName(BeamSectionKind kind) => kind switch
     {
-        BeamSectionKind.H       => "H",
+        BeamSectionKind.H       => "I", // BEAM(H) 단면은 표준 I 단면으로 출력 (ResolvePbeamlOutput가 dims도 I 6-dim으로 변환)
         BeamSectionKind.L       => "L",
         BeamSectionKind.Rod     => "ROD",
         BeamSectionKind.Tube    => "TUBE",

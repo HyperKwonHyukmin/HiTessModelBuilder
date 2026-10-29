@@ -57,6 +57,10 @@ public sealed class IntersectionStage : IPipelineStage
                 int lo = Math.Min(eid, otherId), hi = Math.Max(eid, otherId);
                 if (!visited.Add((lo, hi))) continue;
 
+                // 배관↔구조는 교차해도 절점을 공유시키지 않는다 — 관통 배관(슬리브, 비용접)을 강결합하면
+                // U-bolt 의 자유도 설계가 무력화된다. 배관↔구조 연결은 U-bolt/RBE 경로로만 만든다.
+                if ((elem.Category == EntityCategory.Pipe) != (other.Category == EntityCategory.Pipe)) continue;
+
                 if (!nodeById.TryGetValue(other.StartNodeId, out var nC)) continue;
                 if (!nodeById.TryGetValue(other.EndNodeId,   out var nD)) continue;
 

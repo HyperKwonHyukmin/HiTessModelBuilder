@@ -74,6 +74,64 @@ public class LoopCloseProximityStageTests
         model.Elements.Should().Contain(e => e.Id == 201);
     }
 
+    // FreeEndRbe 가 축 방향 우선으로 붙인 자유단(DetailRemark AXIAL)은 loop-close 로 다시 묶지 않는다.
+    // (3496-35210-A508372 N291: 아래 H빔에 붙인 기둥 하단이 옆 앵글과 다시 묶여 의도가 무너지던 문제)
+    private static FeModel StackedWithFreeEndRbe(string? detailRemark)
+    {
+        var model = BaseModel();
+        model.Nodes.AddRange([
+            N(1, -200, 0, 12), N(2, 0, 0, 12), N(3, 200, 0, 12),
+            N(10, 0, -200, 0), N(11, 0, 0, 0), N(12, 0, 200, 0),
+            N(20, 0, 0, -300),
+        ]);
+        model.Elements.AddRange([
+            E(100, 1, 2), E(101, 2, 3),
+            E(200, 10, 11), E(201, 11, 12),
+        ]);
+        AddFarDetour(model, 1, 10);
+        model.Rigids.Add(new RigidElement(500, 20, [11], "FREE_END_RBE", detailRemark: detailRemark));
+        return model;
+    }
+
+    [Fact]
+    public void AxialFreeEndRbeDependent_NotReLinked()
+    {
+        var model = StackedWithFreeEndRbe(FreeEndRbeStage.AxialDetailRemark);
+
+        new LoopCloseProximityStage().Execute(Ctx(model));
+
+        model.Rigids.Should().NotContain(r => r.Remark == LoopCloseProximityStage.LoopCloseRemark);
+    }
+
+    [Fact]
+    public void GroupConnectRbeNode_NotReLinked()
+    {
+        var model = BaseModel();
+        model.Nodes.AddRange([
+            N(1, -200, 0, 12), N(2, 0, 0, 12), N(3, 200, 0, 12),
+            N(10, 0, -200, 0), N(11, 0, 0, 0), N(12, 0, 200, 0),
+            N(20, 0, 0, -300),
+        ]);
+        model.Elements.AddRange([E(100, 1, 2), E(101, 2, 3), E(200, 10, 11), E(201, 11, 12)]);
+        AddFarDetour(model, 1, 10);
+        model.Rigids.Add(new RigidElement(500, 20, [11], GroupConnectStage.GroupConnectRemark));
+
+        new LoopCloseProximityStage().Execute(Ctx(model));
+
+        model.Rigids.Should().NotContain(r => r.Remark == LoopCloseProximityStage.LoopCloseRemark);
+    }
+
+    [Fact]
+    public void PlainFreeEndRbeDependent_StillLinked()
+    {
+        // 일반 FREE_END_RBE 는 기존대로 loop-close 대상이다.
+        var model = StackedWithFreeEndRbe(null);
+
+        new LoopCloseProximityStage().Execute(Ctx(model));
+
+        model.Rigids.Should().Contain(r => r.Remark == LoopCloseProximityStage.LoopCloseRemark);
+    }
+
     // N2 아래에 N11(12mm)·N12(51mm) 두 후보가 있어도, 상호 최근접인 N2↔N11 1개만 연결.
     // N12 는 자기 최근접이 N2(51mm)지만 N2 의 최근접은 N11 이라 비상호 → 연결 안 됨.
     // (E2996 의 먼 버전·E3005 중복·E2981 묶음이 제거되는 핵심 케이스)

@@ -17,4 +17,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- 입력 감사 분류기(ClassifyIgnoredPipe 등) 단위 테스트용 internal 노출 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Cmb.Integration.Tests" />
+  </ItemGroup>
+
 </Project>

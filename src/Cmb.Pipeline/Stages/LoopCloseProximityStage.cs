@@ -22,6 +22,12 @@ namespace Cmb.Pipeline.Stages;
 /// 이렇게 하면 한 부재쌍은 가장 가까운 노드쌍 1곳에서만 연결되어, 같은 쌍의 양방향 중복이나
 /// 여러 dependent 묶음, 먼 투영점 연결이 생기지 않는다. Remark = "LOOP_CLOSE_PROXIMITY".
 /// 기존 노드끼리 잇기 때문에 별도 투영 노드/타겟 분할이 필요 없다.
+///
+/// FreeEndRbe 가 축 방향 우선으로 받침 부재에 붙인 자유단(FREE_END_RBE + DetailRemark "AXIAL" 의
+/// dependent)은 source/target 모두에서 뺀다. 그 자유단은 옆 부재와 위상상 멀어져 여기서 다시 묶이고,
+/// 이어지는 RBE 병합으로 옆 부재·받침 부재·자유단이 한 RBE 로 뭉쳐 연결 의도가 무너진다
+/// (3496-35210-A508372 N291 ↔ 옆 앵글 N166). 일반 FREE_END_RBE 까지 빼면 10개 실측 세트에서
+/// 기존 loop-close 수십 건이 사라져 범위를 축 방향 표식으로 좁혔다.
 /// </summary>
 public sealed class LoopCloseProximityStage : IPipelineStage
 {
@@ -64,6 +70,17 @@ public sealed class LoopCloseProximityStage : IPipelineStage
         }
         if (structureNodeIds.Count == 0) return true;
 
+        // 이미 받침 부재에 연결된 자유단 — loop-close 후보에서 제외.
+        // FreeEndRbe 가 축 방향 받침에 붙인 자유단(AXIAL), GroupConnect 가 RBE2 로 master 에 붙인 그룹 끝.
+        // (3496-35210-A508372 N291: 아래 H빔에 붙인 기둥 하단이 옆 앵글과 다시 묶여 의도가 무너지던 문제)
+        var freeEndResolved = model.Rigids
+            .Where(r => r.DetailRemark == FreeEndRbeStage.AxialDetailRemark)
+            .SelectMany(r => r.DependentNodeIds)
+            .Concat(model.Rigids
+                .Where(r => r.Remark == GroupConnectStage.GroupConnectRemark)
+                .SelectMany(r => r.DependentNodeIds.Append(r.IndependentNodeId)))
+            .ToHashSet();
+
         // 구조 노드별 대표 방향 / 최대 단면 Dim 선계산(없으면 후보에서 제외)
         var geom = new Dictionary<int, (Vector3 Dir, double Dim)>();
         foreach (int nid in structureNodeIds)
@@ -79,6 +96,7 @@ public sealed class LoopCloseProximityStage : IPipelineStage
         foreach (int s in structureNodeIds.OrderBy(id => id))
         {
             if (!geom.TryGetValue(s, out var sg)) continue;
+            if (freeEndResolved.Contains(s)) continue;
             var sPos = nodeById[s].Position;
             int sRoot = uf.Find(s);
 
@@ -88,6 +106,7 @@ public sealed class LoopCloseProximityStage : IPipelineStage
             {
                 if (t == s) continue;
                 if (!geom.TryGetValue(t, out var tg)) continue;        // 구조 노드만
+                if (freeEndResolved.Contains(t)) continue;             // 축 방향 자유단 RBE 로 해결된 노드
                 if (uf.Find(t) != sRoot) continue;                     // 같은 그룹만
                 if (IsWithinHops(adjacency, s, t, t, minHops)) continue; // 위상상 가까우면(같은 부재 등) 제외
 

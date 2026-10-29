@@ -11,7 +11,9 @@ internal static class BdfField
     public static string R(string s)  => Pad(s, true);
     public static string R(int n)     => Pad(n.ToString(CultureInfo.InvariantCulture), true);
     public static string R(double d)  => Pad(FormatDouble(d), true);
-    public static string RMass(double d) => Pad(FormatMass(d), true);
+    public static string RMass(double d) => Pad(FormatPrecise(d), true);
+    // 단면 치수 등 정밀도가 중요한 실수 — 8자 안에서 유효숫자를 최대로 쓴다
+    public static string RPrecise(double d) => Pad(FormatPrecise(d), true);
     public static string ROrientation(double d) => Pad(FormatOrientation(d), true);
 
     // Nastran short-field scientific notation for very small values (e.g. material density)
@@ -51,16 +53,30 @@ internal static class BdfField
         return s.Length <= 8 ? s : FormatScientific(d);
     }
 
-    private static string FormatMass(double d)
+    // 8자 필드 안에서 유효숫자를 최대로 쓴다.
+    // 과거 질량 "0.###"(t) 은 kg 단위 반올림이라 1~10 kg 질량이 최대 ±33% 틀렸고(0.0015 → 0.002),
+    // 단면 치수 "0.0" 은 얇은 배관 두께를 0.1 mm 로 반올림해 단면적이 수 % 어긋났다(R_in 33.45 → 33.5).
+    private static string FormatPrecise(double d)
     {
         if (Math.Abs(d) < 1e-12) return "0.0";
-        if (Math.Abs(d) < 0.001 || Math.Abs(d) >= 10_000_000.0)
-            return FormatScientific(d);
-
-        string s = d.ToString("0.###", CultureInfo.InvariantCulture);
-        if (!s.Contains('.') && !s.Contains('E') && !s.Contains('e'))
-            s += ".0";
-        return s.Length <= 8 ? s : FormatScientific(d);
+        if (Math.Abs(d) >= 0.001 && Math.Abs(d) < 10_000_000.0)
+        {
+            for (int decimals = 6; decimals >= 1; decimals--)
+            {
+                string s = d.ToString("0." + new string('#', decimals), CultureInfo.InvariantCulture);
+                if (!s.Contains('.')) s += ".0";
+                if (s.Length <= 8) return s;
+            }
+        }
+        for (int digits = 4; digits >= 1; digits--)
+        {
+            string sci = d.ToString("0." + new string('#', digits) + "E+00", CultureInfo.InvariantCulture);
+            string[] parts = sci.Split('E');
+            string mant = parts[0].Contains('.') ? parts[0] : parts[0] + ".";
+            string s = $"{mant}{int.Parse(parts[1], CultureInfo.InvariantCulture)}";
+            if (s.Length <= 8) return s;
+        }
+        return FormatScientific(d);
     }
 
     // Nastran convention: "7.85E-09" → "7.85-9" (no 'E', no leading zero in exponent)

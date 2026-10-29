@@ -124,4 +124,33 @@ public class HiTessStructureCsvReaderTests
             File.Delete(tmpFile);
         }
     }
+
+    // ── C-2: 내부 공백 행이 있어도 skip 의 LineNumber 가 물리적 데이터 행 번호와 일치해야 한다 ──
+    // (InputAudit 의 dataRowNumber 는 공백 행을 세므로, 리더도 공백을 세어야 skip 매칭이 유지된다)
+    [Fact]
+    public void Read_InteriorBlankLine_SkipLineNumberCountsBlankAsDataRow()
+    {
+        // header / 데이터행1(정상) / 데이터행2(공백) / 데이터행3(불량 → skip)
+        var csv = string.Join("\n",
+            "name,type,pos,poss,pose,size,stru,ori",
+            "GOOD,GENSEC,X 0mm Y 0mm Z 0mm,X 0mm Y 0mm Z 0mm,X 0mm Y 0mm Z 100mm,FBAR_65x16,PARENT,1.0 0.0 0.0",
+            "",
+            "BAD,X Y Z");
+        var tmpFile = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpFile, csv);
+            var reader = new HiTessStructureCsvReader();
+            var (rows, skips) = reader.Read(tmpFile);
+
+            rows.Should().HaveCount(1);
+            skips.Should().HaveCount(1);
+            // 불량 행은 물리적으로 3번째 데이터 행 → 공백 행을 세어 LineNumber == 3 이어야 한다.
+            skips[0].LineNumber.Should().Be(3);
+        }
+        finally
+        {
+            File.Delete(tmpFile);
+        }
+    }
 }

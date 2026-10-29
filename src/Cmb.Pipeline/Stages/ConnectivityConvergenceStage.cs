@@ -12,7 +12,7 @@ public sealed class ConnectivityConvergenceStage : IPipelineStage
 
     public bool Execute(StageContext ctx)
     {
-        int maxIter = Math.Max(1, ctx.Options.Tolerances.ExtendMaxIterations);
+        int maxIter = Math.Max(1, ctx.Options.Tolerances.GroupConnectMaxIterations);
 
         RunExtendAndCleanupIfMoved(ctx);
 

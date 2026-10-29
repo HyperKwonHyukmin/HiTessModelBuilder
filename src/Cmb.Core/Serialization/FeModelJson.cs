@@ -44,6 +44,10 @@ public sealed class MetaDto
     [JsonPropertyName("processingDurationMs")] public long   ProcessingDurationMs { get; set; }
     [JsonPropertyName("unit")]                 public string Unit                 { get; set; } = "mm";
     [JsonPropertyName("schemaVersion")]        public string SchemaVersion        { get; set; } = "1.2";
+    // 호선 번호 — 없으면 키 자체를 쓰지 않는다(옛 JSON 과 모양 동일).
+    [JsonPropertyName("hullNo")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HullNo { get; set; }
 }
 
 public sealed class NodeDto
@@ -381,6 +385,7 @@ public static class FeModelJson
                 ProcessingDurationMs = processingDurationMs,
                 Unit                 = model.LengthUnit,
                 SchemaVersion        = "1.2",
+                HullNo               = model.HullNo,
             },
             Nodes = model.Nodes.Select(n =>
             {
@@ -470,7 +475,7 @@ public static class FeModelJson
 
     private static FeModel FromDto(FeModelDto dto)
     {
-        var model = new FeModel();
+        var model = new FeModel { HullNo = FeModel.NormalizeHullNo(dto.Meta?.HullNo) };
 
         foreach (var n in dto.Nodes)
         {

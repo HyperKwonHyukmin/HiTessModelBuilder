@@ -98,6 +98,37 @@ public class FeModelBuilderTraceTests
         model.TraceLog.Should().BeEmpty();
     }
 
+    // ── F-8(3): 부착점을 못 찾아 장비 질량이 조용히 누락되면 skip 트레이스로 가시화한다 ──
+
+    [Fact]
+    public void Build_EquipmentWithNoValidMountNode_RecordsSkipTraceForMassLoss()
+    {
+        // 부착 대상 노드가 하나도 없으므로(요소 없음) CoG 10mm 내 유효 노드를 못 찾아 질량이 누락된다.
+        var equips = new[] { new RawEquipRow("EQ_LOST", [0, 0, 0], [999999, 0, 0], 5.0) };
+        var model = new FeModelBuilder().Build(new RawDesignData([], [], equips, []));
+
+        model.PointMasses.Should().BeEmpty();
+        var skipped = model.TraceLog.Where(t => t.Action == TraceAction.ElementSkipped).ToList();
+        skipped.Should().ContainSingle();
+        skipped[0].Note.Should().Contain("EQ_LOST");
+    }
+
+    [Fact]
+    public void Build_EquipmentInterPosNoValidMount_RecordsSkipTrace()
+    {
+        // InterPos 경로에서도 유효 dependent 노드를 못 찾으면 RBE2/질량이 통째로 누락 → skip 트레이스.
+        var equips = new[]
+        {
+            new RawEquipRow("EQ_RBE_LOST", [0, 0, 0], [0, 0, 0], 5.0, InterPos: [999999, 0, 0]),
+        };
+        var model = new FeModelBuilder().Build(new RawDesignData([], [], equips, []));
+
+        model.PointMasses.Should().BeEmpty();
+        model.Rigids.Should().BeEmpty();
+        model.TraceLog.Where(t => t.Action == TraceAction.ElementSkipped)
+            .Should().ContainSingle(t => t.Note != null && t.Note.Contains("EQ_RBE_LOST"));
+    }
+
     [Fact]
     public void Build_NodesAreTraced_NodeCreatedEvents()
     {

@@ -18,12 +18,17 @@ public class GroupConnectStageTests
     private static readonly BeamSection LargeSection = new(2, BeamSectionKind.H, [200, 20, 200, 10], 1);
 
     private static StageContext MakeCtx(FeModel model,
-        double localTolMm = 40.0, double extraMarginMm = 50.0, double nodeMergeMm = 1.0)
+        double localTolMm = 40.0, double extraMarginMm = 50.0, double nodeMergeMm = 1.0,
+        double translateMaxMm = 10.0)
         => new(model, new RunOptions(new Tolerances(
                 GroupConnectLocalTolMm:    localTolMm,
                 GroupConnectExtraMarginMm: extraMarginMm,
-                NodeMergeMm:               nodeMergeMm)),
+                NodeMergeMm:               nodeMergeMm,
+                GroupConnectTranslateMaxMm: translateMaxMm)),
             NullLogger.Instance);
+
+    // 병진 이동 경로(간격 ≤ GroupConnectTranslateMaxMm)를 검증하는 테스트용 — 한계를 크게 둬서 이동을 강제한다.
+    private const double Legacy = 1000.0;
 
     private static Node N(int id, double x, double y, double z = 0)
         => new(id, new Point3(x, y, z));
@@ -86,7 +91,7 @@ public class GroupConnectStageTests
         model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
                                   E(11, 3, 4), E(12, 4, 5)]);
 
-        new GroupConnectStage().Execute(MakeCtx(model));
+        new GroupConnectStage().Execute(MakeCtx(model, translateMaxMm: Legacy));
 
         // E11 should be recreated with a new ID, use N2 (merged), N3 removed
         model.Elements.Select(e => e.Id).Should().NotContain(11);
@@ -108,7 +113,7 @@ public class GroupConnectStageTests
             N(5, 190, 0), N(6, 250, 0), N(7, 310, 0)]);
         model.Elements.AddRange([E(10, 1, 2), E(11, 2, 3), E(12, 3, 4), E(13, 5, 6), E(14, 6, 7)]);
 
-        new GroupConnectStage().Execute(MakeCtx(model));
+        new GroupConnectStage().Execute(MakeCtx(model, translateMaxMm: Legacy));
 
         // All slave nodes translated by (-40,0): N5→(150,0)→merged with N4, N6→(210,0), N7→(270,0)
         model.Nodes.First(n => n.Id == 6).Position.X.Should().BeApproximately(210, 0.01);
@@ -128,7 +133,7 @@ public class GroupConnectStageTests
         model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
                                   E(11, 3, 4), E(12, 4, 5)]);
 
-        new GroupConnectStage().Execute(MakeCtx(model));
+        new GroupConnectStage().Execute(MakeCtx(model, translateMaxMm: Legacy));
 
         // N3 translated to (50,0), N4 to (50,50)
         var n3 = model.Nodes.First(n => n.Id == 3);
@@ -168,7 +173,7 @@ public class GroupConnectStageTests
         ]);
         model.Rigids.Add(new RigidElement(30, 8, [3], "PREEXISTING"));
 
-        var ctx = MakeCtx(model);
+        var ctx = MakeCtx(model, translateMaxMm: Legacy);
         new GroupConnectStage().Execute(ctx);
 
         ctx.Diagnostics.Should().Contain(d => d.Code == "GROUPS_CONNECTED");
@@ -240,7 +245,7 @@ public class GroupConnectStageTests
                                   E(12, 4, 5), E(14, 5, 50),
                                   E(13, 6, 7), E(15, 7, 70)]);
 
-        new GroupConnectStage().Execute(MakeCtx(model));
+        new GroupConnectStage().Execute(MakeCtx(model, translateMaxMm: Legacy));
 
         // Both slave groups translated — verify via the non-free-end nodes (N5, N7) moved
         // N4 and N6 are free-ends that project to master; they may be merged/removed
@@ -398,5 +403,115 @@ public class GroupConnectStageTests
 
         model.Elements.Should().Contain(e => e.Id == 11);
         ctx.Diagnostics.Should().NotContain(d => d.Code == "NOISE_REMOVED");
+    }
+
+    // ── 간격 > GroupConnectTranslateMaxMm: 그룹을 옮기지 않고 RBE2 로 잇는다 ─────────
+
+    [Fact]
+    public void GapAboveTranslateLimit_ConnectedByRigid_GroupNotMoved()
+    {
+        // Master N1..N2(100,0), slave N3(140,0)-N4-N5 → 40mm 간격, 목표점 = master 끝 N2
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 140, 0), N(4, 200, 0), N(5, 260, 0)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
+
+        var ctx = MakeCtx(model);
+        new GroupConnectStage().Execute(ctx);
+
+        var rbe = model.Rigids.Should().ContainSingle(r => r.Remark == GroupConnectStage.GroupConnectRemark).Subject;
+        rbe.IndependentNodeId.Should().Be(2);
+        rbe.DependentNodeIds.Should().Equal(3);
+        model.Nodes.First(n => n.Id == 3).Position.X.Should().BeApproximately(140, 0.01);
+        model.Nodes.First(n => n.Id == 4).Position.X.Should().BeApproximately(200, 0.01);
+        ctx.Diagnostics.Should().Contain(d => d.Code == "GROUPS_CONNECTED");
+    }
+
+    [Fact]
+    public void GapAboveTranslateLimit_InteriorTarget_CreatesAnchorNodeOnMaster()
+    {
+        // slave 자유단 N3(50,30) 이 master 중간(50,0) 을 향한다 → (50,0) 에 새 절점 + RBE2, slave 는 제자리
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 50, 30), N(4, 50, 80), N(5, 50, 130)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
+
+        new GroupConnectStage().Execute(MakeCtx(model));
+
+        var rbe = model.Rigids.Should().ContainSingle(r => r.Remark == GroupConnectStage.GroupConnectRemark).Subject;
+        rbe.DependentNodeIds.Should().Equal(3);
+        var anchor = model.Nodes.First(n => n.Id == rbe.IndependentNodeId).Position;
+        anchor.X.Should().BeApproximately(50, 0.01);
+        anchor.Y.Should().BeApproximately(0, 0.01);
+        model.Nodes.First(n => n.Id == 3).Position.Y.Should().BeApproximately(30, 0.01);
+    }
+
+    [Fact]
+    public void GapWithinTranslateLimit_StillTranslated()
+    {
+        // 5mm 간격(CAD 오차) → 기존처럼 병진 이동해 master 절점과 합친다
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 105, 0), N(4, 165, 0), N(5, 225, 0)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
+
+        new GroupConnectStage().Execute(MakeCtx(model));
+
+        model.Rigids.Should().NotContain(r => r.Remark == GroupConnectStage.GroupConnectRemark);
+        model.Nodes.First(n => n.Id == 4).Position.X.Should().BeApproximately(160, 0.01);
+    }
+
+    [Fact]
+    public void FreeEndAlreadyRbeDependent_FlipsRoles_NoSharedDependent()
+    {
+        // slave 자유단 N3 가 이미 다른 RBE2 의 종속 → 새 RBE2 는 N3 를 독립으로 두어 종속 중복(FATAL 2101)을 피한다
+        var model = ModelWithThinSection();
+        model.Nodes.AddRange([N(1, 0, 0), N(6, 33, 0), N(7, 66, 0), N(2, 100, 0),
+                              N(3, 140, 0), N(4, 200, 0), N(5, 260, 0), N(8, 140, 20)]);
+        model.Elements.AddRange([E(10, 1, 6), E(20, 6, 7), E(21, 7, 2),
+                                  E(11, 3, 4), E(12, 4, 5)]);
+        model.Rigids.Add(new RigidElement(30, 8, [3], "PREEXISTING"));
+
+        new GroupConnectStage().Execute(MakeCtx(model));
+
+        var rbe = model.Rigids.Should().ContainSingle(r => r.Remark == GroupConnectStage.GroupConnectRemark).Subject;
+        rbe.IndependentNodeId.Should().Be(3);
+        rbe.DependentNodeIds.Should().Equal(2);
+        model.Rigids.SelectMany(r => r.DependentNodeIds).Should().OnlyHaveUniqueItems();
+    }
+
+    // 기둥 하단 자유단: 옆 앵글(76mm)보다 아래 H빔(87.5mm)이 기둥이 향하는 방향이고 그 위에 얹혀 있다
+    // → FreeEndRbeStage 와 같은 축 방향 우선으로 H빔에 잇는다 (3496-35210-A508372 N291).
+    [Fact]
+    public void VerticalPostGroup_ConnectsToHBeamBelow_NotLateralAngle()
+    {
+        var m = new FeModel();
+        m.Materials.Add(Material.DefaultSteel);
+        m.Sections.AddRange([
+            new BeamSection(3, BeamSectionKind.L, [90.0, 90.0, 10.0, 10.0], 1),   // 기둥 앵글
+            new BeamSection(4, BeamSectionKind.L, [75.0, 75.0, 6.0, 6.0], 1),     // 옆 앵글
+            new BeamSection(5, BeamSectionKind.H, [130.0, 20.0, 150.0, 7.0], 1),  // 아래 H빔(높이 150)
+        ]);
+        m.Nodes.AddRange([
+            N(12, 0, 0, 277), N(10, 0, 0, 138.5), N(11, 0, 0, 0),                  // slave: 수직 기둥, N11 하단
+            N(20, -76, -1000, 0), N(22, -76, 0, 0), N(21, -76, 1000, 0),           // master: 옆 수평 앵글
+            N(30, -1000, -45, -75), N(31, 1000, -45, -75),                         // master: 아래 H빔
+        ]);
+        m.Elements.AddRange([
+            E(50, 12, 10, propId: 3), E(51, 10, 11, propId: 3),
+            E(41, 20, 22, propId: 4), E(43, 22, 21, propId: 4), E(44, 21, 31, propId: 4), E(42, 30, 31, propId: 5),
+        ]);
+        m.Sections.Add(ThinSection);
+
+        new GroupConnectStage().Execute(MakeCtx(m));
+
+        var rbe = m.Rigids.Should().ContainSingle(r => r.Remark == GroupConnectStage.GroupConnectRemark).Subject;
+        rbe.DependentNodeIds.Should().Equal(11);
+        var anchor = m.Nodes.First(n => n.Id == rbe.IndependentNodeId).Position;
+        anchor.Y.Should().BeApproximately(-45, 0.1);
+        anchor.Z.Should().BeApproximately(-75, 0.1);
     }
 }

@@ -12,8 +12,10 @@ public sealed class HiTessPipeCsvReader
 
         foreach (var line in File.ReadLines(path).Skip(1))
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            // 물리적 데이터 행 번호(공백 행 포함)로 센다 — InputAudit 의 dataRowNumber 와 일치시켜
+            // 내부 공백 행이 있어도 skip 사유 매칭이 어긋나지 않게 한다(C-2).
             lineNo++;
+            if (string.IsNullOrWhiteSpace(line)) continue;
 
             var cols = line.Split(',');
             var name = cols[0].Trim();

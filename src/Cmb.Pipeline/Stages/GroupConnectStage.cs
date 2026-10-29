@@ -7,11 +7,16 @@ using Cmb.Pipeline.Spatial;
 namespace Cmb.Pipeline.Stages;
 
 /// <summary>
-/// 분리된 slave 그룹을 master 그룹 쪽으로 병진 이동하여 연결한다.
-/// Meta-group(근접 + 방향 일치 slave 통합) → 그룹 전체 병진 → RBE 폴백(거리 초과 시).
+/// 분리된 slave 그룹을 master 그룹에 연결한다.
+/// Meta-group(근접 + 방향 일치 slave 통합) → 연결 → RBE 폴백(거리 초과 시, FreeEndRbeStage).
+/// 간격이 <see cref="Tolerances.GroupConnectTranslateMaxMm"/> 이하(CAD 오차)면 그룹을 병진 이동해 붙이고,
+/// 그보다 크면 그룹을 제자리에 둔 채 master 위 점과 RBE2 로 잇는다 — 플랜지 위에 얹힌 부재처럼
+/// 실제로 떨어져 있는 편심을 보존하고, 그룹 전체를 옮겨 COG·러그 위치가 바뀌는 것을 막는다.
 /// </summary>
 public sealed class GroupConnectStage : IPipelineStage
 {
+    public const string GroupConnectRemark = "GROUP_CONNECT_RBE";
+
     public string Name => "GroupConnect";
     public int LastTranslatedCount { get; private set; }
     public int LastSkippedCount { get; private set; }
@@ -29,13 +34,18 @@ public sealed class GroupConnectStage : IPipelineStage
 
         // ── 1. 연결 그룹 추출 ─────────────────────────────────────────────
 
+        // 이 stage 가 만든 연결 RBE2 도 같은 그룹으로 본다 — 안 그러면 다음 수렴 반복에서 같은 slave 를 다시 잇는다.
+        var connectRigids = model.Rigids.Where(r => r.Remark == GroupConnectRemark).ToList();
         var allNodeIds = model.Elements
             .SelectMany(e => new[] { e.StartNodeId, e.EndNodeId })
+            .Concat(connectRigids.SelectMany(r => r.DependentNodeIds.Append(r.IndependentNodeId)))
             .Distinct().ToList();
         if (allNodeIds.Count == 0) return true;
 
         var uf = new UnionFind(allNodeIds);
         foreach (var e in model.Elements) uf.Union(e.StartNodeId, e.EndNodeId);
+        foreach (var r in connectRigids)
+            foreach (int dep in r.DependentNodeIds) uf.Union(r.IndependentNodeId, dep);
 
         var groups = uf.GetGroups();
         if (groups.Count <= 1) return true;
@@ -49,7 +59,13 @@ public sealed class GroupConnectStage : IPipelineStage
             list.Add(e);
         }
 
-        var sortedRoots = elemsByRoot.OrderByDescending(kv => kv.Value.Count).ToList();
+        // master = 구조 요소가 가장 많은 그룹(동률은 전체 요소 수·최소 노드 ID). 배관이 많은 모듈에서
+        // 배관 네트워크가 요소 수 최대가 되어 master 로 뽑히면 구조 그룹이 배관 쪽으로 옮겨져 융합된다.
+        var sortedRoots = elemsByRoot
+            .OrderByDescending(kv => kv.Value.Count(e => e.Category != EntityCategory.Pipe))
+            .ThenByDescending(kv => kv.Value.Count)
+            .ThenBy(kv => kv.Value.Min(e => Math.Min(e.StartNodeId, e.EndNodeId)))
+            .ToList();
         var masterElems    = sortedRoots[0].Value;
         var masterElemSet  = new HashSet<int>(masterElems.Select(e => e.Id));
         var nodeById       = model.Nodes.ToDictionary(n => n.Id);
@@ -173,9 +189,14 @@ public sealed class GroupConnectStage : IPipelineStage
                 ? sec.MaxCrossSectionDim() : 0.0;
             double threshold = maxCross + tol.GroupConnectExtraMarginMm;
 
-            if (dist <= threshold)
+            if (dist <= threshold && dist > tol.GroupConnectTranslateMaxMm &&
+                TryConnectByRigid(ctx, nodeById, freeNodeId, masterElem, nodeById[freeNodeId].Position + vector, dist))
             {
-                // 그룹 전체 병진 이동
+                translatedCount++;
+            }
+            else if (dist <= threshold)
+            {
+                // 그룹 전체 병진 이동 (CAD 오차 수준 간격, 또는 RBE 로 잇지 못한 경우)
                 var groupNodeIds = GetAllNodeIdsInGroup(metaGroup);
                 foreach (int nid in groupNodeIds)
                 {
@@ -325,11 +346,66 @@ public sealed class GroupConnectStage : IPipelineStage
         }
 
         if (bestAcceptedSrc != -1)
+        {
+            var axial = TryAxialAlternative(model, group, masterElemIds, nodeById, sectionById, tol,
+                bestAcceptedSrc, bestAcceptedTarget!, bestAcceptedDist);
+            if (axial is { Defer: true })
+                return (default, -1, null, double.MaxValue);   // 받침 부재가 아직 master 가 아님 → 다음 반복
+            if (axial is { } a)
+                return (a.Vec, bestAcceptedSrc, a.Target, a.Dist);
             return (bestAcceptedVec, bestAcceptedSrc, bestAcceptedTarget, bestAcceptedDist);
+        }
 
         return nearestSrc == -1
             ? (default, -1, null, double.MaxValue)
             : (nearestVec, nearestSrc, nearestTarget, nearestDist);
+    }
+
+    /// <summary>
+    /// FreeEndRbeStage 의 축 방향 우선 규칙과 같다. 자유단 부재가 향하는 방향(원뿔 cos ≥ FreeEndRbeAxialConeCos)에
+    /// 받침 부재가 있고, ① 최근접보다 FreeEndRbeAxialPreferenceMm 이내로만 멀고 ② 최근접 부재에 이미 닿아 있지
+    /// 않으며(거리 > 그 단면 최대치수/2) ③ 자유단이 받침 단면 위에 얹혀 있으면(거리 ≤ 단면/2 + 여유) 받침 부재로 바꾼다.
+    /// (3496-35210-A508372 N291: 기둥 하단이 옆 앵글 76mm 가 아니라 아래 H빔 87.5mm 에 붙어야 한다)
+    /// 받침 부재 후보는 slave 밖의 모든 구조 부재에서 찾는다. 받침 부재가 아직 master 가 아니면(같은 반복에서
+    /// 함께 연결될 다른 slave) Defer 를 돌려 이번 반복에 옆 부재로 잘못 잇지 않고 다음 반복으로 미룬다.
+    /// </summary>
+    private static (Vector3 Vec, BeamElement Target, double Dist, bool Defer)? TryAxialAlternative(
+        FeModel model, List<BeamElement> group, HashSet<int> masterElemIds,
+        Dictionary<int, Node> nodeById, Dictionary<int, BeamSection> sectionById, Tolerances tol,
+        int freeNodeId, BeamElement nearestTarget, double nearestDist)
+    {
+        if (tol.FreeEndRbeAxialPreferenceMm <= 0) return null;
+        if (!nodeById.TryGetValue(freeNodeId, out var freeNode)) return null;
+
+        var own = group.FirstOrDefault(e => e.StartNodeId == freeNodeId || e.EndNodeId == freeNodeId);
+        if (own is null) return null;
+        int otherId = own.StartNodeId == freeNodeId ? own.EndNodeId : own.StartNodeId;
+        if (!nodeById.TryGetValue(otherId, out var otherNode)) return null;
+        var outward = freeNode.Position - otherNode.Position;
+        if (outward.LengthSquared < 1e-12) return null;
+        var dir = outward.Normalize();
+
+        double nearestDim = GetSectionMaxDim(sectionById, nearestTarget.PropertyId);
+        if (nearestDist <= nearestDim * 0.5) return null;   // 옆 부재에 이미 닿아 있음 → 그대로
+
+        var groupElemIds = group.Select(g => g.Id).ToHashSet();
+        (Vector3 Vec, BeamElement Target, double Dist, bool Defer)? best = null;
+        foreach (var e in model.Elements)
+        {
+            if (e.Id == nearestTarget.Id || groupElemIds.Contains(e.Id)) continue;
+            if (e.Category == EntityCategory.Pipe) continue;
+            if (!nodeById.TryGetValue(e.StartNodeId, out var mA)) continue;
+            if (!nodeById.TryGetValue(e.EndNodeId,   out var mB)) continue;
+
+            var (proj, _, d) = ProjectionUtils.ClosestPointOnSegment(freeNode.Position, mA.Position, mB.Position);
+            if (d < 1e-6 || d > nearestDist + tol.FreeEndRbeAxialPreferenceMm) continue;
+            var vec = proj - freeNode.Position;
+            if (Vector3.Dot(vec, dir) / d < tol.FreeEndRbeAxialConeCos) continue;   // 향하는 방향이 아님
+            double dim = GetSectionMaxDim(sectionById, e.PropertyId);
+            if (d > dim * 0.5 + tol.FreeEndRbeExtraMarginMm) continue;               // 받침 위에 얹혀 있지 않음
+            if (best is null || d < best.Value.Dist) best = (vec, e, d, !masterElemIds.Contains(e.Id));
+        }
+        return best;
     }
 
     private static double GetDistanceBetweenGroups(
@@ -516,6 +592,57 @@ public sealed class GroupConnectStage : IPipelineStage
 
     private static (int, int) EdgeKey(int a, int b)
         => a < b ? (a, b) : (b, a);
+
+    /// <summary>
+    /// slave 자유단을 옮기지 않고 master 부재 위 점(target)과 RBE2 로 잇는다.
+    /// target 이 master 끝점과 NodeMergeMm 이내면 그 절점을 쓰고, 아니면 새 절점을 만든다
+    /// (master 분할은 뒤따르는 SplitByExistingNodesStage 가 한다).
+    /// </summary>
+    private static bool TryConnectByRigid(
+        StageContext ctx, Dictionary<int, Node> nodeById,
+        int freeNodeId, BeamElement masterElem, Point3 target, double dist)
+    {
+        var model = ctx.Model;
+        double mergeTol = ctx.Options.Tolerances.NodeMergeMm;
+
+        int targetId = -1;
+        foreach (int endId in new[] { masterElem.StartNodeId, masterElem.EndNodeId })
+        {
+            if (nodeById.TryGetValue(endId, out var end) && end.Position.DistanceTo(target) <= mergeTol)
+            {
+                targetId = endId;
+                break;
+            }
+        }
+        if (targetId < 0)
+        {
+            targetId = model.AllocNodeId();
+            var node = new Node(targetId, target);
+            model.Nodes.Add(node);
+            nodeById[targetId] = node;
+            ctx.AddTrace(TraceAction.NodeCreated, "GroupConnect", nodeId: targetId,
+                relatedElementId: masterElem.Id, note: "group-connect RBE anchor on master element");
+        }
+        if (targetId == freeNodeId) return false;
+
+        // 한 절점이 두 RBE2 의 종속이면 정리 단계가 둘을 합쳐 이 표식이 사라지고, 다음 수렴 반복에서
+        // 같은 slave 를 또 잇는다(FATAL 2101 위험도). 자유단이 이미 종속이면 역할을 뒤집고,
+        // 양쪽 다 종속이면 RBE 를 만들지 않는다(호출자가 병진 이동으로 대체).
+        var dependents = model.Rigids.SelectMany(r => r.DependentNodeIds).ToHashSet();
+        int indep = targetId, dep = freeNodeId;
+        if (dependents.Contains(freeNodeId))
+        {
+            if (dependents.Contains(targetId)) return false;
+            (indep, dep) = (freeNodeId, targetId);
+        }
+
+        int rbeId = model.AllocElemId();
+        model.Rigids.Add(new RigidElement(rbeId, indep, [dep], GroupConnectRemark));
+        ctx.AddTrace(TraceAction.ElementCreated, "GroupConnect", elementId: rbeId, nodeId: freeNodeId,
+            relatedElementId: masterElem.Id,
+            note: $"group connected by RBE2 {dist:F1}mm to master (no translation)");
+        return true;
+    }
 
     /// <summary>
     /// slave 요소들에서 oldId → newId로 remap하고, oldId 노드를 모델에서 제거한다.

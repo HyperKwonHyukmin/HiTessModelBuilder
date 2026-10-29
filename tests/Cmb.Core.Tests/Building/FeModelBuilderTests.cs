@@ -199,6 +199,8 @@ public class FeModelBuilderTests
 
         model.Sections.Should().HaveCount(2);
         model.Elements.Select(e => e.PropertyId).Should().OnlyHaveUniqueItems();
+        model.Elements.Single(e => e.Category == EntityCategory.Structure).PropertyId.Should().Be(1);
+        model.Elements.Single(e => e.Category == EntityCategory.Pipe).PropertyId.Should().Be(101);
 
         var structureSection = model.Sections.Single(s => s.Id == model.Elements.Single(e => e.Category == EntityCategory.Structure).PropertyId);
         var pipeSection = model.Sections.Single(s => s.Id == model.Elements.Single(e => e.Category == EntityCategory.Pipe).PropertyId);
@@ -380,7 +382,7 @@ public class FeModelBuilderTests
     // ── Pipe PID separation ───────────────────────────────────────────────────
 
     [Fact]
-    public void Build_StructureSectionIds_AreBelowPipePidBase()
+    public void Build_StructureSectionIds_AreInOneToOneHundredRange()
     {
         var rows = new[]
         {
@@ -388,14 +390,14 @@ public class FeModelBuilderTests
             Beam("B", "ANG",  [100, 100, 10],     [0, 0, 0], [0, 1000, 0]),
         };
 
-        var model = new FeModelBuilder().Build(new RawDesignData(rows, [], [], []), pipePidBase: 1000);
+        var model = new FeModelBuilder().Build(new RawDesignData(rows, [], [], []));
 
         model.Sections.Should().NotBeEmpty();
-        model.Sections.Should().OnlyContain(s => s.Id < 1000);
+        model.Sections.Should().OnlyContain(s => s.Id >= 1 && s.Id <= 100);
     }
 
     [Fact]
-    public void Build_PipeSectionIds_StartAtPipePidBase()
+    public void Build_PipeSectionIds_StartAtOneHundredOne()
     {
         var rows = new[]
         {
@@ -403,11 +405,11 @@ public class FeModelBuilderTests
                 outDia: 60, thick: 3, mass: 0),
         };
 
-        var model = new FeModelBuilder().Build(new RawDesignData([], rows, [], []), pipePidBase: 1000);
+        var model = new FeModelBuilder().Build(new RawDesignData([], rows, [], []));
 
         model.Sections.Should().NotBeEmpty();
-        model.Sections.Should().OnlyContain(s => s.Id >= 1000);
-        model.Sections.Min(s => s.Id).Should().Be(1000);
+        model.Sections.Should().OnlyContain(s => s.Id >= 101);
+        model.Sections.Min(s => s.Id).Should().Be(101);
     }
 
     [Fact]
@@ -423,13 +425,38 @@ public class FeModelBuilderTests
                 outDia: 60, thick: 3, mass: 0),
         };
 
-        var model = new FeModelBuilder().Build(new RawDesignData(beams, pipes, [], []), pipePidBase: 1000);
+        var model = new FeModelBuilder().Build(new RawDesignData(beams, pipes, [], []));
 
         var struElem = model.Elements.Single(e => e.Category == EntityCategory.Structure);
         var pipeElem = model.Elements.Single(e => e.Category == EntityCategory.Pipe);
 
-        struElem.PropertyId.Should().BeLessThan(1000);
-        pipeElem.PropertyId.Should().BeGreaterThanOrEqualTo(1000);
+        struElem.PropertyId.Should().BeInRange(1, 100);
+        pipeElem.PropertyId.Should().BeGreaterThanOrEqualTo(101);
+    }
+
+    [Fact]
+    public void Build_OneHundredDistinctStructureSections_UsesIdsOneThroughOneHundred()
+    {
+        var beams = Enumerable.Range(1, 100)
+            .Select(i => Beam($"S{i}", "RBAR", [i], [i * 10.0, 0, 0], [i * 10.0, 100, 0]))
+            .ToArray();
+
+        var model = new FeModelBuilder().Build(new RawDesignData(beams, [], [], []));
+
+        model.Sections.Select(s => s.Id).Should().Equal(Enumerable.Range(1, 100));
+    }
+
+    [Fact]
+    public void Build_OneHundredFirstDistinctStructureSection_Throws()
+    {
+        var beams = Enumerable.Range(1, 101)
+            .Select(i => Beam($"S{i}", "RBAR", [i], [i * 10.0, 0, 0], [i * 10.0, 100, 0]))
+            .ToArray();
+
+        var act = () => new FeModelBuilder().Build(new RawDesignData(beams, [], [], []));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*PipePidBase (101)*");
     }
 
     [Fact]

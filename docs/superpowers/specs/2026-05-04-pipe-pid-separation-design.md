@@ -19,7 +19,7 @@
 | Structure | `1 ~ PipePidBase - 1` |
 | Pipe | `PipePidBase` 이상 |
 
-`PipePidBase`는 `RunOptions.PipePidBase`로 노출하고 기본값은 **1000**.
+`PipePidBase`는 `RunOptions.PipePidBase`로 노출하고 기본값은 **101**로 한다. 따라서 Structure는 `1~100`, Pipe는 `101`부터 할당한다.
 
 Equipment(`EntityCategory.Equipment`)는 `BeamElement`를 생성하지 않으므로 PBEAML이 없어 분리 대상이 아니다 (RBE2 / CONM2만 생성).
 
@@ -32,14 +32,14 @@ public sealed record RunOptions(
     Tolerances Tolerances,
     string?    StopAfterStage = null,
     bool       RecordTrace    = true,
-    int        PipePidBase    = 1000)   // 신규
+    int        PipePidBase    = 101)   // 신규
 ```
 
 `Tolerances`와 별도의 최상위 필드로 둔다 — 수치 허용오차가 아니라 **출력 컨벤션**이기 때문.
 
 ### 3.2 `Cmb.Core.Building.FeModelBuilder`
 
-- `Build(RawDesignData data, int pipePidBase = 1000)` 시그니처에 매개변수 추가.
+- `Build(RawDesignData data, int pipePidBase = 101)` 시그니처에 매개변수 추가.
 - `secAlloc` 1개 → 2개로 분리:
   - `structSecAlloc = new IdAllocator(1)`
   - `pipeSecAlloc   = new IdAllocator(pipePidBase)`
@@ -53,14 +53,14 @@ public sealed record RunOptions(
 `Write` 시그니처에 `int pipePidBase = 1000` 추가. `WriteProperties`를 다음과 같이 출력:
 
 ```
-$ HiTessModelBuilder: PipePidBase=1000
-$ ---- STRUCTURE SECTIONS (PID < 1000) ----
+$ HiTessModelBuilder: PipePidBase=101
+$ ---- STRUCTURE SECTIONS (PID < 101) ----
 PBEAML  1   1               H
 +       0.05    0.01    0.05    0.01    0.0
 PBEAML  2   1               L
 ...
-$ ---- PIPE SECTIONS (PID >= 1000) ----
-PBEAML  1000    2               TUBE
+$ ---- PIPE SECTIONS (PID >= 101) ----
+PBEAML  101     2               TUBE
 +       0.1     0.09    0.0
 ...
 ```
@@ -72,7 +72,7 @@ PBEAML  1000    2               TUBE
 ### 3.4 `Cmb.Cli.Program`
 
 - `BdfWriter.Write(...)` 호출 모든 지점에 `pipePidBase: runOptions.PipePidBase` 전달.
-- 현재로서는 CLI 옵션 노출하지 않음 (코드 기본값 1000으로 충분). 필요해지면 추후 추가.
+- 현재로서는 CLI 옵션 노출하지 않음 (코드 기본값 101 사용). 필요해지면 추후 추가.
 
 ### 3.5 `README.md`
 
@@ -100,7 +100,7 @@ PBEAML  1000    2               TUBE
 
 ## 7. 결정 근거 요약
 
-- **PipePidBase = 1000**: Structure section은 형상 + material dedup 후 보통 수십 개 미만이라 1000은 안전 마진. 옵션화로 미래 확장성 확보.
+- **PipePidBase = 101**: 요구사항에 따라 Structure PID `1~100`을 예약하고 Pipe PID를 `101`부터 시작한다. Structure 단면이 100개를 초과하면 명시적으로 실패하며, 필요 시 옵션값을 확장할 수 있다.
 - **빌드 시점 PID 분리** (BDF 출력 시 변환이 아님): JSON과 BDF 양쪽이 동일한 ID 체계를 갖게 되어 라운드트립 / 디버깅이 단순해짐.
 - **`secMap` 카테고리별 분리**: dedup이 카테고리 경계를 넘으면 동일 dim·material section이 한쪽 카테고리로 흡수돼 분류가 깨질 수 있음. 약간의 PBEAML 중복(거의 없음)을 받아들이는 대신 분류 정확성을 우선.
 - **`$` 주석 marker**: 사람이 BDF를 열어봐도 즉시 판별 가능. 임계값이 1000이 아닌 경우에도 viewer가 정확히 파싱.

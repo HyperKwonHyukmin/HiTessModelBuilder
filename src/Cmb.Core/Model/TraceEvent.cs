@@ -10,6 +10,8 @@ public enum TraceAction
     ElementPreserved,
     NodeCreated,
     NodeRemoved,
+    // 입력 행이 있었으나 유효 형상/부착점을 만들지 못해 산출물에 반영되지 않고 누락됨(질량 손실 등 가시화용).
+    ElementSkipped,
 }
 
 public sealed record TraceEvent(

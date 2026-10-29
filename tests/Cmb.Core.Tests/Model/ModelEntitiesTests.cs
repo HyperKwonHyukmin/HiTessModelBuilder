@@ -54,6 +54,34 @@ public class ModelEntitiesTests
         r.Remark.Should().Be("UBOLT");
     }
 
+    // ── Cm 정규화: 유효 DOF(1~6) 만 허용 (M-2: 뷰어 IsValidCm 과 일치) ──────────
+
+    [Fact]
+    public void RigidElement_NormalizeCm_KeepsOnlyDof1To6()
+    {
+        // 0/7/8/9 등 범위 밖 숫자는 버려지고 1~6 만 남는다.
+        var r = new RigidElement(1, 5, [6], cm: "1230789");
+        r.Cm.Should().Be("123");
+    }
+
+    [Fact]
+    public void RigidElement_NormalizeCm_AllOutOfRange_FallsBackToFullDof()
+    {
+        // 유효 DOF 가 하나도 없으면 기본값 "123456" 으로 폴백(기존 빈 문자열 처리와 동일).
+        var r = new RigidElement(1, 5, [6], cm: "0789");
+        r.Cm.Should().Be("123456");
+    }
+
+    [Fact]
+    public void RigidElement_NormalizeCm_ValidPartialDof_Preserved()
+    {
+        var r = new RigidElement(1, 5, [6], cm: "123456");
+        r.Cm.Should().Be("123456");
+
+        var partial = new RigidElement(2, 5, [6], cm: "36");
+        partial.Cm.Should().Be("36");
+    }
+
     [Fact]
     public void PointMass_NegativeMass_Throws()
     {

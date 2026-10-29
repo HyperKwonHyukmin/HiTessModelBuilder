@@ -131,4 +131,23 @@ public class RigidSharedNodeMergeStageTests
         ctx.Diagnostics.Should().Contain(d =>
             d.Severity == DiagnosticSeverity.Info && d.Code == "RIGID_SHARED_NODE_MERGED");
     }
+
+    // 축 방향 FREE_END_RBE(받침 부재 노드 → 자유단)가 낀 클러스터는 받침 부재 노드를 master 로 둔다.
+    // (3496-35210-A508372: 기둥 하단 N291 → H빔 노드, 옆 앵글 N166 ↔ H빔 노드 loop-close 가 병합될 때
+    //  ID 최소 규칙이면 앵글 N166 이 master 가 되어 화면상 앵글→N291 연결로 되돌아가 보였다)
+    [Fact]
+    public void AxialFreeEndCluster_UsesBearingNodeAsMaster()
+    {
+        var m = new FeModel();
+        m.Nodes.AddRange([N(166), N(291), N(1358)]);
+        m.Rigids.Add(new RigidElement(10, 1358, [291], "FREE_END_RBE",
+            detailRemark: FreeEndRbeStage.AxialDetailRemark));
+        m.Rigids.Add(Rbe(11, 166, [1358], "LOOP_CLOSE_PROXIMITY"));
+
+        new RigidSharedNodeMergeStage().Execute(MakeCtx(m));
+
+        var r = m.Rigids.Should().ContainSingle().Subject;
+        r.IndependentNodeId.Should().Be(1358);
+        r.DependentNodeIds.Should().BeEquivalentTo([291, 166]);
+    }
 }

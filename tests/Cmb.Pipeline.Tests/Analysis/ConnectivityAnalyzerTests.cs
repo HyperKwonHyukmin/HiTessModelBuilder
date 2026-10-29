@@ -29,6 +29,50 @@ public class ConnectivityAnalyzerTests
         result.Groups.Should().BeEmpty();
     }
 
+    // ── SPC 커버리지: 미구속 그룹 검출 (진단용, BDF 출력 불변) ─────────────────
+
+    [Fact]
+    public void GroupsWithoutSpc_ReturnsGroupsWithNoSpcNode()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 500, 0), N(4, 600, 0)]);
+        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        var conn = ConnectivityAnalyzer.Analyze(model);
+        conn.GroupCount.Should().Be(2);
+
+        // SPC 가 그룹 {1,2} 만 덮음 → 그룹 {3,4} 는 미구속으로 검출돼야 한다.
+        var uncovered = ConnectivityAnalyzer.GroupsWithoutSpc(conn, new HashSet<int> { 1 });
+
+        uncovered.Should().HaveCount(1);
+        uncovered[0].NodeIds.Should().BeEquivalentTo(new[] { 3, 4 });
+    }
+
+    [Fact]
+    public void GroupsWithoutSpc_Empty_WhenEveryGroupHasSpc()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 500, 0), N(4, 600, 0)]);
+        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        var conn = ConnectivityAnalyzer.Analyze(model);
+
+        var uncovered = ConnectivityAnalyzer.GroupsWithoutSpc(conn, new HashSet<int> { 1, 3 });
+
+        uncovered.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GroupsWithoutSpc_AllGroups_WhenSpcEmpty()
+    {
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 500, 0), N(4, 600, 0)]);
+        model.Elements.AddRange([E(10, 1, 2), E(11, 3, 4)]);
+        var conn = ConnectivityAnalyzer.Analyze(model);
+
+        var uncovered = ConnectivityAnalyzer.GroupsWithoutSpc(conn, new HashSet<int>());
+
+        uncovered.Should().HaveCount(2);
+    }
+
     // ── 단일 체인 — 완전 연결 ──────────────────────────────────────────────────
 
     [Fact]

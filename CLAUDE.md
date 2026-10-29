@@ -138,12 +138,66 @@ Phase 경계 테이블 (`Program.cs:phaseBoundaries`)은 0-based stage index로 
 | `MaxConvergenceIterations` | 50 | Intersection / DanglingShortRemove 수렴 루프 상한 |
 | `FreeEndRbeExtraMarginMm` | 25.0 mm | 자유단 RBE 브릿지 interior projection 여유 |
 | `FreeEndRbeEndpointMarginMm` | 5.0 mm | 자유단 RBE endpoint capture (tRaw≈0/≈1) 여유 |
+| `FreeEndRbeAxialConeCos` | 0.8 | 자유단 부재 바깥 축 방향 원뿔(≈37°) — 이 안의 후보를 "축 방향 받침 부재"로 본다 |
+| `FreeEndRbeAxialPreferenceMm` | 100.0 mm | 축 방향 후보가 최근접보다 이 값 이내로만 멀면 축 방향 선택(0 = 순수 최근접) |
 | `RigidProximityMergeMm` | 50.0 mm | 인접 RBE2 클러스터 병합 임계 (HiTess `RigidProximityMergeModifier`와 동일) |
 | `GroupConnectNoiseLengthMm` | 500.0 mm | GroupConnect 노이즈 단일 element 삭제 길이 임계 |
 | `GroupConnectNoiseMaxDimMm` | 100.0 mm | GroupConnect 노이즈 단일 element 단면 최대 치수 임계 |
 | `BoxUboltMaxSearchMm` | 2000.0 mm | BoxUbolt 4방향 후보 검색 최대 반경 |
 | `BoxUboltAxialSafetyMm` | 10.0 mm | BoxUbolt exclusion zone axial 여유 |
-| `PointMassReattachMaxDistMm` | 2000.0 mm | 공중 PointMass 노드 → 최근접 pipe 노드 검색 최대 거리 |
+| `PointMassReattachMaxDistMm` | 500.0 mm | 공중 PointMass 노드 → 최근접 pipe 노드 검색 최대 거리 |
+| `GroupConnectTranslateMaxMm` | 10.0 mm | 이 간격 이하(CAD 오차)만 그룹 병진 이동, 초과는 제자리에서 `GROUP_CONNECT_RBE` 로 연결 |
+| `GroupConnectMaxIterations` | 30 | ConnectivityConvergence 의 GroupConnect 반복 상한(RBE 연결은 한 겹씩 붙어 반복이 더 든다) |
+
+
+**자유단 축 방향 우선 (2026-09-23, 3496-35210-A508372 N291)**: 수직 기둥 하단이 옆으로 76mm 떨어진 앵글 대신
+바로 아래 H빔(87mm, 상부 플랜지 윗면 = 자유단 높이)에 붙게 한다. 조건은 ① 축 방향 원뿔 안 ② 최근접 + 선호 여유 이내
+③ 최근접 부재에 **닿아 있지 않음**(거리 > 그 단면 최대치수/2) ④ 축 방향 부재 단면에 **얹혀 있음**(거리 ≤ 단면/2 + ExtraMargin).
+③·④ 없이는 10개 실측 세트에서 6mm 로 닿은 옆 부재를 103mm 아래 부재로 바꾸는 오탐이 나왔다.
+이렇게 만든 RBE 는 `DetailRemark = "AXIAL"` 이고, 두 후속 단계가 이 표식을 본다:
+`LoopCloseProximityStage` 는 그 자유단을 다시 옆 부재와 묶지 않고, `RigidSharedNodeMergeStage` 는 병합 시 그 RBE 를
+master 로 둔다(받침 부재 노드가 indep). 표식을 일반 FREE_END_RBE 전체로 넓히면 loop-close 수십 건이 사라진다(실측).
+
+**apply-edit-intent 의 SPC 승계 (2026-09-23)**: 기준 BDF 의 SPC1 노드를 이어받을 때 편집 후 모델의 **RBE2 종속 노드는 뺀다**
+(`EditIntentApplier.ReadSpcNodeIdsFromBdf`, build-full 시딩과 같은 규칙). 빠지면 편집으로 SPC 노드를 RBE 로 이었을 때
+Nastran FATAL 2101(UM·US 중복)이 난다 — GMU 샘플 사다리 하단 4개 노드 자동 연결에서 24건 실측.
+⚠ SPC 는 **최종 산출물 `<designName>.bdf` 에만** 있다. phase 파일(`06_Validation`)을 기준으로 편집하면 edited BDF 에 SPC1 이 0개다.
+
+
+### FE 모델 공학 검토 반영 (2026-09-23)
+
+CSV → BDF 변환을 구조 FE 관점에서 재검토하고 고친 것. 회귀 기준 = `csv/` 14세트(01~09, KangSangHoonReview, S10~S13)를
+WorkBench 기본값(`--mesh-size 200 --ubolt-full-fix`) + `--run-nastran` 으로 돌려 **FATAL 0 · AUTOSPC 0 · 자중=반력** 유지.
+(부분 자유도 U-bolt 모드 = `--ubolt-full-fix` 없이는 **수정 전부터 14세트 모두 FATAL 9050** — 배관 축방향 메커니즘.)
+
+- **CSV `ori` = 단면 폭 방향(요소 z축)** 으로 해석해 CBEAM v = ori × x̂ 로 쓴다(`BeamOrientation.FromSectionWidthDirection`).
+  과거엔 `BdfWriter`/`FinalValidation` 이 모든 요소를 기본 규칙(수평 v=Z, 수직 v=Y)으로 덮어써 ori 가 버려졌다
+  (평행 v → Nastran FATAL 회피용). 근거: 샘플 전수에서 ori 는 항상 축에 수직이고, 수평 H 보의 ori 는 전부 수평 →
+  이 해석이면 수평 H 보 웹이 수직으로 **기존과 같고**, 수직 기둥·수직 FBAR 의 ±Y 경우만 90° 바로잡힌다.
+  ori 를 곧장 v 로 쓰면 수평 H 보가 전부 눕는다. 출력은 `BeamOrientation.Resolve` — 저장 v 가 축과 평행(|cos|≥0.9)
+  하거나 0 이면 기본 규칙. 저장값이 UnitZ(배관·구 JSON)면 기본 규칙과 **비트 단위로 같다**. ROD/TUBE 는 ori 무시.
+  ⚠ L(앵글)은 다리가 놓이는 사분면(부호)을 CSV 정의로 확정하지 못했다 — 도면 1건으로 확인 필요.
+- **ATTA(배관 부착물) 질량 반영** — 과거 `> 10 t` 만 넣어 사실상 전부 빠졌는데 입력 감사는 'converted' 였다.
+  배관 절점 500mm 밖 ATTA 는 `POINTMASS_REATTACH_UNRESOLVED` 후 OrphanNodeRemove 가 모델에서 뺀다(경고 문구에 명시).
+- **배관↔구조 가짜 강결합 차단** — Intersection 은 배관↔구조 교차를 분할하지 않고, Extend 는 구조 끝을 배관까지 늘리지 않는다.
+- **GroupConnect master = 구조 요소 최다 그룹** — 요소 수로만 고르면 배관 네트워크가 master 가 되어 구조 그룹이
+  배관 쪽으로 붙었다(07: 이동 0건 → 39건 정상 연결).
+- **GroupConnect 는 10mm 초과 간격을 병진 이동 대신 `GROUP_CONNECT_RBE`(RBE2)** 로 잇는다 — 그룹 전체를 최대 수백 mm
+  옮겨 COG·러그 위치·편심이 바뀌던 문제. 대상 선택에도 FreeEnd 와 같은 **축 방향 우선**을 적용하고, 받침 부재가
+  아직 master 가 아니면(같은 반복에 함께 붙을 slave) 연결을 다음 반복으로 미룬다(N291 이 옆 앵글로 붙던 재발 방지).
+  자유단이 이미 RBE 종속이면 역할을 뒤집어 종속 중복을 피한다(안 그러면 병합으로 표식이 사라져 매 반복 재연결).
+  RBE 노드는 LoopClose 후보에서 빠지고, RedundantBridge 화이트리스트에 있다.
+- **SPC 바닥 선정**(`SpcSeeding.ResolveModelBottomNodes`) — 최저 Z+500 띠 안 **구조** 절점 중 더 아래로 이어지는
+  구조 부재가 없는 높이 묶음(기둥 발·바닥 프레임)만. 구조 요소 20% 이상 덩어리에 고정점이 없으면 그 덩어리 자기
+  바닥에도 적용(07/09: 최저점이 5.7m 아래 배관 받침대라 주 구조가 배관에 매달려 변위 3m/23m → 18mm/75mm).
+  과거엔 띠 안 모든 절점(03: 380개 중 배관 148개)을 고정했다. 떨어진 그룹 공중 고정은 `SPC_GROUP_COVERAGE` 경고.
+- **CollinearNodeMerge 덩어리 상한** — 쌍마다 50mm 여도 사슬로 이어 50mm 넘게 붕괴하지 않게(가까운 쌍부터 AABB 검사).
+- **BDF 정밀도** — CONM2 질량·PBEAML 치수는 8자 안 최대 유효숫자(`BdfField.FormatPrecise`). 과거 질량 kg 반올림, 치수 0.1mm.
+- **출력 요청** `MPCFORCES = ALL`(U-bolt 반력), `PARAM,GRDPNT,0`(무게 요약). `--run-nastran` 후 자중·반력 합력과
+  AUTOSPC 개수를 출력하고 어긋나면 `NASTRAN_LOAD_IMBALANCE`/`NASTRAN_AUTOSPC` 경고.
+- **보류: RBE 병합 시 cm 합집합** — 기본(`--ubolt-full-fix`)은 출력 cm 이 어차피 전부 123456 이라 결과 영향이 없고,
+  부분 자유도 모드는 위와 같이 9050 이라 해석 자체가 안 된다. 병합 규칙만 바꾸면 기본 모드 연결성만 흔들린다 →
+  U-bolt 자유도 모델링(배관 run 별 축방향 고정점)과 함께 설계할 것.
 
 **Tolerance는 `RunOptions.Tolerances` 레코드에만 정의. 코드 내 하드코딩 금지.**
 

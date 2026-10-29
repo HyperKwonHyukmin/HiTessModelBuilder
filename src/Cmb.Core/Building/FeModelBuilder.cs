@@ -7,7 +7,7 @@ namespace Cmb.Core.Building;
 
 public sealed class FeModelBuilder
 {
-    public FeModel Build(RawDesignData data, int pipePidBase = 1000)
+    public FeModel Build(RawDesignData data, int pipePidBase = 101)
     {
         if (pipePidBase < 2)
             throw new ArgumentOutOfRangeException(nameof(pipePidBase), pipePidBase,
@@ -163,7 +163,15 @@ public sealed class FeModelBuilder
             int nB = GetOrAddNode(model, nodeAlloc, nodeMap, nodeById, row.EndPos[0],   row.EndPos[1],   row.EndPos[2]);
             if (nA == nB) continue;
 
-            var ori = row.Ori.Length >= 3 ? new Vector3(row.Ori[0], row.Ori[1], row.Ori[2]) : Vector3.UnitZ;
+            // CSV ori(단면 폭 방향)를 CBEAM v 로 변환해 저장한다. 원형 단면(ROD/TUBE)은 방향이 무의미하고
+            // ori 가 없거나 축과 평행하면 기존 기본값(UnitZ → BDF 출력 시 기본 규칙)을 쓴다.
+            var ori = Vector3.UnitZ;
+            if (row.Ori.Length >= 3 && kind is not (BeamSectionKind.Rod or BeamSectionKind.Tube))
+            {
+                var axis = new Vector3(row.EndPos[0] - row.StartPos[0], row.EndPos[1] - row.StartPos[1], row.EndPos[2] - row.StartPos[2]);
+                ori = BeamOrientation.FromSectionWidthDirection(axis, new Vector3(row.Ori[0], row.Ori[1], row.Ori[2]))
+                      ?? Vector3.UnitZ;
+            }
 
             if (!string.IsNullOrEmpty(row.Weld))
             {
@@ -241,10 +249,13 @@ public sealed class FeModelBuilder
                 continue;
             }
 
-            // ATTA: HiTess와 동일하게 대형 부착물만 PointMass로 반영.
+            // ATTA(배관 부착물: 트러니언·슈·클램프 등): 질량이 있으면 PointMass 로 반영한다.
+            // 과거에는 레거시 HiTess 를 따라 10 t 초과만 넣어 실제 부착물(수 kg~수백 kg)이 전부 빠졌고,
+            // 입력 감사는 이 행들을 'converted' 로 표시하고 있었다(감사와 모델 불일치).
+            // 위치 노드는 PointMassReattachStage 가 가장 가까운 부재 노드로 옮긴다.
             if (t == "ATTA")
             {
-                if (row.Mass * 0.001 > 10.0 && row.Pos.Length >= 3)
+                if (row.Mass > 0 && row.Pos.Length >= 3)
                     AddMass(row.Pos[0], row.Pos[1], row.Pos[2], row.Mass, row.Name);
                 continue;
             }
@@ -294,8 +305,11 @@ public sealed class FeModelBuilder
                 continue;
             }
 
-            // OutDia ≤ 0: 단면 정보 없음 → PointMass로 대체
-            if (row.OutDia <= 0)
+            // 단면을 만들 수 없는 형상: PointMass로 대체(또는 line-pipe면 드롭).
+            //  - OutDia ≤ 0: 단면 정보 없음.
+            //  - Thick ≥ OutDia/2: PBEAML TUBE 내부 반경(=OutDia/2 − Thick)이 0 이하가 되어
+            //    음수 반경 단면이 조용히 export 되므로, outDia<=0 과 동일 계열의 형상 오류로 취급한다.
+            if (row.OutDia <= 0 || (row.Thick > 0 && row.Thick >= row.OutDia / 2.0))
             {
                 if (!IsLinePipeType(t) && row.Mass > 0 && row.Pos.Length >= 3)
                     AddMass(row.Pos[0], row.Pos[1], row.Pos[2], row.Mass, row.Name);
@@ -423,7 +437,15 @@ public sealed class FeModelBuilder
             if (row.InterPos is not { Length: >= 3 })
             {
                 int targetNode = FindClosestValidNode(row.Cog, validNodeIds, nodeById, mountToleranceMm);
-                if (targetNode == -1) continue;
+                if (targetNode == -1)
+                {
+                    // 부착 노드를 못 찾아 장비 질량이 산출물에서 누락됨 → 가시화(질량 손실 경고).
+                    model.AddTrace(TraceAction.ElementSkipped, "initial", note:
+                        $"장비 '{row.Name}' 질량 {operatingMass:F1}kg 누락: CoG {mountToleranceMm:F0}mm 내 유효 부착 노드 없음");
+                    model.DroppedEquipment.Add(new DroppedEquipmentMass(row.Name, operatingMass,
+                        $"부착점(interPos)이 없고 CoG {mountToleranceMm:F0}mm 안에 부착 노드가 없음"));
+                    continue;
+                }
 
                 var pointMass = new PointMass(elemAlloc.Next(), targetNode, massTon, sourceName: row.Name);
                 model.PointMasses.Add(pointMass);
@@ -441,7 +463,15 @@ public sealed class FeModelBuilder
                 if (dep != -1) dependentNodes.Add(dep);
             }
 
-            if (dependentNodes.Count == 0) continue;
+            if (dependentNodes.Count == 0)
+            {
+                // InterPos 마운트 노드를 하나도 못 찾아 RBE2/질량이 통째로 누락됨 → 가시화.
+                model.AddTrace(TraceAction.ElementSkipped, "initial", note:
+                    $"장비 '{row.Name}' 질량 {operatingMass:F1}kg 누락: InterPos {mountToleranceMm:F0}mm 내 유효 부착 노드 없음");
+                model.DroppedEquipment.Add(new DroppedEquipmentMass(row.Name, operatingMass,
+                    $"부착점(interPos) {mountToleranceMm:F0}mm 안에 부착 노드가 없음"));
+                continue;
+            }
 
             int n = GetOrAddNode(model, nodeAlloc, nodeMap, nodeById, row.Cog[0], row.Cog[1], row.Cog[2]);
             var equipMass = new PointMass(elemAlloc.Next(), n, massTon, sourceName: row.Name);

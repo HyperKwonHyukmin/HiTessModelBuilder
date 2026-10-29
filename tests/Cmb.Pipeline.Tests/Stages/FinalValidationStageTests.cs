@@ -237,6 +237,70 @@ public class FinalValidationStageTests
             d.Message.Contains("N1 -> N2 -> N1"));
     }
 
+    // ── H-2: 같은 노드가 2개 이상 RBE2 의 dependent 이고 CM 이 겹치면 진짜 duplicate-DOF FATAL → Error ──
+
+    [Fact]
+    public void NodeDependentInTwoRbe2WithOverlappingCm_EmitsErrorAndReturnsFalse()
+    {
+        // N3 이 RBE10(cm 123456), RBE11(cm 123456) 양쪽의 dependent → 동일 DOF 중복 종속(FATAL)
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 50)]);
+        model.Rigids.Add(new RigidElement(10, 1, [3], "TEST", cm: "123456"));
+        model.Rigids.Add(new RigidElement(11, 2, [3], "TEST", cm: "123456"));
+
+        var ctx = MakeCtx(model);
+        var result = new FinalValidationStage().Execute(ctx);
+
+        result.Should().BeFalse();
+        ctx.Diagnostics.Should().ContainSingle(d =>
+            d.Severity == DiagnosticSeverity.Error &&
+            d.Code == "RBE2_DEPENDENT_DOF_CONFLICT" &&
+            d.NodeId == 3);
+        // 승격된 노드는 저심각도 Warning 을 중복 보고하지 않는다.
+        ctx.Diagnostics.Should().NotContain(d =>
+            d.Code == "NODE_IN_MULTIPLE_RBE2" && d.NodeId == 3);
+    }
+
+    [Fact]
+    public void NodeDependentInTwoRbe2WithDisjointCm_StaysWarningNotError()
+    {
+        // N3 이 RBE10(cm 12), RBE11(cm 36) 양쪽 dependent 지만 DOF 가 겹치지 않음 → 양성(Warning 유지)
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 50)]);
+        model.Rigids.Add(new RigidElement(10, 1, [3], "TEST", cm: "12"));
+        model.Rigids.Add(new RigidElement(11, 2, [3], "TEST", cm: "36"));
+
+        var ctx = MakeCtx(model);
+        var result = new FinalValidationStage().Execute(ctx);
+
+        result.Should().BeTrue();
+        ctx.Diagnostics.Should().NotContain(d => d.Code == "RBE2_DEPENDENT_DOF_CONFLICT");
+        ctx.Diagnostics.Should().ContainSingle(d =>
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.Code == "NODE_IN_MULTIPLE_RBE2" &&
+            d.NodeId == 3);
+    }
+
+    [Fact]
+    public void NodeIndependentInOneAndDependentInAnother_BenignWarningNotError()
+    {
+        // N3: RBE10 에서 independent, RBE11 에서 dependent → dependent 는 한 번뿐 → 양성(Warning)
+        var model = new FeModel();
+        model.Nodes.AddRange([N(1, 0, 0), N(2, 100, 0), N(3, 50, 50)]);
+        model.Rigids.Add(new RigidElement(10, 3, [1], "TEST", cm: "123456"));
+        model.Rigids.Add(new RigidElement(11, 2, [3], "TEST", cm: "123456"));
+
+        var ctx = MakeCtx(model);
+        var result = new FinalValidationStage().Execute(ctx);
+
+        result.Should().BeTrue();
+        ctx.Diagnostics.Should().NotContain(d => d.Code == "RBE2_DEPENDENT_DOF_CONFLICT");
+        ctx.Diagnostics.Should().Contain(d =>
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.Code == "NODE_IN_MULTIPLE_RBE2" &&
+            d.NodeId == 3);
+    }
+
     [Fact]
     public void RigidTransitiveDependencyCycle_RemovesNewestRigidAndReturnsTrue()
     {

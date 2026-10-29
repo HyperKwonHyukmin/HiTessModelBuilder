@@ -11,6 +11,32 @@ public sealed class FeModel
     public List<Model.Material> Materials { get; } = [];
     public List<Model.TraceEvent> TraceLog { get; } = [];
 
+    /// <summary>
+    /// 질량이 있는데 부착 노드를 못 찾아 모델에서 빠진 장비. 입력 감사가 그 CSV 행을 error / equipment_mass_not_attached 로
+    /// 남기는 근거다 — trace 에만 남기면 감사엔 'converted' 로 보여 WorkBench 판정이 질량 손실을 못 잡는다(3529_m04 5행).
+    /// </summary>
+    public List<DroppedEquipmentMass> DroppedEquipment { get; } = [];
+
+    /// <summary>
+    /// 호선 번호(예: "3454"). BDF 머리 주석 <c>$ HiTessModelBuilder: HullNo=...</c> 과 JSON <c>meta.hullNo</c> 로 나간다.
+    /// 해석에는 쓰이지 않고, 이후 권상·LogBook 단계가 이 BDF 의 호선을 알아내는 통로다. 없으면 null.
+    /// </summary>
+    public string? HullNo { get; set; }
+
+    /// <summary>
+    /// 호선 문자열 정규화 — 앞뒤 공백 제거·대문자. 영문·숫자·'-'·'_' 1~20자만 허용하고 그 밖은 null.
+    /// BDF 주석 한 줄에 그대로 들어가므로 줄바꿈·'$'·비ASCII 를 막는다.
+    /// </summary>
+    public static string? NormalizeHullNo(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var s = raw.Trim().ToUpperInvariant();
+        if (s.Length > 20) return null;
+        foreach (var c in s)
+            if (!(c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '-' or '_')) return null;
+        return s;
+    }
+
     private int _nextNodeId = 1;
     private int _nextElemId = 1;
 
@@ -54,6 +80,40 @@ public sealed class FeModel
     /// oldToRep[oldId] = newId 매핑. 키에 없는 ID는 그대로 유지.
     /// 재매핑 후 dep 리스트가 비어있는 RBE2는 삭제한다.
     /// </summary>
+    /// <summary>
+    /// 모델 전체를 pivot 기준으로 주축(axis: 'X'/'Y'/'Z') 회전한다(강체 회전).
+    /// 노드 좌표와 빔 요소의 방향 벡터(CBEAM v-vector)를 함께 회전해 단면 방향을 보존한다.
+    /// RBE2/PointMass 는 노드 참조만 가지므로 노드 회전으로 함께 이동한다.
+    /// angleDeg 가 360의 배수면 no-op. 반환값은 회전된 노드 수.
+    /// </summary>
+    public int RotateAboutPivot(char axis, double angleDeg, Geometry.Point3 pivot)
+    {
+        double norm = ((angleDeg % 360.0) + 360.0) % 360.0;
+        if (norm == 0.0)
+            return 0;
+
+        var rotatedNodes = new List<Model.Node>(Nodes.Count);
+        foreach (var n in Nodes)
+        {
+            var p = Geometry.AxisRotation.RotatePoint(n.Position, axis, angleDeg, pivot);
+            rotatedNodes.Add(new Model.Node(n.Id, p, n.Tags));
+        }
+        Nodes.Clear();
+        Nodes.AddRange(rotatedNodes);
+
+        var rotatedElems = new List<Model.BeamElement>(Elements.Count);
+        foreach (var e in Elements)
+        {
+            var o = Geometry.AxisRotation.RotateVector(e.Orientation, axis, angleDeg);
+            rotatedElems.Add(new Model.BeamElement(
+                e.Id, e.StartNodeId, e.EndNodeId, e.PropertyId, e.Category, o, e.SourceName, e.ParentElementId));
+        }
+        Elements.Clear();
+        Elements.AddRange(rotatedElems);
+
+        return rotatedNodes.Count;
+    }
+
     public void RemapNodeReferences(IDictionary<int, int> oldToRep)
     {
         int Map(int id) => oldToRep.TryGetValue(id, out var v) ? v : id;
@@ -83,3 +143,6 @@ public sealed class FeModel
         PointMasses.AddRange(newPointMasses);
     }
 }
+
+/// <summary>장비 질량 누락 1건 — CSV name, 운용 질량(kg), 사유.</summary>
+public sealed record DroppedEquipmentMass(string Name, double MassKg, string Reason);

@@ -168,4 +168,21 @@ public class FeModelJsonTests
         restored.Nodes[0].HasTag(NodeTags.Boundary).Should().BeTrue();
         restored.Nodes[0].HasTag(NodeTags.Merged).Should().BeFalse();
     }
+    [Fact]
+    public void HullNo_RoundTripsThroughMeta()
+    {
+        var model = BuildSampleModel();
+        model.HullNo = "3454";
+        var json = model.ToJson("C", "Final");
+        json.Should().Contain("\"hullNo\": \"3454\"");
+        FeModelJson.FromJson(json).HullNo.Should().Be("3454");
+    }
+
+    [Fact]
+    public void HullNo_Absent_KeyOmitted()
+    {
+        var json = BuildSampleModel().ToJson("C", "Final");
+        json.Should().NotContain("hullNo");
+        FeModelJson.FromJson(json).HullNo.Should().BeNull();
+    }
 }

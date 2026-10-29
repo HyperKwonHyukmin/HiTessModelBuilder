@@ -11,12 +11,23 @@ namespace Cmb.Pipeline.Stages;
 /// RBE2 브릿지 연결. HiTess ElementRbeConnectionModifier 이식.
 /// U-bolt 영역(pipe 단면 + axial 여유)은 exclusion zone으로 제외하여 잘못된 자유단→U-bolt 연결을 방지.
 ///
+/// 축 방향 우선: 자유단 부재의 바깥 축 방향 원뿔(cos ≥ FreeEndRbeAxialConeCos) 안의 후보가
+/// 최근접 후보보다 FreeEndRbeAxialPreferenceMm 이내로만 멀면 그 후보를 고른다. 수직 기둥 하단이
+/// 옆으로 조금 더 가까운 앵글 대신 바로 아래 받침 부재(H빔 등)에 얹히게 하려는 것
+/// (3496-35210-A508372 N291: 옆 앵글 76mm vs 아래 H빔 87mm).
+/// 단, 최근접 부재에 이미 닿아 있거나(거리 ≤ 그 단면 최대치수/2) 축 방향 부재 단면에 얹혀 있지
+/// 않으면(거리 > 단면/2 + ExtraMargin) 바꾸지 않는다 — 실측 10세트에서 닿아 있는 옆 부재까지
+/// 먼 아래 부재로 갈아타는 오탐(6mm → 103mm)이 나와 두 접촉 조건으로 좁혔다.
+///
 /// unresolved 자유단은 per-node FREE_END_UNRESOLVED warning(가장 가까운 후보·거리·카테고리·거부사유)
 /// 와 종합 FREE_END_UNRESOLVED_SUMMARY info(거리 bucket / 카테고리 / 사유 분포)로 보고.
 /// </summary>
 public sealed class FreeEndRbeStage : IPipelineStage
 {
     public string Name => "FreeEndRbe";
+
+    /// <summary>축 방향 우선으로 만든 FREE_END_RBE 의 DetailRemark — LoopCloseProximity 가 재연결을 건너뛰는 표식.</summary>
+    public const string AxialDetailRemark = "AXIAL";
 
     public bool Execute(StageContext ctx)
     {
@@ -45,7 +56,7 @@ public sealed class FreeEndRbeStage : IPipelineStage
         var spatial = new ElementSpatialHash(model.Elements, nodeById,
             tol.SpatialCellSizeMm, hashInflate);
 
-        // 3. 공선 검사용 free-node → 소속 부재 방향/카테고리
+        // 3. 공선 검사·축 방향 우선용 free-node → 소속 부재 바깥 방향/카테고리
         var (freeDir, freeCategory) = BuildFreeNodeContext(model, freeNodes, nodeById);
 
         // 4. 단면 치수 캐시 (sectionById에서 즉시 조회)
@@ -56,10 +67,11 @@ public sealed class FreeEndRbeStage : IPipelineStage
             tol.BoxUboltAxialSafetyMm);
 
         // 6. 자유단 처리 — 후보 평가 + closest tracking
-        var pending      = new List<(int FreeNodeId, Point3 ProjPoint, int TargetEid)>();
+        var pending      = new List<(int FreeNodeId, Point3 ProjPoint, int TargetEid, bool Axial)>();
         int onTargetDeferred = 0;
         var unresolvedDetails = new List<UnresolvedDetail>();
         int excludedHits = 0;
+        int axialPreferred = 0;
         var elementEdges = BuildElementEdges(model);
 
         foreach (int fnid in freeNodes)
@@ -74,6 +86,15 @@ public sealed class FreeEndRbeStage : IPipelineStage
             Point3 bestProj     = default;
             int    bestTargetId = -1;
             double bestT        = 0.0;
+
+            // 축 방향 원뿔 안의 수락 후보 중 최근접 (축 방향 우선 판정용)
+            double axialDist     = double.MaxValue;
+            Point3 axialProj     = default;
+            int    axialTargetId = -1;
+            double axialT        = 0.0;
+            double bestDim       = 0.0;   // 최근접 후보 단면 최대치수 (접촉 판정)
+            double axialDim      = 0.0;
+            bool   axialChosen   = false;
 
             // 가장 가까운 거부된 후보 추적 (unresolved 시 진단용)
             double closestDist     = double.MaxValue;
@@ -166,7 +187,39 @@ public sealed class FreeEndRbeStage : IPipelineStage
                     bestProj     = proj;
                     bestTargetId = eid;
                     bestT        = t;
+                    bestDim      = searchDim;
                 }
+
+                if (reason == "accepted" && dist < axialDist && freeDirLen > 1e-9 && dist > 1e-9)
+                {
+                    double axialCos = Vector3.Dot(proj - pFree, fdir) / (dist * freeDirLen);
+                    if (axialCos >= tol.FreeEndRbeAxialConeCos)
+                    {
+                        axialDist     = dist;
+                        axialProj     = proj;
+                        axialTargetId = eid;
+                        axialT        = t;
+                        axialDim      = searchDim;
+                    }
+                }
+            }
+
+            bool lateralTouching = bestDist <= bestDim * 0.5;
+            bool axialBearing    = axialDist <= axialDim * 0.5 + tol.FreeEndRbeExtraMarginMm;
+            if (axialTargetId != -1 && axialTargetId != bestTargetId &&
+                axialDist <= bestDist + tol.FreeEndRbeAxialPreferenceMm &&
+                !lateralTouching && axialBearing)
+            {
+                ctx.AddTrace(TraceAction.ElementPreserved, Name,
+                    nodeId: fnid, relatedElementId: axialTargetId,
+                    note: $"free N{fnid}: axial E{axialTargetId} ({axialDist:F1}mm) preferred over " +
+                          $"nearest lateral E{bestTargetId} ({bestDist:F1}mm)");
+                bestDist     = axialDist;
+                bestProj     = axialProj;
+                bestTargetId = axialTargetId;
+                bestT        = axialT;
+                axialChosen  = true;
+                axialPreferred++;
             }
 
             if (bestTargetId == -1)
@@ -186,7 +239,7 @@ public sealed class FreeEndRbeStage : IPipelineStage
                 continue;
             }
 
-            pending.Add((fnid, bestProj, bestTargetId));
+            pending.Add((fnid, bestProj, bestTargetId, axialChosen));
         }
 
         // 7. 예약된 RBE2 일괄 추가 — element/RBE 중복 노드쌍은 skip
@@ -201,7 +254,7 @@ public sealed class FreeEndRbeStage : IPipelineStage
         int selfLoopSkipped = 0;
         int redundantEdgeSkipped = 0;
         int rbeCycleSkipped = 0;
-        foreach (var (fnid, projPt, targetEid) in pending)
+        foreach (var (fnid, projPt, targetEid, axial) in pending)
         {
             int projNodeId = FindOrCreateNode(ctx, model, nodeById, nodeHash, projPt, tol.NodeMergeMm, fnid, targetEid);
             if (projNodeId == fnid)
@@ -227,7 +280,8 @@ public sealed class FreeEndRbeStage : IPipelineStage
                 continue;
             }
             int rbeId = model.AllocElemId();
-            model.Rigids.Add(new RigidElement(rbeId, projNodeId, [fnid], "FREE_END_RBE"));
+            model.Rigids.Add(new RigidElement(rbeId, projNodeId, [fnid], "FREE_END_RBE",
+                detailRemark: axial ? AxialDetailRemark : null));
             rbeEdges.Add(edgeKey);
             double dist = nodeById[projNodeId].Position.DistanceTo(nodeById[fnid].Position);
             ctx.AddTrace(TraceAction.ElementCreated, Name, elementId: rbeId,
@@ -242,6 +296,10 @@ public sealed class FreeEndRbeStage : IPipelineStage
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "FREE_END_RBE_CREATED",
                 $"{created} free-end node(s) linked to nearest element via RBE2 " +
                 $"(maxSearch {tol.FreeEndRbeMaxSearchMm:F0}mm).");
+        if (axialPreferred > 0)
+            ctx.AddDiagnostic(DiagnosticSeverity.Info, "FREE_END_AXIAL_PREFERRED",
+                $"{axialPreferred} free-end node(s) linked to the member along their own axis instead of " +
+                $"a closer lateral member (within {tol.FreeEndRbeAxialPreferenceMm:F0}mm).");
         if (excludedHits > 0)
             ctx.AddDiagnostic(DiagnosticSeverity.Info, "FREE_END_UBOLT_EXCLUDED",
                 $"{excludedHits} candidate projection(s) skipped — inside U-bolt exclusion zone(s).");
@@ -370,8 +428,9 @@ public sealed class FreeEndRbeStage : IPipelineStage
     }
 
     /// <summary>
-    /// 자유단 노드 → 소속 부재 방향 + 소속 부재 카테고리(Pipe/Structure/Equipment) 매핑.
+    /// 자유단 노드 → 소속 부재의 바깥 방향(반대편 노드 → 자유단) + 카테고리(Pipe/Structure/Equipment) 매핑.
     /// 자유단은 정의상 1개 element에만 속하므로 첫 매칭이 곧 소속.
+    /// 공선 검사는 |cos| 라 부호와 무관하고, 축 방향 우선 판정은 이 바깥 방향 부호에 의존한다.
     /// </summary>
     private static (Dictionary<int, Vector3> dir, Dictionary<int, string> cat)
         BuildFreeNodeContext(FeModel model, HashSet<int> freeNodes, Dictionary<int, Node> nodeById)
@@ -391,7 +450,7 @@ public sealed class FreeEndRbeStage : IPipelineStage
             string cat = elem.Category.ToString();
             if (firstFree && !dirMap.ContainsKey(elem.StartNodeId))
             {
-                dirMap[elem.StartNodeId] = dir;
+                dirMap[elem.StartNodeId] = nA.Position - nB.Position;
                 catMap[elem.StartNodeId] = cat;
             }
             if (lastFree && !dirMap.ContainsKey(elem.EndNodeId))
