@@ -199,6 +199,14 @@ internal static class EditIntentApplier
                 {
                     ApplyChangeSection(model, intent, pipePidBase, operations);
                 }
+                else if (intent.Kind == "addMasses")
+                {
+                    ApplyAddMasses(model, intent, session, operations);
+                }
+                else if (intent.Kind == "changeMasses")
+                {
+                    ApplyChangeMasses(model, intent, operations);
+                }
                 else if (intent.Kind == "deleteOrphanNodes")
                 {
                     // 지우는 시점은 맨 끝(RemoveOrphanCandidates) — 뒤에 오는 편집이 그 노드를 쓸 수 있다.
@@ -236,6 +244,11 @@ internal static class EditIntentApplier
             if (lostElements.Count > 0)
                 throw new InvalidOperationException(
                     "편집 적용 결과에서 추가한 부재가 유실되었습니다: " + string.Join(", ", lostElements.Select(id => $"E{id}")));
+            // 추가한 질량도 같다 — 노드가 다른 편집(deleteGroup 등)으로 지워지면 질량이 조용히 빠진다.
+            var lostMasses = session.AddedMassIds.Where(id => model.PointMasses.All(pm => pm.Id != id)).OrderBy(id => id).ToList();
+            if (lostMasses.Count > 0)
+                throw new InvalidOperationException(
+                    "편집 적용 결과에서 추가한 질량이 유실되었습니다: " + string.Join(", ", lostMasses.Select(id => $"M{id}")));
 
             var dropped = FindDroppedIntentNodes(model, session);
             if (dropped.Count > 0)
@@ -612,6 +625,61 @@ internal static class EditIntentApplier
             return null;
         }
 
+        if (intent.Kind == "addMasses")
+        {
+            if (!intent.Params.TryGetProperty("masses", out var masses) || masses.ValueKind != JsonValueKind.Array ||
+                masses.GetArrayLength() == 0)
+                return "addMasses.params.masses must be a non-empty array.";
+            var seen = new HashSet<int>();
+            foreach (var m in masses.EnumerateArray())
+            {
+                if (m.ValueKind != JsonValueKind.Object ||
+                    !m.TryGetProperty("massId", out var midProp) || midProp.ValueKind != JsonValueKind.Number ||
+                    !midProp.TryGetInt32(out int massId) || massId <= 0)
+                    return "addMasses.masses[].massId must be a positive integer.";
+                if (!m.TryGetProperty("nodeId", out var nidProp) || nidProp.ValueKind != JsonValueKind.Number ||
+                    !nidProp.TryGetInt32(out int nid) || nid <= 0)
+                    return $"addMasses: M{massId} nodeId must be a positive integer.";
+                if (!TryReadFiniteNumber(m, "mass", out double mass) || !(mass > 0))
+                    return $"addMasses: M{massId} mass must be a finite number > 0.";
+                if (!seen.Add(massId)) return $"addMasses: massId {massId} 가 두 번 나옵니다.";
+                // CBEAM·RBE2·CONM2 는 Nastran 요소 번호 공간을 같이 쓴다 — 원본·addElement·앞선 addMasses 와 겹치면 거부.
+                if (model.Elements.Any(e => e.Id == massId) || model.Rigids.Any(r => r.Id == massId) ||
+                    model.PointMasses.Any(pm => pm.Id == massId))
+                    return $"addMasses: massId {massId} already used.";
+                if (context.AddedElementIds.Contains(massId))
+                    return $"addMasses: massId {massId} 를 addElement 도 씁니다.";
+                if (context.AddedMassIds.Contains(massId))
+                    return $"addMasses: massId {massId} 가 다른 addMasses 와 겹칩니다.";
+                if (model.FindNode(nid) is null && !addedNodeIds.Contains(nid))
+                    return $"addMasses: Node {nid} not found.";
+            }
+            context.AddedMassIds.UnionWith(seen);
+            return null;
+        }
+
+        if (intent.Kind == "changeMasses")
+        {
+            if (!intent.Params.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array ||
+                changes.GetArrayLength() == 0)
+                return "changeMasses.params.changes must be a non-empty array.";
+            var seen = new HashSet<int>();
+            foreach (var c in changes.EnumerateArray())
+            {
+                if (c.ValueKind != JsonValueKind.Object ||
+                    !c.TryGetProperty("massId", out var midProp) || midProp.ValueKind != JsonValueKind.Number ||
+                    !midProp.TryGetInt32(out int massId) || massId <= 0)
+                    return "changeMasses.changes[].massId must be a positive integer.";
+                if (!TryReadFiniteNumber(c, "mass", out double mass) || !(mass > 0))
+                    return $"changeMasses: M{massId} mass must be a finite number > 0.";
+                if (!seen.Add(massId)) return $"changeMasses: massId {massId} 가 두 번 나옵니다.";
+                // 원본 질량만 — 이번에 추가한 질량은 Studio 가 그 addMasses 기록을 고친다.
+                if (model.PointMasses.All(pm => pm.Id != massId))
+                    return $"changeMasses: mass {massId} not found.";
+            }
+            return null;
+        }
+
         if (intent.Kind == "deleteOrphanNodes")
         {
             if (!TryReadIntList(intent.Params, "nodeIds", out var ids) || ids.Count == 0)
@@ -835,6 +903,8 @@ internal static class EditIntentApplier
         public HashSet<int> AddElementCreatedPropertyIds { get; } = new();
         /// <summary>지금까지 검증한 changeSection 이 만든 PID(기록 순서).</summary>
         public HashSet<int> ChangeSectionCreatedPropertyIds { get; } = new();
+        /// <summary>지금까지 검증한 addMasses 가 쓸 CONM2 번호 — intent 사이 번호 충돌 검사용.</summary>
+        public HashSet<int> AddedMassIds { get; } = new();
     }
 
     /// <summary>적용 시점에야 드러나는 입력 오류 — exit 65(검증 실패)로 돌려준다.</summary>
@@ -860,6 +930,8 @@ internal static class EditIntentApplier
         public List<int> AddedNodeIds { get; } = new();
         /// <summary>addElement 로 만든 부재 — 결과에서 사라지면 실패시킨다.</summary>
         public List<int> AddedElementIds { get; } = new();
+        /// <summary>addMasses 로 만든 CONM2 — 결과에서 사라지면 실패시킨다.</summary>
+        public List<int> AddedMassIds { get; } = new();
 
         public void CollectAddRigidNodes(EditIntent intent)
         {
@@ -893,6 +965,8 @@ internal static class EditIntentApplier
     /// - addNode 는 그 GRID 를 참조하는 addRigid 보다 앞이어야 한다.
     /// - addElement 는 addNode 바로 뒤 — Studio 가 정한 요소 번호(최대+1)를, 뒤에서 RBE·CONM2 를 만들며
     ///   NextUnusedElementId 로 번호를 매기는 addRigid 가 먼저 가져가지 않게 한다.
+    /// - addMasses 는 addElement 바로 뒤 — 같은 이유(Studio 가 정한 CONM2 번호를 무게중심 addRigid 가 먼저 가져가지 않게).
+    /// - changeMasses 는 '나머지'(기록 순서) — 다른 편집이 지운 질량이면 건너뛰고 경고(MASS_CHANGE_SKIPPED)를 남긴다(최종 모델이 미리보기와 같다).
     /// - changeSection 은 '나머지'(기록 순서) — addElement 뒤라 그 부재·새 단면을 쓸 수 있고,
     ///   deleteElements 등과의 순서는 기록 그대로다.
     /// </summary>
@@ -909,8 +983,9 @@ internal static class EditIntentApplier
         var deletions = intents.Where(IsBaseRigidDeletion).ToList();
         var additions = intents.Where(i => i.Kind == "addNode").ToList();
         var elements = intents.Where(i => i.Kind == "addElement").ToList();
-        var rest = intents.Where(i => i.Kind is not ("rotateModel" or "addNode" or "addElement") && !IsBaseRigidDeletion(i)).ToList();
-        return rotations.Concat(deletions).Concat(additions).Concat(elements).Concat(rest).ToList();
+        var masses = intents.Where(i => i.Kind == "addMasses").ToList();
+        var rest = intents.Where(i => i.Kind is not ("rotateModel" or "addNode" or "addElement" or "addMasses") && !IsBaseRigidDeletion(i)).ToList();
+        return rotations.Concat(deletions).Concat(additions).Concat(elements).Concat(masses).Concat(rest).ToList();
     }
 
     internal static void ApplyDeleteRigid(
@@ -1162,6 +1237,74 @@ internal static class EditIntentApplier
             details: $"{removed.Count}/{ids.Count} mass(es) removed"));
     }
 
+    /// <summary>
+    /// 기존 노드(원본 또는 addNode)에 CONM2 추가 — 번호는 Studio 가 정한 massId(관성·오프셋 없음, 단위 ton).
+    /// </summary>
+    internal static void ApplyAddMasses(
+        FeModel model,
+        EditIntent intent,
+        EditSession session,
+        List<Dictionary<string, object?>> operations)
+    {
+        var created = new List<string>();
+        foreach (var m in intent.Params.GetProperty("masses").EnumerateArray())
+        {
+            int massId = m.GetProperty("massId").GetInt32();
+            int nid = m.GetProperty("nodeId").GetInt32();
+            TryReadFiniteNumber(m, "mass", out double mass);
+            // 검증 뒤에 무게중심 RBE 등이 번호를 가져갔거나 노드가 사라졌으면 화면과 다른 모델이 나간다.
+            if (model.Elements.Any(e => e.Id == massId) || model.Rigids.Any(r => r.Id == massId) ||
+                model.PointMasses.Any(pm => pm.Id == massId))
+                throw new InvalidOperationException($"addMasses: massId {massId} 가 적용 시점에 이미 쓰이고 있습니다.");
+            if (model.FindNode(nid) is null)
+                throw new EditIntentRejectedException(intent.Id, $"addMasses: Node {nid} 가 적용 시점에 없습니다.");
+            model.PointMasses.Add(new PointMass(massId, nid, mass, "viewer-added"));
+            session.AddedMassIds.Add(massId);
+            created.Add($"M{massId}@N{nid} {mass:R}t");
+        }
+        // 뒤에 오는 무게중심 RBE 의 NextUnusedElementId 가 이 번호를 다시 쓰지 않게 한다.
+        model.SyncIdCounters();
+        operations.Add(EditTrace.Operation(
+            "INTENT_APPLIED", "info", intent.Id,
+            kind: "addMasses",
+            details: $"{created.Count} CONM2 created: {string.Join(", ", created.Take(20))}" +
+                     (created.Count > 20 ? $" … (+{created.Count - 20})" : "")));
+    }
+
+    /// <summary>
+    /// 원본 CONM2 의 질량 값만 바꾼다 — 같은 자리(순서)에 같은 Id·NodeId·SourceName 으로 교체(PointMass 는 불변).
+    /// </summary>
+    internal static void ApplyChangeMasses(
+        FeModel model,
+        EditIntent intent,
+        List<Dictionary<string, object?>> operations)
+    {
+        var changed = new List<string>();
+        var gone = new List<int>();
+        foreach (var c in intent.Params.GetProperty("changes").EnumerateArray())
+        {
+            int massId = c.GetProperty("massId").GetInt32();
+            TryReadFiniteNumber(c, "mass", out double mass);
+            int idx = model.PointMasses.FindIndex(pm => pm.Id == massId);
+            // 검증이 원본 질량만 받으므로, 여기서 없다면 같은 문서의 다른 편집이 지운 것이다 — 최종 모델에 그 질량이 없는 것은
+            // Studio 미리보기와 같다. 기록 순서와 무관하게 먼저 적용되는 원본 RBE 삭제(removeMass)가 대표 경우라 실패로 보지 않는다.
+            if (idx < 0) { gone.Add(massId); continue; }
+            var old = model.PointMasses[idx];
+            model.PointMasses[idx] = new PointMass(old.Id, old.NodeId, mass, old.SourceName);
+            changed.Add($"M{old.Id} {old.Mass:R}->{mass:R}");
+        }
+        operations.Add(EditTrace.Operation(
+            "INTENT_APPLIED", "info", intent.Id,
+            kind: "changeMasses",
+            details: $"{changed.Count} CONM2 mass changed (ton): {string.Join(", ", changed.Take(20))}" +
+                     (changed.Count > 20 ? $" … (+{changed.Count - 20})" : "")));
+        if (gone.Count > 0)
+            operations.Add(EditTrace.Operation(
+                "MASS_CHANGE_SKIPPED", "warning", intent.Id,
+                kind: "changeMasses",
+                details: $"다른 편집으로 지워진 질량은 값 변경을 건너뜀: {string.Join(", ", gone.Select(id => $"M{id}"))}"));
+    }
+
     internal static bool TryReadIntList(JsonElement p, string name, out List<int> values)
     {
         values = new List<int>();
@@ -1178,17 +1321,26 @@ internal static class EditIntentApplier
     internal static List<int> ReadIntList(JsonElement p, string name) =>
         TryReadIntList(p, name, out var values) ? values : new List<int>();
 
-    /// <summary>addNode 로 만들고 아무 데도 연결 안 한 GRID — 지우지 않고 알리기만 한다(의도적으로 미리 만들 수도 있다).</summary>
+    /// <summary>
+    /// addNode 로 만들고 요소·RBE 어디에도 연결 안 한 GRID — 지우지 않고 알리기만 한다(의도적으로 미리 만들 수도 있다).
+    /// 질량(CONM2)은 연결로 치지 않는다 — 질량만 붙은 GRID 는 강성이 없어 AUTOSPC 가 묶고 그 하중이 구조에 전달되지 않는다.
+    /// </summary>
     internal static void ReportUnboundAddedNodes(FeModel model, EditSession session, List<Dictionary<string, object?>> operations)
     {
         if (session.AddedNodeIds.Count == 0) return;
-        var referenced = ReferencedNodeIds(model);
-        var unbound = session.AddedNodeIds.Where(n => !referenced.Contains(n)).OrderBy(n => n).ToList();
+        var bound = new HashSet<int>();
+        foreach (var e in model.Elements) { bound.Add(e.StartNodeId); bound.Add(e.EndNodeId); }
+        foreach (var r in model.Rigids) { bound.Add(r.IndependentNodeId); bound.UnionWith(r.DependentNodeIds); }
+        var massNodes = model.PointMasses.Select(pm => pm.NodeId).ToHashSet();
+        var unbound = session.AddedNodeIds.Where(n => !bound.Contains(n) && model.FindNode(n) is not null).OrderBy(n => n).ToList();
         if (unbound.Count > 0)
             operations.Add(EditTrace.Operation(
                 "UNBOUND_ADDED_NODES", "warning", intentId: null,
                 kind: "addNode",
-                details: $"아무 요소/RBE 에도 연결되지 않은 신규 GRID: {string.Join(",", unbound)}"));
+                details: $"아무 요소/RBE 에도 연결되지 않은 신규 GRID: {string.Join(",", unbound)}" +
+                         (unbound.Any(massNodes.Contains)
+                             ? $" — 질량이 붙은 GRID {string.Join(",", unbound.Where(massNodes.Contains))} 는 구조에 하중이 전달되지 않습니다"
+                             : "")));
     }
 
     internal static List<int> FindDroppedIntentNodes(FeModel model, EditSession session)
