@@ -59,7 +59,8 @@ public class MoveNodesAddElementApplyEditTests
     {
         var baseModel = BaseModel();
         int eid = NextElementId(baseModel);
-        int pid = baseModel.GetProperty("properties").EnumerateArray().Max(p => p.GetProperty("id").GetInt32()) + 1;
+        // 구조 구간(PID < base BDF PipePidBase=1000) 안의 다음 번호 — 전체 최대 + 1 은 배관 구간이라 거부된다.
+        int pid = baseModel.GetProperty("properties").EnumerateArray().Select(p => p.GetProperty("id").GetInt32()).Where(id => id < 1000).Max() + 1;
         int mid = baseModel.GetProperty("materials")[0].GetProperty("id").GetInt32();
         var result = Run(Intent("addElement", new
         {

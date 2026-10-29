@@ -113,12 +113,18 @@ internal static class EditIntentApplier
             return 64;
         }
     
+        // 배관 단면 구간 시작 번호 — base BDF 의 '$ HiTessModelBuilder: PipePidBase=N' 주석이 원본이다
+        // (build-full 이 RunOptions.PipePidBase 로 쓴다). 주석이 없으면 RunOptions 기본값.
+        int pipePidBase = (baseBdf.Exists ? ReadPipePidBaseFromBdf(baseBdf.FullName) : null)
+            ?? RunOptions.Default.PipePidBase;
+
         var baseConnectivity = ConnectivityAnalyzer.Analyze(model);
         var baseGroupsById = baseConnectivity.Groups.ToDictionary(g => g.Id);
         var operations = new List<Dictionary<string, object?>>();
         // addNode 가 만들 GRID — 검증 시점엔 아직 모델에 없지만 addRigid 가 참조할 수 있다.
         var addedNodeIds = CollectAddedNodeIds(doc.Intents);
         var addedElementIds = new HashSet<int>();
+        var validationContext = new IntentValidationContext(pipePidBase, doc.Intents);
 
         foreach (var intent in doc.Intents)
         {
@@ -139,7 +145,7 @@ internal static class EditIntentApplier
                 }
             }
     
-            string? validationError = ValidateIntent(intent, model, baseGroupsById, addedNodeIds);
+            string? validationError = ValidateIntent(intent, model, baseGroupsById, addedNodeIds, validationContext);
             if (validationError is null && intent.Kind == "addElement" &&
                 !addedElementIds.Add(intent.Params.GetProperty("elementId").GetInt32()))
                 validationError = $"addElement: elementId {intent.Params.GetProperty("elementId").GetInt32()} 가 두 번 나옵니다.";
@@ -188,6 +194,10 @@ internal static class EditIntentApplier
                 else if (intent.Kind == "addElement")
                 {
                     ApplyAddElement(model, intent, session, operations);
+                }
+                else if (intent.Kind == "changeSection")
+                {
+                    ApplyChangeSection(model, intent, pipePidBase, operations);
                 }
                 else if (intent.Kind == "deleteOrphanNodes")
                 {
@@ -262,8 +272,9 @@ internal static class EditIntentApplier
                 ? ReadSpcNodeIdsFromBdf(baseBdf.FullName, model)
                 : Array.Empty<int>();
     
+            // base BDF 와 같은 PipePidBase 로 써야 구조·배관 단면 구분 주석이 원본과 어긋나지 않는다.
             using (var writer = new StreamWriter(tempBdf))
-                BdfWriter.Write(model, writer, preservedSpcNodeIds, preservedAnalysis);
+                BdfWriter.Write(model, writer, preservedSpcNodeIds, preservedAnalysis, pipePidBase: pipePidBase);
     
             var traceDoc = new EditApplyTraceDocument
             {
@@ -281,6 +292,12 @@ internal static class EditIntentApplier
     
             Console.WriteLine($"{doc.Intents.Count} intents applied, output at {outputDir}");
             return 0;
+        }
+        catch (EditIntentRejectedException ex)
+        {
+            // 적용 시점에야 알 수 있는 입력 오류(앞선 편집이 대상 요소를 지움 등) — 검증 실패와 같은 65.
+            Console.Error.WriteLine($"[오류] intent {ex.IntentId} rejected: {ex.Message}");
+            return 65;
         }
         catch (Exception ex)
         {
@@ -376,6 +393,24 @@ internal static class EditIntentApplier
         return null;
     }
 
+    /// <summary>BDF 의 '$ HiTessModelBuilder: PipePidBase=N' 주석에서 배관 단면 시작 번호를 읽는다. 없거나 잘못되면 null.</summary>
+    internal static int? ReadPipePidBaseFromBdf(string bdfPath)
+    {
+        const string marker = "PipePidBase=";
+        foreach (var rawLine in File.ReadLines(bdfPath))
+        {
+            var line = rawLine.Trim();
+            if (!line.StartsWith('$')) continue;
+            if (line.IndexOf("HiTessModelBuilder:", StringComparison.OrdinalIgnoreCase) < 0) continue;
+            int at = line.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (at < 0) continue;
+            var value = line[(at + marker.Length)..].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries);
+            // FeModelBuilder 와 같은 하한(>= 2) — 구조 단면 1개 자리는 있어야 한다.
+            return value.Length > 0 && int.TryParse(value[0], out int pipePidBase) && pipePidBase >= 2 ? pipePidBase : null;
+        }
+        return null;
+    }
+
     internal static IReadOnlyList<int> ReadSpcNodeIdsFromBdf(string bdfPath, FeModel model)
     {
         var rbeDependentIds = model.Rigids.SelectMany(r => r.DependentNodeIds).ToHashSet();
@@ -431,9 +466,11 @@ internal static class EditIntentApplier
         EditIntent intent,
         FeModel model,
         IReadOnlyDictionary<int, ConnectivityGroupDto> baseGroupsById,
-        IReadOnlySet<int>? addedNodeIds = null)
+        IReadOnlySet<int>? addedNodeIds = null,
+        IntentValidationContext? context = null)
     {
         addedNodeIds ??= new HashSet<int>();
+        context ??= new IntentValidationContext(RunOptions.Default.PipePidBase, Array.Empty<EditIntent>());
 
         if (intent.Kind == "deleteRigid")
         {
@@ -514,23 +551,63 @@ internal static class EditIntentApplier
             foreach (int n in new[] { a, b })
                 if (model.FindNode(n) is null && !addedNodeIds.Contains(n)) return $"addElement: Node {n} not found.";
             // 같은 노드쌍 중복은 Studio 가 막는다 — 원본 부재를 지우고 같은 자리에 새로 만드는 경우가 있어 여기선 보지 않는다.
+            // 단면: addElement 는 모두 '나머지' 앞에 기록 순서대로 적용되므로, 쓸 수 있는 PID = 원본 + 앞선 addElement 가 만든 것.
             if (p.TryGetProperty("newProperty", out var np) && np.ValueKind == JsonValueKind.Object)
             {
-                if (!np.TryGetProperty("id", out var npId) || !npId.TryGetInt32(out int npid) || npid != pid)
-                    return "addElement.newProperty.id must equal propertyId.";
-                if (model.FindSection(pid) is not null) return $"addElement: property {pid} already exists.";
-                if (!np.TryGetProperty("kind", out var kp) || kp.ValueKind != JsonValueKind.String ||
-                    !Enum.TryParse<BeamSectionKind>(kp.GetString(), out _))
-                    return "addElement.newProperty.kind is invalid.";
-                if (!np.TryGetProperty("dims", out var dp) || dp.ValueKind != JsonValueKind.Array || dp.GetArrayLength() == 0 ||
-                    dp.EnumerateArray().Any(d => d.ValueKind != JsonValueKind.Number || !(d.GetDouble() > 0)))
-                    return "addElement.newProperty.dims must be positive numbers.";
-                if (!np.TryGetProperty("materialId", out var mp) || !mp.TryGetInt32(out int mid) || model.FindMaterial(mid) is null)
-                    return "addElement.newProperty.materialId not found.";
+                string? npError = ValidateNewProperty("addElement", np, pid, model,
+                    context.AddElementCreatedPropertyIds, context.PipePidBase);
+                if (npError is not null) return npError;
+                context.AddElementCreatedPropertyIds.Add(pid);
             }
-            else if (model.FindSection(pid) is null)
+            else if (model.FindSection(pid) is null && !context.AddElementCreatedPropertyIds.Contains(pid))
             {
                 return $"addElement: property {pid} not found.";
+            }
+            return null;
+        }
+
+        if (intent.Kind == "changeSection")
+        {
+            var p = intent.Params;
+            if (!p.TryGetProperty("elementIds", out var idsProp) || idsProp.ValueKind != JsonValueKind.Array ||
+                idsProp.GetArrayLength() == 0)
+                return "changeSection.params.elementIds must be a non-empty integer array.";
+            var ids = new HashSet<int>();
+            foreach (var item in idsProp.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out int id) || id <= 0)
+                    return "changeSection.params.elementIds must contain positive integers.";
+                if (!ids.Add(id)) return $"changeSection: element {id} 가 두 번 나옵니다.";
+            }
+            if (!p.TryGetProperty("propertyId", out var pidProp) || pidProp.ValueKind != JsonValueKind.Number ||
+                !pidProp.TryGetInt32(out int pid) || pid <= 0)
+                return "changeSection.params.propertyId must be a positive integer.";
+
+            // 대상 = 원본 요소 또는 addElement 가 만들 요소(addElement 가 먼저 적용된다). 앞선 삭제는 적용 시점에 다시 본다.
+            var baseElementIds = model.Elements.Select(e => e.Id).ToHashSet();
+            var missing = ids.Where(id => !baseElementIds.Contains(id) && !context.AddedElementIds.Contains(id)).ToList();
+            if (missing.Count > 0)
+                return $"changeSection: element(s) not found: {string.Join(",", missing.Take(8))}.";
+            // 배관 PID 는 유체 등가 밀도 재료라, 다른 단면으로 바꾸면 질량이 틀어진다.
+            var pipes = model.Elements.Where(e => ids.Contains(e.Id) && e.Category == EntityCategory.Pipe).Select(e => e.Id).ToList();
+            if (pipes.Count > 0)
+                return $"changeSection: 배관 요소는 단면을 바꿀 수 없습니다: {string.Join(",", pipes.Take(8))}.";
+
+            // 단면: 원본 + addElement 가 만든 것(전부 먼저 적용) + 앞선 changeSection 이 만든 것.
+            var taken = context.AllAddElementPropertyIds.Union(context.ChangeSectionCreatedPropertyIds).ToHashSet();
+            if (p.TryGetProperty("newProperty", out var np) && np.ValueKind == JsonValueKind.Object)
+            {
+                string? npError = ValidateNewProperty("changeSection", np, pid, model, taken, context.PipePidBase);
+                if (npError is not null) return npError;
+                context.ChangeSectionCreatedPropertyIds.Add(pid);
+            }
+            else
+            {
+                if (model.FindSection(pid) is null && !taken.Contains(pid))
+                    return $"changeSection: property {pid} not found.";
+                // 구조 부재를 배관 구간 PID(유체 등가 밀도 재료)로 바꾸는 것도 같은 이유로 막는다.
+                if (pid >= context.PipePidBase)
+                    return $"changeSection: property {pid} 는 배관 단면 구간(PID >= {context.PipePidBase})입니다.";
             }
             return null;
         }
@@ -698,7 +775,75 @@ internal static class EditIntentApplier
     
         return $"unsupported intent kind: {intent.Kind}";
     }
-    
+
+    /// <summary>
+    /// addElement·changeSection 의 newProperty(새 PBEAML) 검사 — 두 intent 가 같은 형식을 쓴다.
+    /// takenPropertyIds = 원본에는 없지만 이 편집 안에서 이미 만들어질 PID.
+    /// </summary>
+    internal static string? ValidateNewProperty(
+        string kind,
+        JsonElement np,
+        int propertyId,
+        FeModel model,
+        IReadOnlySet<int> takenPropertyIds,
+        int pipePidBase)
+    {
+        if (!np.TryGetProperty("id", out var npId) || npId.ValueKind != JsonValueKind.Number ||
+            !npId.TryGetInt32(out int npid) || npid != propertyId)
+            return $"{kind}.newProperty.id must equal propertyId.";
+        if (model.FindSection(propertyId) is not null || takenPropertyIds.Contains(propertyId))
+            return $"{kind}: property {propertyId} already exists.";
+        // 배관 구간(PID >= PipePidBase)에 구조 단면을 두면 BDF·권상(bridge)·보고서가 그 부재를 배관으로 본다.
+        if (propertyId >= pipePidBase)
+            return $"{kind}: property {propertyId} 는 배관 단면 구간(PID >= {pipePidBase})입니다 — 구조 단면 번호를 쓰세요.";
+        if (!np.TryGetProperty("kind", out var kp) || kp.ValueKind != JsonValueKind.String ||
+            !Enum.TryParse<BeamSectionKind>(kp.GetString(), out _))
+            return $"{kind}.newProperty.kind is invalid.";
+        if (!np.TryGetProperty("dims", out var dp) || dp.ValueKind != JsonValueKind.Array || dp.GetArrayLength() == 0 ||
+            dp.EnumerateArray().Any(d => d.ValueKind != JsonValueKind.Number || !(d.GetDouble() > 0)))
+            return $"{kind}.newProperty.dims must be positive numbers.";
+        if (!np.TryGetProperty("materialId", out var mp) || mp.ValueKind != JsonValueKind.Number ||
+            !mp.TryGetInt32(out int mid) || model.FindMaterial(mid) is null)
+            return $"{kind}.newProperty.materialId not found.";
+        return null;
+    }
+
+    /// <summary>검증(기록 순서) 동안 intent 사이에 이어지는 상태 — 앞선 intent 가 만들 단면·요소.</summary>
+    internal sealed class IntentValidationContext
+    {
+        public IntentValidationContext(int pipePidBase, IEnumerable<EditIntent> intents)
+        {
+            PipePidBase = pipePidBase;
+            foreach (var intent in intents)
+            {
+                if (intent.Kind != "addElement") continue;
+                var p = intent.Params;
+                if (p.TryGetProperty("elementId", out var eid) && eid.ValueKind == JsonValueKind.Number && eid.TryGetInt32(out int id))
+                    AddedElementIds.Add(id);
+                if (p.TryGetProperty("newProperty", out var np) && np.ValueKind == JsonValueKind.Object &&
+                    np.TryGetProperty("id", out var npid) && npid.ValueKind == JsonValueKind.Number && npid.TryGetInt32(out int pid))
+                    AllAddElementPropertyIds.Add(pid);
+            }
+        }
+
+        public int PipePidBase { get; }
+        /// <summary>addElement 가 만들 요소 전부 — addElement 는 changeSection 보다 먼저 적용된다.</summary>
+        public HashSet<int> AddedElementIds { get; } = new();
+        /// <summary>addElement 의 newProperty PID 전부(changeSection 이 쓸 수 있다).</summary>
+        public HashSet<int> AllAddElementPropertyIds { get; } = new();
+        /// <summary>지금까지 검증한 addElement 가 만든 PID(기록 순서).</summary>
+        public HashSet<int> AddElementCreatedPropertyIds { get; } = new();
+        /// <summary>지금까지 검증한 changeSection 이 만든 PID(기록 순서).</summary>
+        public HashSet<int> ChangeSectionCreatedPropertyIds { get; } = new();
+    }
+
+    /// <summary>적용 시점에야 드러나는 입력 오류 — exit 65(검증 실패)로 돌려준다.</summary>
+    internal sealed class EditIntentRejectedException : InvalidOperationException
+    {
+        public EditIntentRejectedException(string intentId, string message) : base(message) => IntentId = intentId;
+        public string IntentId { get; }
+    }
+
     /// <summary>편집 한 번의 적용 동안 모으는 상태 — orphan 정리·불변식 검사 재료.</summary>
     internal sealed class EditSession
     {
@@ -748,6 +893,8 @@ internal static class EditIntentApplier
     /// - addNode 는 그 GRID 를 참조하는 addRigid 보다 앞이어야 한다.
     /// - addElement 는 addNode 바로 뒤 — Studio 가 정한 요소 번호(최대+1)를, 뒤에서 RBE·CONM2 를 만들며
     ///   NextUnusedElementId 로 번호를 매기는 addRigid 가 먼저 가져가지 않게 한다.
+    /// - changeSection 은 '나머지'(기록 순서) — addElement 뒤라 그 부재·새 단면을 쓸 수 있고,
+    ///   deleteElements 등과의 순서는 기록 그대로다.
     /// </summary>
     internal static List<EditIntent> OrderIntents(IReadOnlyList<EditIntent> intents, FeModel model)
     {
@@ -894,11 +1041,7 @@ internal static class EditIntentApplier
         int b = p.GetProperty("endNode").GetInt32();
         int pid = p.GetProperty("propertyId").GetInt32();
         if (p.TryGetProperty("newProperty", out var np) && np.ValueKind == JsonValueKind.Object && model.FindSection(pid) is null)
-        {
-            var kind = Enum.Parse<BeamSectionKind>(np.GetProperty("kind").GetString()!);
-            var dims = np.GetProperty("dims").EnumerateArray().Select(d => d.GetDouble()).ToArray();
-            model.Sections.Add(new BeamSection(pid, kind, dims, np.GetProperty("materialId").GetInt32()));
-        }
+            AddSectionFromNewProperty(model, np, pid);
         // 방향 벡터 = 기본값(UnitZ) — BdfWriter 의 BeamOrientation.Resolve 가 엔진 기본 규칙과 같은 v 를 낸다.
         model.Elements.Add(new BeamElement(eid, a, b, pid, EntityCategory.Structure, Cmb.Core.Geometry.Vector3.UnitZ, "viewer-added"));
         model.SyncIdCounters();
@@ -907,6 +1050,76 @@ internal static class EditIntentApplier
             "INTENT_APPLIED", "info", intent.Id,
             kind: "addElement",
             details: $"CBEAM {eid} created (N{a}-N{b}, PID {pid})"));
+    }
+
+    /// <summary>newProperty(검증 끝난 값)로 새 PBEAML 을 만든다 — addElement·changeSection 공용.</summary>
+    internal static BeamSection AddSectionFromNewProperty(FeModel model, JsonElement np, int propertyId)
+    {
+        var kind = Enum.Parse<BeamSectionKind>(np.GetProperty("kind").GetString()!);
+        var dims = np.GetProperty("dims").EnumerateArray().Select(d => d.GetDouble()).ToArray();
+        var section = new BeamSection(propertyId, kind, dims, np.GetProperty("materialId").GetInt32());
+        model.Sections.Add(section);
+        return section;
+    }
+
+    /// <summary>
+    /// 부재 단면 변경 — 요소의 PID 만 바꾼다(방향 벡터·노드·Category 그대로).
+    /// 더 이상 쓰지 않게 된 옛 PBEAML 은 지우지 않는다(BDF 에 남아도 해석에 무해).
+    /// </summary>
+    internal static void ApplyChangeSection(
+        FeModel model,
+        EditIntent intent,
+        int pipePidBase,
+        List<Dictionary<string, object?>> operations)
+    {
+        var p = intent.Params;
+        int pid = p.GetProperty("propertyId").GetInt32();
+        var ids = ReadIntList(p, "elementIds");
+
+        // 요소부터 모두 확인한다 — 앞선 편집이 지웠으면 화면과 다른 모델이 나가므로 거부.
+        var indexById = new Dictionary<int, int>(model.Elements.Count);
+        for (int i = 0; i < model.Elements.Count; i++) indexById.TryAdd(model.Elements[i].Id, i);
+        var indexes = new List<int>(ids.Count);
+        foreach (int id in ids)
+        {
+            if (!indexById.TryGetValue(id, out int idx))
+                throw new EditIntentRejectedException(intent.Id, $"changeSection: element {id} 가 적용 시점에 없습니다(앞선 편집으로 지워짐).");
+            if (model.Elements[idx].Category == EntityCategory.Pipe)
+                throw new EditIntentRejectedException(intent.Id, $"changeSection: 배관 요소 E{id} 는 단면을 바꿀 수 없습니다.");
+            indexes.Add(idx);
+        }
+
+        string sectionNote;
+        if (p.TryGetProperty("newProperty", out var np) && np.ValueKind == JsonValueKind.Object)
+        {
+            if (model.FindSection(pid) is not null)
+                throw new EditIntentRejectedException(intent.Id, $"changeSection: property {pid} already exists.");
+            var created = AddSectionFromNewProperty(model, np, pid);
+            sectionNote = $"new PBEAML {pid} {created.Kind} [{string.Join(",", created.Dims)}]";
+        }
+        else
+        {
+            if (model.FindSection(pid) is null)
+                throw new EditIntentRejectedException(intent.Id, $"changeSection: property {pid} 가 적용 시점에 없습니다.");
+            sectionNote = $"PID {pid}";
+        }
+        if (pid >= pipePidBase)
+            throw new EditIntentRejectedException(intent.Id, $"changeSection: property {pid} 는 배관 단면 구간(PID >= {pipePidBase})입니다.");
+
+        var changes = new List<string>(indexes.Count);
+        foreach (int idx in indexes)
+        {
+            var old = model.Elements[idx];
+            if (old.PropertyId != pid)
+                model.Elements[idx] = new BeamElement(
+                    old.Id, old.StartNodeId, old.EndNodeId, pid, old.Category, old.Orientation, old.SourceName, old.ParentElementId);
+            changes.Add($"E{old.Id} {old.PropertyId}->{pid}");
+        }
+        operations.Add(EditTrace.Operation(
+            "INTENT_APPLIED", "info", intent.Id,
+            kind: "changeSection",
+            details: $"{ids.Count} CBEAM(s) -> {sectionNote}: {string.Join(", ", changes.Take(20))}" +
+                     (changes.Count > 20 ? $" … (+{changes.Count - 20})" : "")));
     }
 
     internal static void ApplyDeleteElements(
